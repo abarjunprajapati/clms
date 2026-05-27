@@ -1,0 +1,1526 @@
+<?php
+require_once '../../include/auth.php';
+checkAuth(['contractor', 'customer', 'super_admin']);
+include '../../include/config.php';
+include '../../include/customer_portal_context.php';
+include '../../include/education_flow.php';
+include '../../include/layout.php';
+
+$role = $_SESSION['role'];
+$name = $_SESSION['name'] ?? 'Contractor';
+$user_id = $_SESSION['user_id'];
+if ($role !== 'customer') {
+    clms_get_portal_contractor($conn);
+}
+$educationFlow = clms_get_education_flow($conn);
+
+function enrolment_table_exists($conn, $table) {
+    $table = mysqli_real_escape_string($conn, $table);
+    $result = mysqli_query($conn, "SHOW TABLES LIKE '{$table}'");
+    return $result && mysqli_num_rows($result) > 0;
+}
+
+function enrolment_column_exists($conn, $table, $column) {
+    $safeTable = str_replace('`', '``', $table);
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
+    return $result && mysqli_num_rows($result) > 0;
+}
+
+function enrolment_expr($conn, $table, $column, $alias = null, $default = "''") {
+    $alias = $alias ?: $column;
+    $safeColumn = str_replace('`', '``', $column);
+    $safeAlias = str_replace('`', '``', $alias);
+    if (enrolment_column_exists($conn, $table, $column)) {
+        return "`$safeColumn` AS `$safeAlias`";
+    }
+    return "$default AS `$safeAlias`";
+}
+
+function enrolment_fetch_one($conn, $sql) {
+    $result = mysqli_query($conn, $sql);
+    return ($result && mysqli_num_rows($result) > 0) ? mysqli_fetch_assoc($result) : null;
+}
+
+function enrolment_fetch_all($conn, $sql) {
+    $result = mysqli_query($conn, $sql);
+    $rows = [];
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $rows[] = $row;
+        }
+    }
+    return $rows;
+}
+
+function enrolment_customer_contractor_ids($conn) {
+    $customerCode = $_SESSION['customer_code'] ?? '';
+    if ($customerCode === '' || !enrolment_table_exists($conn, 'contractors')) {
+        return [];
+    }
+
+    $customerCode = mysqli_real_escape_string($conn, $customerCode);
+    $queries = [];
+
+    if (enrolment_table_exists($conn, 'work_orders')) {
+        $queries[] = "
+        SELECT DISTINCT c.id
+        FROM contractors c
+        JOIN work_orders wo ON wo.vendor_code = c.vendor_code
+        WHERE wo.customer_code = '$customerCode'
+        ";
+    }
+
+    if (enrolment_table_exists($conn, 'contractor_annexure3a')) {
+        $queries[] = "
+        SELECT DISTINCT c.id
+        FROM contractors c
+        JOIN contractor_annexure3a a3 ON a3.vendor_code = c.vendor_code
+        WHERE a3.customer_code = '$customerCode'
+          AND COALESCE(a3.status, '') IN ('approved', 'pending', 'resubmitted')
+        ";
+    }
+
+    if (!$queries) {
+        return [];
+    }
+
+    $rows = enrolment_fetch_all($conn, implode(' UNION ', $queries));
+
+    return array_values(array_filter(array_map('intval', array_column($rows, 'id'))));
+}
+
+function renderContent() {
+    global $conn, $user_id, $vendor_code, $educationFlow, $role;
+
+    // Get contractor record
+    $contractor = null;
+    if ($role === 'customer') {
+        $customerContractorIds = enrolment_customer_contractor_ids($conn);
+        if ($customerContractorIds) {
+            $idList = implode(',', $customerContractorIds);
+            $contractor = enrolment_fetch_one($conn, "
+                SELECT
+                    MIN(id) AS id,
+                    'Mapped Contractors' AS contractor_name,
+                    'approved' AS status,
+                    '' AS work_order_no,
+                    '' AS work_awarding_department
+                FROM contractors
+                WHERE id IN ($idList)
+            ");
+        }
+    } elseif (enrolment_table_exists($conn, 'contractors')) {
+        $contractorSelect = implode(', ', [
+            enrolment_expr($conn, 'contractors', 'id', 'id', '0'),
+            enrolment_expr($conn, 'contractors', 'contractor_name', 'contractor_name'),
+            enrolment_expr($conn, 'contractors', 'vendor_name', 'vendor_name'),
+            enrolment_expr($conn, 'contractors', 'status', 'status'),
+            enrolment_expr($conn, 'contractors', 'work_order_no', 'work_order_no'),
+            enrolment_expr($conn, 'contractors', 'work_awarding_department', 'work_awarding_department'),
+        ]);
+        $where = enrolment_column_exists($conn, 'contractors', 'user_id')
+            ? "user_id = " . (int)$user_id
+            : "vendor_code = '" . mysqli_real_escape_string($conn, $vendor_code) . "'";
+        $contractor = enrolment_fetch_one($conn, "SELECT $contractorSelect FROM contractors WHERE $where LIMIT 1");
+    }
+    $c_id = $contractor['id'] ?? null;
+    $contractorWhere = $c_id ? "contractor_id = " . (int)$c_id : '1=0';
+    if ($role === 'customer') {
+        $customerContractorIds = $customerContractorIds ?? enrolment_customer_contractor_ids($conn);
+        $contractorWhere = $customerContractorIds ? "contractor_id IN (" . implode(',', $customerContractorIds) . ")" : '1=0';
+    }
+
+    if ($contractorWhere === '1=0') {
+        $target = $role === 'customer' ? '../customer/annexure-3a.php' : 'annexure-2a.php';
+        $label = $role === 'customer' ? 'Open Annexure 3A' : 'Open Contractor Registration';
+        echo '<div class="alert alert-warning" style="margin:20px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><i class="fas fa-exclamation-triangle"></i> No mapped contractor workforce found for this account. Please complete/approve the registration mapping first.</div><a class="btn btn-sm btn-primary" href="' . htmlspecialchars($target) . '">' . htmlspecialchars($label) . '</a></div>';
+        return;
+    }
+
+    $project_name = '';
+    $department_name = $contractor['work_awarding_department'] ?? '';
+    $vendorCodeForSap = $contractor['vendor_code'] ?? ($_SESSION['contractor_id'] ?? '');
+    $workOptions = [];
+    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'work_orders')) {
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
+        $workOptions = enrolment_fetch_all($conn, "
+            SELECT work_order_no, project_name, department, work_order_no AS project_no
+            FROM work_orders
+            WHERE vendor_code = '$safeVendor' AND COALESCE(wo_status, 'ACTIVE') = 'ACTIVE'
+            ORDER BY id DESC
+        ");
+    }
+    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_pwo_master')) {
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
+        $pwoRows = enrolment_fetch_all($conn, "
+            SELECT pwo_number AS work_order_no, COALESCE(project, vessel, pwo_number) AS project_name, '' AS department, pwo_number AS project_no
+            FROM sap_pwo_master
+            WHERE vendor_code = '$safeVendor' AND COALESCE(status, 'active') = 'active'
+            ORDER BY id DESC
+        ");
+        $seenWorkOrders = array_column($workOptions, 'work_order_no');
+        foreach ($pwoRows as $pwoRow) {
+            if (!in_array($pwoRow['work_order_no'], $seenWorkOrders, true)) {
+                $workOptions[] = $pwoRow;
+            }
+        }
+    }
+    if (empty($workOptions) && !empty($contractor['work_order_no'])) {
+        $workOptions[] = [
+            'work_order_no' => $contractor['work_order_no'],
+            'project_name' => $project_name ?: 'General Project',
+            'department' => $department_name,
+            'project_no' => $contractor['work_order_no'],
+        ];
+    }
+    if (!empty($contractor['work_order_no']) && enrolment_table_exists($conn, 'work_orders') && enrolment_column_exists($conn, 'work_orders', 'work_order_no')) {
+        $woSelect = implode(', ', [
+            enrolment_expr($conn, 'work_orders', 'project_name', 'project_name'),
+            enrolment_expr($conn, 'work_orders', 'department', 'department'),
+        ]);
+        $woNo = mysqli_real_escape_string($conn, $contractor['work_order_no']);
+        $wo_row = enrolment_fetch_one($conn, "SELECT $woSelect FROM work_orders WHERE work_order_no = '$woNo' LIMIT 1");
+        $project_name = $wo_row['project_name'] ?? '';
+        if ($department_name === '') {
+            $department_name = $wo_row['department'] ?? '';
+        }
+    }
+
+    // Fetch enrolled workers from workmen. This is the workflow source of truth.
+    $workers = [];
+    if ($c_id && enrolment_table_exists($conn, 'workmen')) {
+        $workerTypeExpr = enrolment_column_exists($conn, 'workmen', 'worker_type') ? 'worker_type' : "''";
+        $orderExpr = enrolment_column_exists($conn, 'workmen', 'created_at') ? 'created_at DESC' : 'id DESC';
+        $workers = enrolment_fetch_all($conn, "
+            SELECT
+                " . enrolment_expr($conn, 'workmen', 'id', 'id', '0') . ",
+                " . (enrolment_column_exists($conn, 'workmen', 'work_order_no') ? enrolment_expr($conn, 'workmen', 'work_order_no', 'work_order_no') : enrolment_expr($conn, 'workmen', 'application_no', 'work_order_no')) . ",
+                " . enrolment_expr($conn, 'workmen', 'project_name', 'project_name') . ",
+                CASE
+                    WHEN $workerTypeExpr IN ('Supervisor Pass', 'supervisor') THEN 'Supervisor'
+                    WHEN $workerTypeExpr IN ('Contractor Pass', 'contractor') THEN 'Contractor'
+                    WHEN $workerTypeExpr IN ('Representative Pass', 'representative') THEN 'Representative'
+                    ELSE 'Workman'
+                END AS pass_type,
+                " . (enrolment_column_exists($conn, 'workmen', 'created_at') ? 'DATE(created_at)' : "''") . " AS registration_date,
+                " . enrolment_expr($conn, 'workmen', 'aadhaar', 'aadhaar') . ",
+                " . enrolment_expr($conn, 'workmen', 'name', 'name') . ",
+                " . enrolment_expr($conn, 'workmen', 'father_name', 'father_name') . ",
+                " . enrolment_expr($conn, 'workmen', 'gender', 'gender') . ",
+                " . enrolment_expr($conn, 'workmen', 'dob', 'dob') . ",
+                " . enrolment_expr($conn, 'workmen', 'marital_status', 'marital_status') . ",
+                '' AS nationality,
+                '' AS identification_mark,
+                " . enrolment_expr($conn, 'workmen', 'present_address', 'present_address') . ",
+                " . enrolment_expr($conn, 'workmen', 'permanent_address', 'permanent_address') . ",
+                " . enrolment_expr($conn, 'workmen', 'state', 'state') . ",
+                " . enrolment_expr($conn, 'workmen', 'district', 'district') . ",
+                " . enrolment_expr($conn, 'workmen', 'pincode', 'pincode') . ",
+                '' AS police_station,
+                " . enrolment_expr($conn, 'workmen', 'mobile', 'mobile') . ",
+                '' AS emergency_contact,
+                " . enrolment_expr($conn, 'workmen', 'department', 'department') . ",
+                " . enrolment_expr($conn, 'workmen', 'nature_of_work', 'nature_of_work') . ",
+                " . enrolment_expr($conn, 'workmen', 'skill', 'skill_category') . ",
+                " . enrolment_expr($conn, 'workmen', 'experience', 'experience') . ",
+                '' AS blood_group,
+                " . enrolment_expr($conn, 'workmen', 'region', 'region') . ",
+                " . enrolment_expr($conn, 'workmen', 'pwd_status', 'pwd_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'passport_no', 'passport_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'driving_licence_no', 'driving_licence_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'email', 'email') . ",
+                " . enrolment_expr($conn, 'workmen', 'contact_email', 'contact_email') . ",
+                " . enrolment_expr($conn, 'workmen', 'dcate', 'dcate') . ",
+                " . enrolment_expr($conn, 'workmen', 'certified_wage_rate', 'certified_wage_rate') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_language', 'safety_language') . ",
+                " . enrolment_expr($conn, 'workmen', 'uan_number', 'pf_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'esic_number', 'esi_no') . ",
+                '' AS bank_account,
+                '' AS ifsc,
+                " . enrolment_expr($conn, 'workmen', 'photo', 'photo') . ",
+                '' AS signature,
+                '' AS aadhaar_doc,
+                '' AS medical_doc,
+                '' AS police_doc,
+                '' AS insurance_doc,
+                " . enrolment_expr($conn, 'workmen', 'education', 'education') . ",
+                " . enrolment_expr($conn, 'workmen', 'worker_type', 'role_type') . ",
+                " . enrolment_expr($conn, 'workmen', 'training_status', 'safety_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'status', 'gate_pass_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
+                " . enrolment_expr($conn, 'workmen', 'created_at', 'created_at') . "
+            FROM workmen
+            WHERE $contractorWhere
+            ORDER BY $orderExpr
+        ");
+    }
+    ?>
+    <style>
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(4px);
+      z-index: 10550;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .modal-overlay.show { opacity: 1; pointer-events: all; }
+    .modal-overlay.hidden { opacity: 0; pointer-events: none; }
+    .modal-box {
+      position: relative;
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      width: min(100%, 850px);
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: modalIn .25s ease;
+    }
+    @keyframes modalIn { from { transform: scale(.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .modal-header { display:flex;align-items:center;justify-content:space-between;padding:20px;border-bottom:1px solid var(--border-color); }
+    .modal-title  { font-size:16px;font-weight:700;margin:0; }
+    .modal-close  { background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-muted);line-height:1; }
+    .modal-tabs   { display:flex;gap:0;border-bottom:1px solid var(--border-color);padding:0 20px; background: #f8fafc; }
+    .modal-tab    { background:none;border:none;padding:12px 16px;font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent; }
+    .modal-tab.active { color:#6366f1;border-bottom-color:#6366f1; background: white; }
+    .modal-tab-content { display:block; padding: 20px; }
+    .modal-tab-content.hidden { display:none; }
+
+    /* New Inline Form Square Tabs */
+    .square-tabs { display: flex; gap: 10px; padding: 20px 20px 0 20px; border-bottom: 2px solid var(--border-color); padding-bottom: 15px; overflow-x: auto; }
+    .square-tab { background: #f1f5f9; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 20px; font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .square-tab.active { background: #6366f1; color: white; border-color: #6366f1; }
+    .square-tab:hover:not(.active) { background: #e2e8f0; }
+    
+    .form-grid-3 { display:grid; grid-template-columns: repeat(3, 1fr); gap:15px; }
+    .form-grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:15px; }
+    .form-grid-4 { display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; }
+    .form-group { margin-bottom: 15px; }
+    .form-label { display:block;font-size:13px;font-weight:600;margin-bottom:5px; }
+    .form-label.required::after { content:' *';color:#ef4444; }
+    .form-control { width:100%;padding:9px 13px;border-radius:8px;border:1.5px solid var(--border-color);font-size:13px;box-sizing:border-box; }
+    .form-control:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.12); }
+    .enroll-actions { padding:15px 20px; border-top:1px solid var(--border-color); display:flex; justify-content:space-between; gap:10px; align-items:center; background:#fff; position:sticky; bottom:0; z-index:5; }
+    .enroll-actions-left, .enroll-actions-right { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .enroll-actions .btn { min-width:118px; min-height:38px; border-radius:6px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+    .btn-primary-soft { background:#eff6ff; color:#1d4ed8; border:1px solid #93c5fd; }
+    .btn-primary-soft:hover { background:#dbeafe; }
+    .conditional-field.hidden { display:none; }
+    .doc-card { border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; padding:14px; }
+    .doc-card .form-label { margin-bottom:8px; }
+    @media (max-width: 900px) { .form-grid-3, .form-grid-4 { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 640px) { .form-grid-2, .form-grid-3, .form-grid-4 { grid-template-columns: 1fr; } .enroll-actions { flex-direction:column; align-items:stretch; } .enroll-actions-left, .enroll-actions-right { width:100%; } .enroll-actions .btn { flex:1; } }
+    .work-flow-panel { grid-column:1 / -1; border:1px solid var(--border-color); border-radius:10px; background:#f8fafc; padding:16px; margin-bottom:5px; }
+    .work-flow-title { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700; color:#0f172a; margin-bottom:14px; }
+    .work-flow-title i { color:#6366f1; }
+    .work-flow-steps { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:18px; align-items:start; position:relative; }
+    .work-flow-step { position:relative; min-width:0; }
+    .work-flow-step:not(:last-child)::after { content:'\f061'; font-family:'Font Awesome 5 Free'; font-weight:900; position:absolute; top:42px; right:-14px; color:#94a3b8; font-size:13px; }
+    .flow-step-head { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:.04em; margin-bottom:9px; }
+    .flow-step-number { width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:#e0e7ff; color:#4338ca; font-size:11px; }
+    .flow-options { display:grid; gap:8px; }
+    .flow-option { width:100%; border:1.5px solid #cbd5e1; border-radius:8px; background:#fff; padding:11px 12px; display:flex; align-items:center; justify-content:space-between; gap:8px; color:#334155; font-size:13px; font-weight:700; cursor:pointer; text-align:left; transition:all .18s ease; min-height:44px; }
+    .flow-option:hover { border-color:#818cf8; background:#eef2ff; transform:translateY(-1px); }
+    .flow-option.active { border-color:#6366f1; background:#eef2ff; color:#312e81; box-shadow:0 0 0 3px rgba(99,102,241,.12); }
+    .flow-option.active::after { content:'\f00c'; font-family:'Font Awesome 5 Free'; font-weight:900; color:#16a34a; flex:0 0 auto; }
+    .flow-option.locked { cursor:default; background:#f1f5f9; border-color:#94a3b8; color:#475569; }
+    .flow-placeholder { border:1.5px dashed #cbd5e1; border-radius:8px; padding:13px; color:#64748b; background:#fff; font-size:13px; line-height:1.35; min-height:44px; display:flex; align-items:center; }
+    .flow-summary { margin-top:14px; display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
+    .flow-summary-item { border:1px solid #dbe3ef; background:#fff; border-radius:8px; padding:9px 11px; }
+    .flow-summary-item span { display:block; font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase; margin-bottom:3px; }
+    .flow-summary-item strong { display:block; color:#0f172a; font-size:13px; min-height:18px; }
+    @media (max-width: 900px) {
+      .work-flow-steps { grid-template-columns:1fr; }
+      .work-flow-step:not(:last-child)::after { content:'\f063'; top:auto; bottom:-16px; right:50%; transform:translateX(50%); }
+      .flow-summary { grid-template-columns:1fr; }
+    }
+    
+    .doc-card { background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; }
+    .badge-status { font-size:10px; padding:3px 8px; border-radius:10px; font-weight:600; text-transform:uppercase; }
+    </style>
+
+    <div class="content-header">
+      <div>
+        <h2 class="page-title"><i class="fas fa-users" style="color:#6366f1;margin-right:10px;"></i> Worker Enrollment</h2>
+        <!-- <p class="page-subtitle">Add workers with full Annexure 4A details and document uploads.</p> -->
+      </div>
+      <button class="btn btn-primary" id="btnOpenModal"><i class="fas fa-plus"></i> New Enrollment</button>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;">
+      <div class="stat-card glass">
+        <div class="stat-icon" style="background:rgba(99,102,241,0.1);color:#6366f1"><i class="fas fa-users"></i></div>
+        <div class="stat-value"><?= count($workers) ?></div>
+        <div class="stat-label">Total Enrolled</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-icon" style="background:rgba(16,185,129,0.1);color:#10b981"><i class="fas fa-check"></i></div>
+        <div class="stat-value"><?= count(array_filter($workers, function($w) { return ($w['safety_status']??'')==='pass'; })) ?></div>
+        <div class="stat-label">Safety Passed</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-icon" style="background:rgba(245,158,11,0.1);color:#f59e0b"><i class="fas fa-id-badge"></i></div>
+        <div class="stat-value"><?= count(array_filter($workers, function($w) { return !empty($w['temp_id']); })) ?></div>
+        <div class="stat-label">Temp IDs Issued</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="stat-icon" style="background:rgba(239,68,68,0.1);color:#ef4444"><i class="fas fa-door-open"></i></div>
+        <div class="stat-value"><?= count(array_filter($workers, function($w) { return ($w['gate_pass_status']??'')==='active'; })) ?></div>
+        <div class="stat-label">Active Passes</div>
+      </div>
+    </div>
+
+    <!-- Annexure 5/A: Pass Limits Widget -->
+    <div class="card glass" style="margin-bottom:20px;">
+      <div class="card-header">
+        <div class="card-title"><i class="fas fa-shield-alt" style="color:#6366f1;"></i>   Pass Limits</div>
+      </div>
+      <div class="card-body" id="passLimitsWidget">
+        <p style="color:var(--text-muted);font-size:13px;">Loading pass limits...</p>
+      </div>
+    </div>
+    <script src="../../js/passLimitValidator.js"></script>
+    <script>
+    (async () => {
+      const cid = <?= $c_id ? (int)$c_id : 0 ?>;
+      if (cid) {
+        await PassLimitValidator.fetchLimits(cid);
+        PassLimitValidator.renderSummary(document.getElementById('passLimitsWidget'));
+      } else {
+        document.getElementById('passLimitsWidget').innerHTML = '<p style="color:var(--text-muted);">No contractor record found.</p>';
+      }
+    })();
+    </script>
+
+    <div id="listSection">
+    <div class="card">
+      <div class="card-header">
+        <div class="d-flex align-items-center gap-3">
+          <div class="card-title">Worker List</div>
+          <button class="btn btn-sm btn-outline-primary" onclick="downloadWorkerList()">
+            <i class="fas fa-file-pdf"></i> Download PDF
+          </button>
+        </div>
+        <input type="text" id="searchWorker" class="form-control" style="width:250px;" placeholder="Search name or Aadhaar...">
+      </div>
+      <div class="card-body p-0">
+        <table class="data-table" id="workerTable">
+          <thead>
+            <tr>
+              <th>Worker Details</th>
+              <th>Aadhaar</th>
+              <th>Pass / Role</th>
+              <th>Department / Work</th>
+              <th>Temp ID</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($workers as $w): ?>
+            <tr>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="avatar-sm">
+                    <?php if ($w['photo']): ?>
+                      <img src="../../uploads/workers/<?= $w['photo'] ?>" style="width:30px;height:30px;border-radius:50%;object-fit:cover;">
+                    <?php else: ?>
+                      <i class="fas fa-user-circle fa-2x text-muted"></i>
+                    <?php endif; ?>
+                  </div>
+                  <div>
+                    <div class="fw-bold"><?= htmlspecialchars($w['name']) ?></div>
+                    <small class="text-muted"><?= $w['gender'] ?> | <?= $w['dob'] ?></small>
+                  </div>
+                </div>
+              </td>
+              <td><code><?= $w['aadhaar'] ?></code></td>
+              <td>
+                <span class="badge badge-gray"><?= $w['pass_type'] ?></span><br>
+                <small><?= $w['role_type'] ?></small>
+              </td>
+              <td>
+                <div><?= $w['department'] ?></div>
+                <small><?= $w['nature_of_work'] ?></small>
+              </td>
+              <td><code class="text-primary"><?= $w['temp_id'] ?? 'PENDING' ?></code></td>
+              <td>
+                <span class="badge-status <?= $w['safety_status']==='pass'?'bg-success text-white':'bg-warning' ?>">Safety: <?= $w['safety_status'] ?></span>
+              </td>
+              <td>
+                <div style="display:flex;gap:5px;">
+                  <button class="btn btn-sm btn-outline" title="View Profile" onclick="viewWorker(<?= htmlspecialchars(json_encode($w)) ?>)"><i class="fas fa-eye"></i></button>
+                  <button class="btn btn-sm btn-outline" title="Edit Worker" onclick="editWorker(<?= htmlspecialchars(json_encode($w)) ?>)">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <button class="btn btn-sm btn-danger" title="Delete Worker" onclick="deleteWorker(<?= (int)$w['id'] ?>, '<?= htmlspecialchars($w['name'], ENT_QUOTES) ?>')">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                  <?php if(!empty($w['temp_id'])): ?>
+                  <button class="btn btn-sm btn-primary" title="Download Temp ID Card" onclick="downloadTempCard(<?= htmlspecialchars(json_encode($w)) ?>)">
+                    <i class="fas fa-download"></i> PDF
+                  </button>
+                  <?php endif; ?>
+                </div>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    </div> <!-- end listSection -->
+
+    <!-- Inline Form Section -->
+    <div id="formSection" class="hidden">
+      <div class="card">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 class="card-title" id="enrollFormTitle"> Workforce Enrollment</h3>
+          <button class="btn btn-outline" onclick="closeForm()">Back to List</button>
+        </div>
+        <form id="enrollForm" enctype="multipart/form-data">
+          <input type="hidden" name="worker_id" id="workerEditId" value="">
+          <input type="hidden" name="source" id="workerSource" value="MANUAL">
+          <div class="square-tabs">
+            <button type="button" class="square-tab active" data-tab="basic">1. Basic Info</button>
+            <button type="button" class="square-tab" data-tab="personal">2. Personal / Medical</button>
+            <button type="button" class="square-tab" data-tab="address">3. Address / Contact</button>
+            <button type="button" class="square-tab" data-tab="work">4. Work / Compliance</button>
+            <button type="button" class="square-tab" data-tab="docs">5. Documents</button>
+          </div>
+
+          <!-- Tab 1: Basic -->
+          <div class="modal-tab-content" id="tab-basic">
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label class="form-label required">Pass Type</label>
+                <select class="form-control" name="pass_type" required>
+                  <option value="Contractor">Contractor</option>
+                  <option value="Representative">Representative</option>
+                  <option value="Supervisor">Supervisor</option>
+                  <option value="Workman">Workman</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Work Order No</label>
+                <select class="form-control" name="work_order_no" id="workOrderSelect" required>
+                  <option value="">Select work order</option>
+                  <?php foreach ($workOptions as $wo): ?>
+                    <option value="<?= htmlspecialchars($wo['work_order_no']) ?>"
+                            data-project="<?= htmlspecialchars($wo['project_name'] ?? '') ?>"
+                            data-project-no="<?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>"
+                            data-department="<?= htmlspecialchars($wo['department'] ?? '') ?>">
+                      <?= htmlspecialchars($wo['work_order_no']) ?><?= !empty($wo['project_name']) ? ' - ' . htmlspecialchars($wo['project_name']) : '' ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Project No / WBS No</label>
+                <select class="form-control" name="project_name" id="projectWbsSelect" required>
+                  <option value="">Select project / WBS</option>
+                  <?php foreach ($workOptions as $wo): ?>
+                    <option value="<?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>" data-work-order="<?= htmlspecialchars($wo['work_order_no']) ?>">
+                      <?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?><?= !empty($wo['project_name']) ? ' - ' . htmlspecialchars($wo['project_name']) : '' ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Registration Date</label>
+                <input type="date" class="form-control" name="registration_date" value="<?= date('Y-m-d') ?>" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Aadhaar Number <span id="aadhaarStatus" class="badge-status" style="display:none; margin-left:10px;"></span></label>
+                <input type="text" class="form-control" name="aadhaar" id="aadhaarInput" maxlength="12" pattern="\d{12}" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Full Name</label>
+                <input type="text" class="form-control" name="name" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Father Name</label>
+                <input type="text" class="form-control" name="father_name" required>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 2: Personal -->
+          <div class="modal-tab-content hidden" id="tab-personal">
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label class="form-label required">Gender</label>
+                <select class="form-control" name="gender" required>
+                  <option>Male</option><option>Female</option><option>Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Date of Birth</label>
+                <input type="date" class="form-control" name="dob" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Marital Status</label>
+                <select class="form-control" name="marital_status" required>
+                  <option>Single</option><option>Married</option><option>Widowed</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Nationality</label>
+                <input type="text" class="form-control" name="nationality" value="Indian" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Identification Mark</label>
+                <input type="text" class="form-control" name="identification_mark">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Blood Group</label>
+                <select class="form-control" name="blood_group">
+                  <option value="">Select</option>
+                  <option>A+</option><option>B+</option><option>O+</option><option>AB+</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Region</label>
+                <input type="text" class="form-control" name="region">
+              </div>
+              <div class="form-group">
+                <label class="form-label required">PWD Status</label>
+                <select class="form-control" name="pwd_status" required>
+                  <option value="">Select</option>
+                  <option value="YES">Yes</option>
+                  <option value="NO">No</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Passport No</label>
+                <input type="text" class="form-control" name="passport_no">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Driving Licence No</label>
+                <input type="text" class="form-control" name="driving_licence_no">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-control" name="email">
+              </div>
+              <div class="form-group">
+                <label class="form-label">UAN No</label>
+                <input type="text" class="form-control" name="uan_number">
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 3: Address -->
+          <div class="modal-tab-content hidden" id="tab-address">
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label class="form-label required">Present Address</label>
+                <textarea class="form-control" name="present_address" rows="2" required></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Permanent Address</label>
+                <textarea class="form-control" name="permanent_address" rows="2" required></textarea>
+              </div>
+            </div>
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label class="form-label required">State</label>
+                <input type="text" class="form-control" name="state" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">District</label>
+                <input type="text" class="form-control" name="district" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Pin Code</label>
+                <input type="text" class="form-control" name="pincode" maxlength="6" required>
+              </div>
+            </div>
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label class="form-label required">Mobile Number</label>
+                <input type="tel" class="form-control" name="mobile" maxlength="10" required>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 4: Work -->
+          <div class="modal-tab-content hidden" id="tab-work">
+            <div class="form-grid-3">
+              <div class="form-group">
+                <label class="form-label required">Department</label>
+                <input type="text" class="form-control" name="department" value="<?= htmlspecialchars($department_name) ?>" <?= $department_name !== '' ? 'readonly style="background-color: #f1f5f9;"' : '' ?> required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Years of Experience</label>
+                <input type="number" min="0" step="0.5" class="form-control" name="experience">
+              </div>
+              <div class="work-flow-panel" id="annexure4aWorkFlow">
+                <div class="work-flow-title"><i class="fas fa-project-diagram"></i> Education to Job Profile Flow</div>
+                <div class="work-flow-steps">
+                  <div class="work-flow-step">
+                    <div class="flow-step-head"><span class="flow-step-number">1</span> Category</div>
+                    <div class="flow-options" id="categoryOptions" aria-label="Category selection"></div>
+                  </div>
+                  <div class="work-flow-step">
+                    <div class="flow-step-head"><span class="flow-step-number">2</span> Qualification</div>
+                    <div class="flow-options" id="qualificationOptions" aria-label="Qualification selection">
+                      <div class="flow-placeholder">Select category to open qualification options.</div>
+                    </div>
+                  </div>
+                  <div class="work-flow-step">
+                    <div class="flow-step-head"><span class="flow-step-number">3</span> Job Profile</div>
+                    <div class="flow-options" id="jobProfileOptions" aria-label="Job profile selection">
+                      <div class="flow-placeholder">Select qualification to open job profile options.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="flow-summary">
+                  <div class="flow-summary-item"><span>Nature of Work</span><strong id="flowNatureSummary">Not selected</strong></div>
+                  <div class="flow-summary-item"><span>Skill Category</span><strong id="flowSkillSummary">Not selected</strong></div>
+                  <div class="flow-summary-item"><span>Worker Category</span><strong id="flowRoleSummary">Not selected</strong></div>
+                </div>
+                <input type="hidden" name="nature_of_work" required>
+                <input type="hidden" name="skill_category" required>
+                <input type="hidden" name="education" id="educationQualification" required>
+                <input type="hidden" name="role_type" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">EPF Registered</label>
+                <select class="form-control" name="epf_registered_worker" id="epfRegisteredWorker" required>
+                  <option value="">Select</option>
+                  <option value="YES">Yes</option>
+                  <option value="NO">No</option>
+                </select>
+              </div>
+              <div class="form-group conditional-field hidden" id="epfNumberWrap">
+                <label class="form-label required">EPF Number</label>
+                <input type="text" class="form-control" name="pf_no" id="epfNumberInput">
+              </div>
+              <div class="form-group">
+                <label class="form-label required">ESI Registered</label>
+                <select class="form-control" name="esi_registered_worker" id="esiRegisteredWorker" required>
+                  <option value="">Select</option>
+                  <option value="YES">Yes</option>
+                  <option value="NO">No</option>
+                </select>
+              </div>
+              <div class="form-group conditional-field hidden" id="esiNumberWrap">
+                <label class="form-label required">ESI Number</label>
+                <input type="text" class="form-control" name="esi_no" id="esiNumberInput">
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Certified Wage Rate</label>
+                <input type="text" class="form-control" name="certified_wage_rate" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Language Preferred for Safety Induction</label>
+                <select class="form-control" name="safety_language" required>
+                  <option value="">Select</option>
+                  <option value="Hindi">Hindi</option>
+                  <option value="Malayalam">Malayalam</option>
+                  <option value="Tamil">Tamil</option>
+                  <option value="English">English</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 5: Documents -->
+          <div class="modal-tab-content hidden" id="tab-docs">
+            <div class="form-grid-3">
+              <div class="doc-card">
+                <label class="form-label required">Photo</label>
+                <input type="file" class="form-control" name="photo" required>
+              </div>
+              <div class="doc-card">
+                <label class="form-label required">Aadhaar Copy</label>
+                <input type="file" class="form-control" name="aadhaar_doc" required>
+              </div>
+              <div class="doc-card">
+                <label class="form-label required">Training Attendance Approval by Executing Officer / Mentor</label>
+                <input type="file" class="form-control" name="training_approval_doc" required>
+              </div>
+            </div>
+          </div>
+
+          <div class="enroll-actions">
+            <div class="enroll-actions-left">
+              <button type="button" class="btn btn-outline" id="btnPrevTab">Previous</button>
+              <button type="button" class="btn btn-primary-soft" id="btnNextTab">Next</button>
+            </div>
+            <div class="enroll-actions-right">
+              <!-- <button type="button" class="btn btn-primary-soft" id="btnSaveDraft">Save Draft</button> -->
+              <button type="submit" class="btn btn-primary" id="btnSubmit">Submit Enrollment</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- View Modal (Original Style) -->
+    <div id="viewModal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:600px;">
+        <div class="modal-header">
+          <h3 class="modal-title">Worker Profile</h3>
+          <button class="modal-close" onclick="closeViewModal()">&times;</button>
+        </div>
+        <div id="viewContent" style="padding:20px;"></div>
+      </div>
+    </div>
+
+    <!-- PDF Generation Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <!-- Hidden Temporary ID Card Template (Standard CR80 Size) -->
+    <div id="tempCardTemplate" style="position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none; z-index: -1;">
+      <div id="id-card-content" style="width: 3.375in; height: 2.125in; border: 1px solid #1e3a8a; border-radius: 8px; font-family: 'Arial', sans-serif; background:#fff; color:#000; overflow:hidden; position:relative; box-sizing: border-box;">
+        
+        <!-- Blue Header Strip -->
+        <div style="background: #1e3a8a; color: #fff; padding: 5px 10px; display: flex; align-items: center; justify-content: space-between;">
+          <div style="font-size: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Contractor Labour Management</div>
+          <div style="font-size: 7px; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px;">TEMP PASS</div>
+        </div>
+
+        <div style="display: flex; padding: 10px; gap: 12px; height: calc(100% - 45px);">
+          <!-- Left: Photo -->
+          <div style="width: 0.8in; height: 1in; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; background: #f8fafc; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+             <img id="pdf-photo" src="" crossorigin="anonymous" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+             <div id="pdf-photo-placeholder" style="font-size: 8px; color: #94a3b8; font-weight: bold;">PHOTO</div>
+          </div>
+          
+          <!-- Right: Details -->
+          <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 4px;">
+            <div style="line-height: 1.1;">
+               <span style="font-size: 6px; color: #64748b; text-transform: uppercase; font-weight: bold;">Name</span>
+               <div id="pdf-name" style="font-size: 11px; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+            </div>
+            <div style="line-height: 1.1;">
+               <span style="font-size: 6px; color: #64748b; text-transform: uppercase; font-weight: bold;">Temporary ID</span>
+               <div id="pdf-tempid" style="font-size: 12px; font-weight: 900; color: #2563eb;"></div>
+            </div>
+            <div style="line-height: 1.1;">
+               <span style="font-size: 6px; color: #64748b; text-transform: uppercase; font-weight: bold;">Contractor</span>
+               <div id="pdf-contractor" style="font-size: 9px; font-weight: 600; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 2px;">
+              <div style="line-height: 1.1;">
+                 <span style="font-size: 6px; color: #64748b; text-transform: uppercase; font-weight: bold;">Trade</span>
+                 <div id="pdf-trade" style="font-size: 8px; font-weight: 600;"></div>
+              </div>
+              <div style="line-height: 1.1;">
+                 <span style="font-size: 6px; color: #64748b; text-transform: uppercase; font-weight: bold;">Aadhaar</span>
+                 <div id="pdf-aadhaar" style="font-size: 8px; font-weight: 600;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Footer Info -->
+        <div style="position: absolute; bottom: 0; left: 0; right: 0; background: #f1f5f9; padding: 4px 10px; font-size: 6px; color: #475569; text-align: center; border-top: 1px solid #e2e8f0;">
+          VALID FOR 7 DAYS • SYSTEM GENERATED • MUST BE CARRIED ON DUTY
+        </div>
+      </div>
+    </div>
+
+    <script>
+    async function downloadTempCard(w) {
+        // Populate template
+        document.getElementById('pdf-name').innerText = w.name;
+        document.getElementById('pdf-tempid').innerText = w.temp_id;
+        document.getElementById('pdf-contractor').innerText = "<?= htmlspecialchars($contractor['contractor_name'] ?? 'N/A') ?>";
+        document.getElementById('pdf-trade').innerText = w.nature_of_work;
+        document.getElementById('pdf-aadhaar').innerText = w.aadhaar;
+        
+        const photoImg = document.getElementById('pdf-photo');
+        const placeholder = document.getElementById('pdf-photo-placeholder');
+        
+        if (w.photo) {
+            photoImg.src = "../../uploads/workers/" + w.photo;
+            // Wait for image to load to ensure it appears in PDF
+            await new Promise((resolve) => {
+                if (photoImg.complete) resolve();
+                else {
+                    photoImg.onload = resolve;
+                    photoImg.onerror = resolve;
+                }
+            });
+            photoImg.style.display = 'block';
+            placeholder.style.display = 'none';
+        } else {
+            photoImg.style.display = 'none';
+            placeholder.style.display = 'flex';
+        }
+
+        // Delay to ensure rendering is complete
+        setTimeout(async () => {
+            const element = document.getElementById('id-card-content');
+            const options = {
+                margin:       0,
+                filename:     'TempID_' + w.temp_id + '.pdf',
+                image:        { type: 'jpeg', quality: 1.0 },
+                html2canvas:  { scale: 2, useCORS: true, allowTaint: true, scrollY: 0 },
+                jsPDF:        { unit: 'in', format: [3.375, 2.125], orientation: 'landscape', compress: true }
+            };
+
+            try {
+                await html2pdf().set(options).from(element).save();
+            } catch (err) {
+                console.error('PDF generation failed', err);
+                alert('Failed to generate PDF. Please try again.');
+            }
+        }, 600);
+    }
+
+    async function downloadWorkerList() {
+        const table = document.getElementById('workerTable');
+        
+        // Clone table to remove interactive elements and styling issues
+        const clone = table.cloneNode(true);
+        // Remove the "Actions" column from clone
+        clone.querySelectorAll('th:last-child, td:last-child').forEach(el => el.remove());
+        
+        const wrapper = document.createElement('div');
+        wrapper.style.padding = '20px';
+        wrapper.style.background = 'white';
+        wrapper.innerHTML = `
+            <h2 style="text-align:center; color:#1e3a8a;">Worker Enrollment List</h2>
+            <p style="text-align:center; font-size:12px; color:#64748b;">Generated on: <?= date('d-M-Y H:i') ?></p>
+        `;
+        wrapper.appendChild(clone);
+        
+        const options = {
+            margin:       [0.5, 0.3],
+            filename:     'Worker_List_<?= date('Y-m-d') ?>.pdf',
+            image:        { type: 'jpeg', quality: 0.95 },
+            html2canvas:  { scale: 1.5, useCORS: true, allowTaint: true },
+            jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' }
+        };
+
+        const btn = event.currentTarget;
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+
+        try {
+            await html2pdf().set(options).from(wrapper).save();
+        } catch (err) {
+            console.error('PDF generation failed', err);
+            alert('Failed to generate PDF. Try smaller list or different browser.');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+
+    const listSection = document.getElementById('listSection');
+        const formSection = document.getElementById('formSection');
+        const viewModal = document.getElementById('viewModal');
+        const form = document.getElementById('enrollForm');
+        const tabOrder = ['basic', 'personal', 'address', 'work', 'docs'];
+        
+        const defaultDepartment = <?= json_encode($department_name) ?>;
+        const workOptions = <?= json_encode($workOptions, JSON_UNESCAPED_SLASHES) ?>;
+
+        document.getElementById('btnOpenModal').onclick = () => {
+          form.reset();
+          document.getElementById('workerEditId').value = '';
+          document.getElementById('enrollFormTitle').textContent = ' New Worker Enrollment';
+          const deptField = form.querySelector('[name="department"]');
+          if (deptField && defaultDepartment) {
+            deptField.value = defaultDepartment;
+            deptField.setAttribute('readonly', true);
+            deptField.style.backgroundColor = '#f1f5f9';
+          }
+          const woSelect = form.querySelector('[name="work_order_no"]');
+          if (woSelect && workOptions.length === 1) {
+            woSelect.value = workOptions[0].work_order_no;
+            syncWorkOrderFields(woSelect.value);
+          }
+          const photoInput = form.querySelector('[name="photo"]');
+          const requiredDocInputs = form.querySelectorAll('#tab-docs input[type="file"]');
+          requiredDocInputs.forEach(input => {
+            if (['photo','aadhaar_doc'].includes(input.name)) {
+              input.setAttribute('required', 'true');
+            }
+          });
+          listSection.style.display = 'none';
+          formSection.style.display = 'block';
+          formSection.classList.remove('hidden');
+          activateTab('basic');
+          toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
+          toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
+        };
+        
+        function closeForm() {
+          formSection.style.display = 'none';
+          listSection.style.display = 'block';
+          form.reset();
+          document.getElementById('workerEditId').value = '';
+          document.getElementById('enrollFormTitle').textContent = ' New Worker Enrollment';
+          resetWorkFlow();
+        }
+        
+        function activateTab(tabId) {
+          document.querySelectorAll('.square-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+          document.querySelectorAll('.modal-tab-content').forEach(c => c.classList.toggle('hidden', c.id !== 'tab-' + tabId));
+          const index = tabOrder.indexOf(tabId);
+          document.getElementById('btnPrevTab').style.visibility = index <= 0 ? 'hidden' : 'visible';
+          document.getElementById('btnNextTab').style.display = index === tabOrder.length - 1 ? 'none' : 'inline-flex';
+          document.getElementById('btnSaveDraft').style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
+          document.getElementById('btnSubmit').style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
+        }
+        
+        document.querySelectorAll('.square-tab').forEach(btn => {
+          btn.onclick = () => activateTab(btn.dataset.tab);
+        });
+
+        document.getElementById('btnPrevTab').onclick = () => {
+          const current = document.querySelector('.square-tab.active')?.dataset.tab || 'basic';
+          const index = Math.max(0, tabOrder.indexOf(current) - 1);
+          activateTab(tabOrder[index]);
+        };
+        document.getElementById('btnNextTab').onclick = () => {
+          const current = document.querySelector('.square-tab.active')?.dataset.tab || 'basic';
+          const index = Math.min(tabOrder.length - 1, tabOrder.indexOf(current) + 1);
+          activateTab(tabOrder[index]);
+        };
+
+        function syncWorkOrderFields(workOrderNo) {
+          const option = workOptions.find(item => String(item.work_order_no) === String(workOrderNo));
+          const projectSelect = form.querySelector('[name="project_name"]');
+          const deptField = form.querySelector('[name="department"]');
+          if (projectSelect && option) projectSelect.value = option.project_no || option.work_order_no || '';
+          if (deptField && option && option.department) {
+            deptField.value = option.department;
+            deptField.setAttribute('readonly', true);
+            deptField.style.backgroundColor = '#f1f5f9';
+          }
+        }
+
+        form.querySelector('[name="work_order_no"]')?.addEventListener('change', (e) => syncWorkOrderFields(e.target.value));
+        form.querySelector('[name="project_name"]')?.addEventListener('change', (e) => {
+          const selected = e.target.selectedOptions[0];
+          const workOrderNo = selected?.dataset.workOrder || '';
+          if (workOrderNo) {
+            form.querySelector('[name="work_order_no"]').value = workOrderNo;
+            syncWorkOrderFields(workOrderNo);
+          }
+        });
+
+        function toggleConditionalRegistration(selectName, wrapId, inputId) {
+          const value = form.querySelector(`[name="${selectName}"]`)?.value || '';
+          const wrap = document.getElementById(wrapId);
+          const input = document.getElementById(inputId);
+          const show = value === 'YES';
+          if (wrap) wrap.classList.toggle('hidden', !show);
+          if (input) {
+            input.required = show;
+            if (!show) input.value = '';
+          }
+        }
+        form.querySelector('[name="epf_registered_worker"]')?.addEventListener('change', () => toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput'));
+        form.querySelector('[name="esi_registered_worker"]')?.addEventListener('change', () => toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput'));
+
+        // Aadhaar Auto-Fill Logic
+        document.getElementById('aadhaarInput').addEventListener('blur', async function() {
+            const aadhaar = this.value.trim();
+            const statusBadge = document.getElementById('aadhaarStatus');
+            const sourceInput = document.getElementById('workerSource');
+            const formInputs = form.querySelectorAll('input:not([name="aadhaar"]):not([name="work_order_no"]):not([name="project_name"]):not([name="pass_type"]):not([name="registration_date"]), select, textarea');
+
+            if (aadhaar.length === 12) {
+                statusBadge.style.display = 'inline-block';
+                statusBadge.className = 'badge-status bg-warning text-dark';
+                statusBadge.innerText = 'Searching...';
+
+                try {
+                    const response = await fetch(`../../api/contractor/fetch_worker_aadhaar.php?aadhaar=${aadhaar}`);
+                    const result = await response.json();
+
+                    if (result.success && result.data) {
+                        const data = result.data;
+                        statusBadge.className = 'badge-status bg-success text-white';
+                        statusBadge.innerText = `Found in ${data.source}`;
+                        sourceInput.value = data.source;
+
+                        // Auto-fill fields and make them readonly
+                        const fieldsToFill = {
+                            'name': data.name,
+                            'father_name': data.father_name,
+                            'gender': data.gender,
+                            'dob': data.dob,
+                            'marital_status': data.marital_status,
+                            'mobile': data.mobile,
+                            'present_address': data.present_address,
+                            'permanent_address': data.permanent_address,
+                            'state': data.state,
+                            'district': data.district,
+                            'department': data.department,
+                            'nature_of_work': data.nature_of_work,
+                            'skill_category': data.skill_category,
+                            'education': data.education,
+                            'role_type': data.role_type || data.skill_category,
+                            'blood_group': data.blood_group,
+                            'pf_no': data.pf_no,
+                            'esi_no': data.esi_no,
+                            'uan_number': data.uan_number,
+                            'email': data.email
+                        };
+
+                        for (const [key, value] of Object.entries(fieldsToFill)) {
+                            const field = form.querySelector(`[name="${key}"]`);
+                            if (field && value) {
+                                field.value = value;
+                                // user asked: "auto only ready honga edit nhi" - make readonly
+                                field.setAttribute('readonly', true);
+                                if(field.tagName === 'SELECT') {
+                                    field.style.pointerEvents = 'none'; // prevent dropdown interaction
+                                    field.style.backgroundColor = '#f1f5f9';
+                                }
+                            }
+                        }
+                        syncWorkFlowFromFields();
+                        
+                        // Handle photo preview if we have one
+                        if (data.photo) {
+                           // Depending on implementation, you might want to show the photo or skip mandatory photo upload
+                           // For now we just remove the required attribute from photo since it already exists
+                           const photoInput = form.querySelector('[name="photo"]');
+                           if(photoInput) photoInput.removeAttribute('required');
+                        }
+
+                        notify('Worker Found', `Details auto-filled from ${data.source}.`, 'success');
+                    } else {
+                        // Not found, reset form fields to allow manual entry
+                        statusBadge.className = 'badge-status bg-gray text-dark';
+                        statusBadge.innerText = 'New Worker';
+                        sourceInput.value = 'MANUAL';
+                        resetAutoFilledFields();
+                    }
+                } catch (err) {
+                    statusBadge.style.display = 'none';
+                    console.error('Failed to fetch worker details', err);
+                }
+            } else {
+                statusBadge.style.display = 'none';
+                sourceInput.value = 'MANUAL';
+                resetAutoFilledFields();
+            }
+        });
+
+        const ANNEXURE4A_FLOW = <?= json_encode($educationFlow, JSON_UNESCAPED_SLASHES) ?>;
+
+        const flowState = { category: '', qualification: '', jobProfile: '' };
+        const flowEls = {
+            category: document.getElementById('categoryOptions'),
+            qualification: document.getElementById('qualificationOptions'),
+            jobProfile: document.getElementById('jobProfileOptions'),
+            natureSummary: document.getElementById('flowNatureSummary'),
+            skillSummary: document.getElementById('flowSkillSummary'),
+            roleSummary: document.getElementById('flowRoleSummary'),
+            natureInput: form.querySelector('[name="nature_of_work"]'),
+            skillInput: form.querySelector('[name="skill_category"]'),
+            educationInput: form.querySelector('[name="education"]'),
+            roleInput: form.querySelector('[name="role_type"]')
+        };
+
+        function createFlowButton(label, active, onClick, locked = false) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `flow-option${active ? ' active' : ''}${locked ? ' locked' : ''}`;
+            button.textContent = label;
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            button.onclick = onClick;
+            return button;
+        }
+
+        function setFlowPlaceholder(target, text) {
+            target.innerHTML = `<div class="flow-placeholder">${text}</div>`;
+        }
+
+        function setHiddenWorkFields() {
+            flowEls.natureInput.value = flowState.jobProfile;
+            flowEls.skillInput.value = flowState.category;
+            flowEls.educationInput.value = flowState.qualification;
+            flowEls.roleInput.value = flowState.category;
+            flowEls.natureSummary.textContent = flowState.jobProfile || 'Not selected';
+            flowEls.skillSummary.textContent = flowState.category || 'Not selected';
+            flowEls.roleSummary.textContent = flowState.category || 'Not selected';
+        }
+
+        function renderCategoryOptions() {
+            flowEls.category.innerHTML = '';
+            Object.keys(ANNEXURE4A_FLOW).forEach(category => {
+                flowEls.category.appendChild(createFlowButton(category, flowState.category === category, () => {
+                    flowState.category = category;
+                    flowState.qualification = '';
+                    flowState.jobProfile = '';
+                    renderWorkFlow();
+                }));
+            });
+        }
+
+        function renderQualificationOptions() {
+            if (!flowState.category) {
+                setFlowPlaceholder(flowEls.qualification, 'Select category to open qualification options.');
+                return;
+            }
+
+            const qualifications = Object.keys(ANNEXURE4A_FLOW[flowState.category].qualifications);
+            flowEls.qualification.innerHTML = '';
+            qualifications.forEach(qualification => {
+                flowEls.qualification.appendChild(createFlowButton(qualification, flowState.qualification === qualification, () => {
+                    flowState.qualification = qualification;
+                    flowState.jobProfile = '';
+                    renderWorkFlow();
+                }));
+            });
+
+        }
+
+        function renderJobProfileOptions() {
+            if (!flowState.qualification) {
+                setFlowPlaceholder(flowEls.jobProfile, 'Select qualification to open job profile options.');
+                return;
+            }
+
+            const jobProfiles = ANNEXURE4A_FLOW[flowState.category].qualifications[flowState.qualification] || [];
+            flowEls.jobProfile.innerHTML = '';
+            jobProfiles.forEach(jobProfile => {
+                const autoLocked = jobProfiles.length === 1;
+                flowEls.jobProfile.appendChild(createFlowButton(jobProfile, flowState.jobProfile === jobProfile, () => {
+                    flowState.jobProfile = jobProfile;
+                    renderWorkFlow();
+                }, autoLocked));
+            });
+
+            if (jobProfiles.length === 1 && flowState.jobProfile !== jobProfiles[0]) {
+                flowState.jobProfile = jobProfiles[0];
+                renderWorkFlow();
+            }
+        }
+
+        function renderWorkFlow() {
+            renderCategoryOptions();
+            renderQualificationOptions();
+            renderJobProfileOptions();
+            setHiddenWorkFields();
+        }
+
+        function findCategoryForQualification(qualification) {
+            return Object.keys(ANNEXURE4A_FLOW).find(category => {
+                return Object.prototype.hasOwnProperty.call(ANNEXURE4A_FLOW[category].qualifications, qualification);
+            }) || '';
+        }
+
+        function findFlowFromJobProfile(jobProfile, fallbackCategory = '') {
+            for (const [category, categoryData] of Object.entries(ANNEXURE4A_FLOW)) {
+                for (const [qualification, jobs] of Object.entries(categoryData.qualifications)) {
+                    if (jobs.includes(jobProfile) && (!fallbackCategory || fallbackCategory === category)) {
+                        return { category, qualification, jobProfile };
+                    }
+                }
+            }
+            return { category: fallbackCategory, qualification: '', jobProfile: '' };
+        }
+
+        function normalizeFlowCategory(category) {
+            const value = (category || '').trim().toLowerCase();
+            if (value === 'skilled') return 'Skilled';
+            if (value === 'semi-skilled' || value === 'semi skilled') return 'Semi-Skilled';
+            if (value === 'unskilled') return 'Unskilled';
+            return '';
+        }
+
+        function syncWorkFlowFromFields() {
+            const category = normalizeFlowCategory(flowEls.skillInput.value || flowEls.roleInput.value);
+            const qualification = (flowEls.educationInput.value || '').trim();
+            const jobProfile = (flowEls.natureInput.value || '').trim();
+            const normalizedQualification = qualification === 'B Tech' ? 'B.Tech' : qualification;
+            const derivedCategory = category || findCategoryForQualification(normalizedQualification);
+            const derivedFlow = jobProfile ? findFlowFromJobProfile(jobProfile, derivedCategory) : {};
+
+            flowState.category = derivedFlow.category || derivedCategory || '';
+            flowState.qualification = derivedFlow.qualification || normalizedQualification || '';
+            flowState.jobProfile = derivedFlow.jobProfile || jobProfile || '';
+            renderWorkFlow();
+        }
+
+        function resetWorkFlow() {
+            flowState.category = '';
+            flowState.qualification = '';
+            flowState.jobProfile = '';
+            renderWorkFlow();
+        }
+
+        renderWorkFlow();
+
+        function resetAutoFilledFields() {
+            const fieldsToReset = [
+                'name', 'gender', 'dob', 'marital_status', 'mobile', 'present_address', 
+                'permanent_address', 'state', 'district', 'nature_of_work', 
+                'skill_category', 'education', 'role_type', 'blood_group', 'pf_no', 'esi_no', 'uan_number', 'email', 'father_name'
+            ];
+            
+            fieldsToReset.forEach(key => {
+                const field = form.querySelector(`[name="${key}"]`);
+                if (field) {
+                    if (field.hasAttribute('readonly')) {
+                        field.value = ''; // Only clear if it was auto-filled
+                    }
+                    field.removeAttribute('readonly');
+                    if (field.tagName === 'SELECT') {
+                        field.style.pointerEvents = 'auto';
+                        field.style.backgroundColor = '';
+                    }
+                }
+            });
+            resetWorkFlow();
+            const photoInput = form.querySelector('[name="photo"]');
+            if(photoInput) photoInput.setAttribute('required', 'true');
+        }
+
+        function setFieldValue(name, value) {
+          const field = form.querySelector(`[name="${name}"]`);
+          if (!field) return;
+          field.value = value ?? '';
+        }
+
+        function passTypeFromWorker(worker) {
+          const raw = String(worker.pass_type || worker.worker_type || worker.role_type || '').toLowerCase();
+          if (raw.includes('supervisor')) return 'Supervisor';
+          if (raw.includes('representative')) return 'Representative';
+          if (raw.includes('contractor')) return 'Contractor';
+          return 'Workman';
+        }
+
+        function editWorker(worker) {
+          form.reset();
+          document.getElementById('workerEditId').value = worker.id || '';
+          document.getElementById('enrollFormTitle').textContent = ' Edit Worker Enrollment';
+
+          const values = {
+            work_order_no: worker.work_order_no,
+            project_name: worker.project_name || <?= json_encode($project_name ?: 'General Project') ?>,
+            pass_type: passTypeFromWorker(worker),
+            registration_date: worker.registration_date || new Date().toISOString().slice(0, 10),
+            aadhaar: worker.aadhaar,
+            name: worker.name,
+            father_name: worker.father_name,
+            gender: worker.gender,
+            dob: worker.dob,
+            marital_status: worker.marital_status,
+            nationality: worker.nationality || 'Indian',
+            identification_mark: worker.identification_mark,
+            present_address: worker.present_address,
+            permanent_address: worker.permanent_address,
+            state: worker.state,
+            district: worker.district,
+            pincode: worker.pincode,
+            mobile: worker.mobile,
+            department: worker.department || defaultDepartment,
+            experience: worker.experience,
+            pf_no: worker.pf_no,
+            esi_no: worker.esi_no,
+            epf_registered_worker: worker.pf_no ? 'YES' : 'NO',
+            esi_registered_worker: worker.esi_no ? 'YES' : 'NO',
+            certified_wage_rate: worker.certified_wage_rate,
+            safety_language: worker.safety_language,
+            blood_group: worker.blood_group,
+            region: worker.region,
+            pwd_status: worker.pwd_status,
+            passport_no: worker.passport_no,
+            driving_licence_no: worker.driving_licence_no,
+            email: worker.email,
+            uan_number: worker.uan_number,
+            nature_of_work: worker.nature_of_work,
+            skill_category: worker.skill_category,
+            education: worker.education,
+            role_type: worker.role_type || worker.skill_category
+          };
+
+          Object.entries(values).forEach(([name, value]) => setFieldValue(name, value));
+          toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
+          toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
+          const deptField = form.querySelector('[name="department"]');
+          if (deptField && defaultDepartment) {
+            deptField.setAttribute('readonly', true);
+            deptField.style.backgroundColor = '#f1f5f9';
+          }
+          document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => input.removeAttribute('required'));
+          syncWorkFlowFromFields();
+          listSection.style.display = 'none';
+          formSection.style.display = 'block';
+          formSection.classList.remove('hidden');
+          activateTab('basic');
+        }
+
+        async function deleteWorker(workerId, workerName) {
+          const ok = confirm(`Delete worker "${workerName}"?`);
+          if (!ok) return;
+
+          try {
+            const body = new FormData();
+            body.append('worker_id', workerId);
+            const res = await fetch('../../api/delete_workman_4a.php', { method: 'POST', body });
+            const text = await res.text();
+            let result = {};
+            try { result = text ? JSON.parse(text) : {}; } catch (e) { result = { success: false, message: text }; }
+            if (result.success) {
+              notify('Deleted', result.message || 'Worker deleted successfully.', 'success').then(() => location.reload());
+            } else {
+              notify('Error', result.message || `Delete failed. HTTP ${res.status}`, 'error');
+            }
+          } catch (err) {
+            notify('Error', err.message || 'Delete failed.', 'error');
+          }
+        }
+
+        function notify(title, message, type = 'info') {
+          if (typeof Swal !== 'undefined' && Swal.fire) {
+            return Swal.fire(title, message, type);
+          }
+
+          const text = message ? `${title}: ${message}` : title;
+          alert(text);
+          return Promise.resolve();
+        }
+
+        async function submitEnrollment(action = 'submit') {
+          if (action === 'draft') {
+            const draftBtn = document.getElementById('btnSaveDraft');
+            draftBtn.disabled = true;
+            draftBtn.innerText = 'Saving...';
+            const formData = new FormData(form);
+            formData.append('action', 'draft');
+            try {
+              const res = await fetch('../../api/save_worker_4a.php', { method: 'POST', body: formData });
+              const responseText = await res.text();
+              let result = {};
+              try { result = responseText ? JSON.parse(responseText) : {}; } catch (parseErr) { result = { success: false, message: responseText || 'Invalid server response.' }; }
+              if (result.success) notify('Saved', result.message || 'Draft saved successfully.', 'success').then(() => location.reload());
+              else notify('Error', result.message || `Draft save failed. HTTP ${res.status}`, 'error');
+            } catch (err) {
+              notify('Error', err.message || 'Server error.', 'error');
+            } finally {
+              draftBtn.disabled = false;
+              draftBtn.innerText = 'Save Draft';
+            }
+            return;
+          }
+
+          if (!flowState.category || !flowState.qualification || !flowState.jobProfile) {
+            activateTab('work');
+            notify('Selection Required', 'Please complete Category, Qualification, and Job Profile in the Work / Compliance flow.', 'warning');
+            return;
+          }
+          
+          // Custom Validation: Find first invalid field and switch to its tab
+          if (!form.checkValidity()) {
+            const firstInvalid = form.querySelector(':invalid');
+            if (firstInvalid) {
+              const tabPane = firstInvalid.closest('.modal-tab-content');
+              if (tabPane) {
+                const tabId = tabPane.id.replace('tab-', '');
+                activateTab(tabId);
+                setTimeout(() => firstInvalid.focus(), 100);
+              }
+            }
+            form.reportValidity();
+            return;
+          }
+
+          // ========== ANNEXURE 5/A: CLIENT-SIDE LIMIT CHECK ==========
+          const passType = form.querySelector('[name="pass_type"]')?.value || 'Workman';
+          let limitType = 'Workman';
+          if (passType.toLowerCase().includes('supervisor')) limitType = 'Supervisor';
+          else if (passType.toLowerCase().includes('representative')) limitType = 'Representative';
+          else if (passType.toLowerCase().includes('contractor')) limitType = 'Contractor';
+          
+          if (typeof PassLimitValidator !== 'undefined') {
+            const isEdit = Boolean(document.getElementById('workerEditId')?.value);
+            if (!isEdit && !PassLimitValidator.validate(limitType, 1)) return;
+          }
+          // ========== END ANNEXURE 5/A CHECK ==========
+
+          const btn = document.getElementById('btnSubmit');
+          btn.disabled = true; btn.innerText = 'Submitting...';
+          
+          const formData = new FormData(form);
+          formData.append('action', 'submit');
+          try {
+            const res = await fetch('../../api/save_worker_4a.php', { method: 'POST', body: formData });
+            const responseText = await res.text();
+            let result = {};
+            try {
+              result = responseText ? JSON.parse(responseText) : {};
+            } catch (parseErr) {
+              result = { success: false, message: responseText || 'Invalid server response.' };
+            }
+            if (result.success) {
+              notify('Success', result.message + '\nTemp ID: ' + result.temp_id, 'success').then(() => location.reload());
+            } else {
+              notify('Error', result.message || `Enrollment failed. HTTP ${res.status}`, 'error');
+            }
+          } catch (err) { notify('Error', err.message || 'Server error.', 'error'); }
+          finally { btn.disabled = false; btn.innerText = 'Submit Enrollment'; }
+        }
+
+        document.getElementById('btnSaveDraft').onclick = () => submitEnrollment('draft');
+
+        form.onsubmit = async (e) => {
+          e.preventDefault();
+          submitEnrollment('submit');
+        };
+
+    function viewWorker(w) {
+      document.getElementById('viewContent').innerHTML = `
+        <div style="display:flex; gap:20px;">
+          <img src="../../uploads/workers/${w.photo}" style="width:120px;height:140px;object-fit:cover;border:1px solid #ddd;">
+          <div>
+            <h4 style="margin:0">${w.name}</h4>
+            <div style="color:var(--text-muted);margin-bottom:10px;">${w.gender} | DOB: ${w.dob}</div>
+            <div><strong>Temp ID:</strong> <span class="text-primary">${w.temp_id}</span></div>
+            <div><strong>Aadhaar:</strong> ${w.aadhaar}</div>
+            <div><strong>Work:</strong> ${w.nature_of_work} (${w.department})</div>
+          </div>
+        </div>
+        <hr>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px;">
+          <div><strong>State:</strong> ${w.state}</div>
+          <div><strong>District:</strong> ${w.district}</div>
+          <div><strong>Mobile:</strong> ${w.mobile}</div>
+          <div><strong>Emergency:</strong> ${w.emergency_contact}</div>
+          <div><strong>Blood Group:</strong> ${w.blood_group || 'N/A'}</div>
+          <div><strong>Skill:</strong> ${w.skill_category}</div>
+        </div>
+      `;
+      viewModal.classList.remove('hidden');
+      viewModal.classList.add('show');
+    }
+    
+    function closeViewModal() {
+      viewModal.classList.remove('show');
+      setTimeout(() => viewModal.classList.add('hidden'), 250);
+    }
+
+    document.getElementById('searchWorker').onkeyup = function() {
+      const q = this.value.toLowerCase();
+      document.querySelectorAll('#workerTable tbody tr').forEach(row => {
+        row.style.display = row.innerText.toLowerCase().includes(q) ? '' : 'none';
+      });
+    };
+    </script>
+    <?php
+}
+
+renderLayout("Worker Enrollment (4A)", 'renderContent', $role, $name);

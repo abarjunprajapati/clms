@@ -1,0 +1,26 @@
+{
+    "sourceFile": "api/check_session.php",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 2,
+            "patches": [
+                {
+                    "date": 1777442578893,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1777442587955,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -1,7 +1,7 @@\n <?php\r\n session_start();\r\n-require_once __DIR__ . '..//../include/config.php';\r\n+require_once __DIR__ . '../include/config.php';\r\n header('Content-Type: application/json');\r\n \r\n if (!isset($_SESSION['user_id'])) {\r\n     echo json_encode([\r\n"
+                },
+                {
+                    "date": 1777443022141,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -1,7 +1,7 @@\n <?php\r\n session_start();\r\n-require_once __DIR__ . '../include/config.php';\r\n+require_once __DIR__ . '/include/config.php';\r\n header('Content-Type: application/json');\r\n \r\n if (!isset($_SESSION['user_id'])) {\r\n     echo json_encode([\r\n"
+                }
+            ],
+            "date": 1777442578893,
+            "name": "Commit-0",
+            "content": "<?php\r\nsession_start();\r\nrequire_once __DIR__ . '..//../include/config.php';\r\nheader('Content-Type: application/json');\r\n\r\nif (!isset($_SESSION['user_id'])) {\r\n    echo json_encode([\r\n        \"status\" => \"error\", \r\n        \"message\" => \"Unauthorized - please login\"\r\n    ]);\r\n    exit;\r\n}\r\n\r\n$contractor_id = $_SESSION['contractor_id'] ?? $_SESSION['user_id'] ?? null;\r\n$application_id = $_SESSION['current_application_id'] ?? null;\r\n\r\n// Auto-recover application_id from DB if missing in session\r\nif (!$application_id && $contractor_id) {\r\n    $stmt = $conn->prepare(\"SELECT application_id FROM annexure2a WHERE contractor_id = ? ORDER BY id DESC LIMIT 1\");\r\n    if ($stmt) {\r\n        $stmt->bind_param(\"i\", $contractor_id);\r\n        $stmt->execute();\r\n        $result = $stmt->get_result();\r\n        $row = $result->fetch_assoc();\r\n        if ($row && !empty($row['application_id'])) {\r\n            $application_id = $row['application_id'];\r\n            $_SESSION['current_application_id'] = $application_id;\r\n        }\r\n        $stmt->close();\r\n    }\r\n}\r\n\r\necho json_encode([\r\n    \"status\" => \"success\",\r\n    \"user_id\" => $_SESSION['user_id'],\r\n    \"role\" => $_SESSION['role'] ?? 'unknown',\r\n    \"name\" => $_SESSION['name'] ?? 'User',\r\n    \"contractor_id\" => $contractor_id,\r\n    \"application_id\" => $application_id\r\n]);\r\n?>\r\n\r\n"
+        }
+    ]
+}

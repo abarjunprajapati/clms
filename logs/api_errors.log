@@ -1,0 +1,19 @@
+[CATCH] 2026-05-21T11:57:55+05:30 - Prepare failed: Unknown column 'd.doc_type' in 'field list' | Query: 
+        SELECT d.doc_type, d.file_path, d.doc_name as original_name
+        FROM documents d
+        JOIN annexure2a a ON d.application_id = a.application_id
+        WHERE a.contractor_id = ?
+     in /home/sachin/csl_web/clms/config.live.php:85
+REQUEST: /api/welfare/get_contractor_selections.php?id=1
+[CATCH] 2026-05-21T12:01:42+05:30 - Prepare failed: Unknown column 'd.application_id' in 'on clause' | Query: SELECT d.document_type as doc_type, d.file_path, '' as original_name FROM documents d JOIN annexure2a a ON d.application_id = a.application_id WHERE a.contractor_id = ? in /home/sachin/csl_web/clms/config.live.php:85
+REQUEST: /api/welfare/get_contractor_selections.php?id=1
+[CATCH] 2026-05-21T12:03:06+05:30 - Prepare failed: Unknown column 'd.application_id' in 'on clause' | Query: SELECT d.document_type as doc_type, d.file_path, '' as original_name FROM documents d JOIN annexure2a a ON d.application_id = a.application_id WHERE a.contractor_id = ? in /home/sachin/csl_web/clms/config.live.php:85
+REQUEST: /api/welfare/get_contractor_selections.php?id=1
+[CATCH] 2026-05-21T12:09:18+05:30 - Prepare failed: Unknown column 'd.application_id' in 'on clause' | Query: SELECT d.document_type as doc_type, d.file_path, '' as original_name FROM documents d JOIN annexure2a a ON d.application_id = a.application_id WHERE a.contractor_id = ? in /home/sachin/csl_web/clms/config.live.php:85
+REQUEST: /api/welfare/get_contractor_selections.php?id=1
+[CATCH] 2026-05-21T12:11:15+05:30 - Prepare failed: Unknown column 'd.application_id' in 'on clause' | Query: SELECT d.document_type as doc_type, d.file_path, '' as original_name FROM documents d JOIN annexure2a a ON d.application_id = a.application_id WHERE a.contractor_id = ? in /home/sachin/csl_web/clms/config.live.php:85
+REQUEST: /api/welfare/get_contractor_selections.php?id=1
+[CATCH] 2026-05-21T12:18:43+05:30 - Prepare failed: Unknown column 'd.application_id' in 'on clause' | Query: SELECT d.document_type as doc_type, d.file_path, '' as original_name FROM documents d JOIN annexure2a a ON d.application_id = a.application_id WHERE a.contractor_id = ? in /home/sachin/csl_web/clms/config.live.php:85
+REQUEST: /api/welfare/get_contractor_selections.php?id=1
+[CATCH] 2026-05-21T12:21:03+05:30 - Prepare failed: Unknown column 'd.application_id' in 'on clause' | Query: SELECT d.document_type as doc_type, d.file_path, '' as original_name FROM documents d JOIN annexure2a a ON d.application_id = a.application_id WHERE a.contractor_id = ? in /home/sachin/csl_web/clms/config.live.php:85
+REQUEST: /api/welfare/get_contractor_selections.php?id=1

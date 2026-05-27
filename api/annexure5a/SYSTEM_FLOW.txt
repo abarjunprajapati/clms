@@ -1,0 +1,231 @@
+/**
+ * ANNEXURE 5/A - System Flow Diagram (Visual)
+ * 
+ * यह diagram entire pass limit validation flow को दिखाता है
+ */
+
+const SYSTEM_FLOW = `
+╔════════════════════════════════════════════════════════════════════════════╗
+║               ANNEXURE 5/A - PASS LIMIT VALIDATION SYSTEM FLOW             ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 1: APPLICATION REGISTRATION                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────┐                                                       │
+│  │ Contractor      │                                                       │
+│  │ Registers Work  │                                                       │
+│  │ Order           │                                                       │
+│  └────────┬────────┘                                                       │
+│           │                                                                 │
+│           │ ✓ Submit Contractor Registration                                           │
+│           ▼                                                                 │
+│  ┌─────────────────────────────────────┐                                   │
+│  │ application_id = AUTO_GENERATED      │                                   │
+│  │ contractor_id = FROM_SESSION         │                                   │
+│  │ workflow_status = 'submitted'        │                                   │
+│  └─────────────────────────────────────┘                                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 2: WORKMEN ENROLLMENT                                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────────┐                                                      │
+│  │ Submit Annexure  │                                                      │
+│  │ 4A (Workmen)     │                                                      │
+│  └────────┬─────────┘                                                      │
+│           │                                                                 │
+│           │ ✓ Insert multiple workmen                                      │
+│           ▼                                                                 │
+│  ┌────────────────────────────────────┐                                    │
+│  │ workmen table                      │                                    │
+│  │ ├─ workman_1 (name, aadhar, ...)  │                                    │
+│  │ ├─ workman_2 (name, aadhar, ...)  │                                    │
+│  │ └─ workman_N (name, aadhar, ...)  │                                    │
+│  │                                    │                                    │
+│  │ workmen_count = COUNT(*)  [N]     │                                    │
+│  └────────────────────────────────────┘                                    │
+│                                                                             │
+│  Use: workmen_count for supervisor ratio calculation                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 3: REPRESENTATIVES & SUPERVISORS (ANNEXURE 3A)                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  3A. Add Representative                                                     │
+│  ┌─────────────────────────────┐                                           │
+│  │ Enter Representative Name   │                                           │
+│  └────────┬────────────────────┘                                           │
+│           │                                                                 │
+│           ▼                                                                 │
+│  ┌───────────────────────────────────────────┐                             │
+│  │ VALIDATE using Annexure 5/A               │                             │
+│  │                                           │                             │
+│  │ validatePassLimit(                        │                             │
+│  │   $conn,                                  │                             │
+│  │   $contractor_id,                         │                             │
+│  │   'Representative',  ← Pass Type         │                             │
+│  │   1                  ← Adding 1          │                             │
+│  │ )                                         │                             │
+│  └───────┬───────────────────────────────────┘                             │
+│          │                                                                  │
+│          ├─ YES: Count existing = 0, Max = 1, OK ✅                        │
+│          │        └─ INSERT representative into database                   │
+│          │                                                                  │
+│          └─ NO:  Count existing = 1, Max = 1, REJECTED ❌                 │
+│                 └─ Show: "Only 1 representative allowed"                   │
+│                                                                             │
+│  3B. Add Supervisor                                                         │
+│  ┌─────────────────────────────┐                                           │
+│  │ Enter Supervisor Details    │                                           │
+│  │ + How many to add?          │                                           │
+│  └────────┬────────────────────┘                                           │
+│           │                                                                 │
+│           ▼                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐              │
+│  │ CALCULATE ALLOWED (Dynamic based on workmen)             │              │
+│  │                                                          │              │
+│  │ Allowed = 1 + floor(workmen_count / 10)                 │              │
+│  │ Allowed = 1 + floor(N / 10)                             │              │
+│  │                                                          │              │
+│  │ Example: 35 workmen → 1 + floor(35/10) = 4 max          │              │
+│  └────────┬─────────────────────────────────────────────────┘              │
+│           │                                                                 │
+│           ▼                                                                 │
+│  ┌───────────────────────────────────────────────────────┐                 │
+│  │ COMPARE: Current (1) + Requested (2) vs Allowed (4)   │                 │
+│  │                                                       │                 │
+│  │ 1 + 2 = 3  ≤  4   → ✅ VALID                         │                 │
+│  │ INSERT into workmen table with type='Supervisor'      │                 │
+│  └───────────────────────────────────────────────────────┘                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 4: GATE PASS GENERATION (FINAL CHECK)                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Gate Pass Request for: Workman / Supervisor / Representative              │
+│                                                                             │
+│  ┌────────────────────────────────────┐                                    │
+│  │ get_permanent_pass.php             │                                    │
+│  │                                    │                                    │
+│  │ ✓ Fetch workmen from DB           │                                    │
+│  │ ✓ Fetch pass limit rules           │                                    │
+│  │ ✓ Call validatePassLimit()         │                                    │
+│  └────────┬───────────────────────────┘                                    │
+│           │                                                                 │
+│           ▼                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐              │
+│  │  validatePassLimit($conn, $cid, 'Workman', $count)       │              │
+│  │                                                          │              │
+│  │  ├─ Query: SELECT * FROM pass_limits                     │              │
+│  │  │          WHERE pass_type='Workman'                    │              │
+│  │  │                                                        │              │
+│  │  ├─ Result: No fixed limit (NoLimit rule)               │              │
+│  │  │                                                        │              │
+│  │  └─ Return: ✅ { valid: true, message: 'No limit' }     │              │
+│  │                                                          │              │
+│  └────────┬─────────────────────────────────────────────────┘              │
+│           │                                                                 │
+│           ├─ ✅ VALID:                                                     │
+│           │   └─ Generate pass → Create permanent_gate_passes record      │
+│           │   └─ Generate QR code                                          │
+│           │   └─ Send to worker                                            │
+│           │   └─ workflow_status = 'pass_generated'                        │
+│           │                                                                 │
+│           └─ ❌ INVALID:                                                   │
+│              └─ Show error: "Cannot add more [pass_type]"                  │
+│              └─ Offer welfare override option (if available)               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  PHASE 5: WELFARE ADMIN OVERRIDE (OPTIONAL)                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  IF validation fails AND override_allowed = true                            │
+│                                                                             │
+│  ┌──────────────────────────┐                                              │
+│  │ Welfare Admin Clicks     │                                              │
+│  │ "Override Limit" Button  │                                              │
+│  └────────┬─────────────────┘                                              │
+│           │                                                                 │
+│           │ POST /api/welfare/override_pass_limit                          │
+│           │ {                                                               │
+│           │   contractor_id: 123,                                          │
+│           │   pass_type: 'Supervisor',                                     │
+│           │   reason: 'Project requirement',                               │
+│           │   is_override: true                                            │
+│           │ }                                                               │
+│           ▼                                                                 │
+│  ┌──────────────────────────────────────────┐                              │
+│  │ validatePassLimit(..., true)  ← override │                              │
+│  │                                          │                              │
+│  │ Check: override_allowed = true?          │                              │
+│  │   ✅ YES → Bypass limit check           │                              │
+│  │   ❌ NO  → Reject override              │                              │
+│  └────────┬─────────────────────────────────┘                              │
+│           │                                                                 │
+│           ├─ ✅ ALLOWED:                                                   │
+│           │   ├─ Generate pass with OVERRIDE flag                          │
+│           │   ├─ Log: INSERT INTO audit_log (action='override', ...)      │
+│           │   └─ Send notification to supervisor                           │
+│           │                                                                 │
+│           └─ ❌ REJECTED:                                                  │
+│              └─ Show: "Override not allowed for this rule"                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+════════════════════════════════════════════════════════════════════════════════
+
+KEY DECISION POINTS:
+
+  ▶ Is current_count + requested_count <= max_allowed?
+    │
+    ├─ YES (✅) → Proceed to next step
+    │
+    └─ NO (❌) → Is is_override = true AND override_allowed = true?
+                 │
+                 ├─ YES → Allow with OVERRIDE flag
+                 │
+                 └─ NO  → Throw Exception / Show error
+
+════════════════════════════════════════════════════════════════════════════════
+
+DATABASE QUERIES EXECUTED:
+
+1. Get Pass Limit Rule:
+   SELECT * FROM pass_limits 
+   WHERE contractor_id IN (0, ?) AND pass_type = ? 
+   ORDER BY contractor_id DESC LIMIT 1
+
+2. Count Current Enrollments:
+   SELECT COUNT(*) FROM workmen 
+   WHERE contractor_id = ? AND type = ? AND status != 'removed'
+
+3. Get Workmen Count (for supervisor ratio):
+   SELECT COUNT(*) FROM workmen 
+   WHERE contractor_id = ? AND status != 'removed'
+
+4. Log Override:
+   INSERT INTO audit_log 
+   (action, contractor_id, pass_type, reason, admin_id, created_at) 
+   VALUES (?, ?, ?, ?, ?, NOW())
+
+════════════════════════════════════════════════════════════════════════════════
+`;
+
+// Output the diagram
+console.log(SYSTEM_FLOW);
+
+// Also provide as downloadable text
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = SYSTEM_FLOW;
+}
+

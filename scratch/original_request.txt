@@ -1,0 +1,237 @@
+<USER_REQUEST>
+# Annexure 2A – Complete UI Analysis & Exact Implementation Prompt
+
+## Objective
+
+Create the Annexure 2A Registration UI exactly like the uploaded hand-drawn structure.
+Do NOT change the flow, sequence, alignment, spacing, section order, or field grouping.
+The UI should look clean, modern, professional, but maintain the exact same structure shown in the sketch.
+
+---
+
+# COMPLETE UI STRUCTURE
+
+## Main Container
+
+* Center aligned form container.
+* White background.
+* Light grey border.
+* Border radius: 12px.
+* Soft shadow.
+* Padding: 24px.
+* Section spacing: 24px.
+* Responsive layout.
+* Desktop + tablet + mobile responsive.
+* Every section must have numbering exactly like sketch.
+
+---
+
+# SECTION 1
+
+## 1. Work Awarding Department
+
+### UI Layout
+
+* Label on top left.
+* Mandatory star (*) in red.
+* Full width dropdown.
+
+### Field Type
+
+Dropdown Select.
+
+### Placeholder
+
+"Select Department"
+
+### Validation
+
+* Required.
+* Red border on error.
+
+---
+
+# SECTION 2
+
+## 2. Whether Registered Under EPF
+
+### UI Layout
+
+* Horizontal radio buttons.
+* YES / NO.
+* Modern toggle style radio.
+
+### Design
+
+* Same row.
+* Proper spacing.
+* Rounded radio buttons.
+
+---
+
+# SECTION 3
+
+## 3. EPF Establishment Code
+
+### Visibility Rule
+
+Show only if:
+
+* Registered under EPF = YES.
+
+### Fields
+
+1. EPF Establishment Code input.
+2. Registered under EPF dropdown/radio.
+
+### UI
+
+* Inside bordered sub-card.
+* Light background.
+* Rounded corners.
+
+### Placeholder
+
+"Enter EPF Establishment Code"
+
+---
+
+# SECTION 4
+
+## 4. Whether Registered Under ESI
+
+### UI Layout
+
+* YES / NO radio buttons.
+* Same style as EPF section.
+
+---
+
+# SECTION 5
+
+## 5. ESI Establishment Code
+
+### Visibility Rule
+
+Show only if:
+
+* Registered under ESI = YES.
+
+### Placeholder
+
+"Enter ESI Establishment Code"
+
+### Additional Logic
+
+If ESI = NO:
+
+* Show reason textarea/input.
+
+---
+
+# SECTION 6
+
+## 6. Wage Declaration by Contractor
+
+##
+<truncated 3349 bytes>
+
+* Show dynamic table.
+  If NO:
+* Hide table.
+* Show reason field.
+
+---
+
+# VALIDATION REQUIREMENTS
+
+## Mandatory Fields
+
+Show:
+
+* Red star.
+* Inline validation.
+* Error text below field.
+
+## Mobile Validation
+
+* Only 10 digits.
+* Numeric only.
+
+## Upload Validation
+
+* PDF/JPG/PNG allowed.
+* Max size validation.
+
+---
+
+# UI/UX REQUIREMENTS
+
+## Typography
+
+* Font: Inter / Poppins.
+* Labels semi-bold.
+* Consistent spacing.
+
+## Input Fields
+
+* Height: 44px.
+* Border radius: 8px.
+* Border: light grey.
+* Focus border: blue.
+
+## Cards
+
+* Section cards with spacing.
+* Subtle shadows.
+
+## Responsive Design
+
+Desktop:
+
+* Multi-column.
+  Mobile:
+* Single column.
+
+---
+
+# EXACT VISUAL REQUIREMENTS
+
+The implementation must:
+
+* Match the sketch structure exactly.
+* Keep numbering same.
+* Keep table positions same.
+* Keep add buttons same.
+* Keep checkbox/radio placement same.
+* Keep section order same.
+* Keep dynamic row behaviour same.
+* Maintain enterprise professional UI.
+* No unnecessary redesign.
+* No section removal.
+* No extra cards.
+* No different alignment.
+* No missing field.
+
+---
+
+# FINAL IMPLEMENTATION GOAL
+
+Build a fully responsive enterprise-grade Annexure 2A registration form with:
+
+* Exact same structure as sketch.
+* Dynamic add-row functionality.
+* Conditional visibility logic.
+* Professional modern UI.
+* Proper validations.
+* Mobile responsiveness.
+* Clean spacing and alignment.
+* Production-ready layout. "m chas ta hu ki annexura2a m registrion tabs m kuch m shii other wise is k according modified kro ui and backend also"
+
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-05-20T15:38:44+05:30.
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from None to Gemini 3.5 Flash (High). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>

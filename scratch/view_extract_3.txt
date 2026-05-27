@@ -1,0 +1,49 @@
+Created At: 2026-05-20T16:51:26Z
+Completed At: 2026-05-20T16:51:27Z
+File Path: `file:///c:/xampp/htdocs/clms/pages/welfare/approve_contractors.php`
+Total Lines: 577
+Total Bytes: 29726
+Showing lines 360 to 455
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+360:         const r = { ...c, ...(sel.contractor || {}) };
+361:         const v = (val) => (val && val !== 'null' && val !== 'N/A' && String(val).trim() !== '') ? String(val) : '<span style="font-style:italic;color:var(--text-muted);font-weight:normal;"> - </span>';
+362:         const fmtDate = (d) => { try { return d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ' - '; } catch{ return d||' - '; } };
+363:         const badge = (val, yes='YES') => val === yes
+364:             ? `<span style="background:#d1fae5;color:#065f46;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;">${val}</span>`
+365:             : `<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;">${val||' - '}</span>`;
+366: 
+367:         let html = `<div class="form-container">`;
+368: 
+369:         // SECTION 1: General
+370:         html += `<div class="form-section-card">
+371:           <div class="form-section-header"><i class="fas fa-id-card"></i> 1. General Information</div>
+372:           <div class="form-grid">
+373:             <div class="form-field"><label>Vendor Code</label><div class="value-box"><code>${v(r.vendor_code)}</code></div></div>
+374:             <div class="form-field span-2"><label>Contractor / Vendor Name</label><div class="value-box" style="font-weight:700;color:#a5b4fc;">${v(r.display_name||r.contractor_name||r.vendor_name)}</div></div>
+375:             <div class="form-field"><label>Proprietor / Contact Person</label><div class="value-box">${v(r.c
+<truncated 5766 bytes>
+tificate</div>
+433:           <div class="form-grid">
+434:             <div class="form-field"><label>License No</label><div class="value-box"><code>${v(r.license_no||r.labour_license)}</code></div></div>
+435:             <div class="form-field"><label>Issued By</label><div class="value-box">${v(r.license_issued||r.license_issued_by)}</div></div>
+436:             <div class="form-field"><label>Issue Date</label><div class="value-box">${fmtDate(r.issued_date||r.license_issue_date)}</div></div>
+437:             <div class="form-field"><label>Expiry Date</label><div class="value-box" style="color:#f87171;font-weight:700;">${fmtDate(r.expiry_date||r.license_expiry_date)}</div></div>
+438:             <div class="form-field"><label>KLWF Reg No</label><div class="value-box"><code>${v(r.klwf_registration_no)}</code></div></div>
+439:             <div class="form-field"><label>Labour Identification No (LIN)</label><div class="value-box"><code>${v(r.labour_identification_no)}</code></div></div>
+440:           </div>
+441:         </div>`;
+442: 
+443:         // SECTION 6: Banking
+444:         html += `<div class="form-section-card">
+445:           <div class="form-section-header"><i class="fas fa-university"></i> 6. Banking Details</div>
+446:           <div class="form-grid">
+447:             <div class="form-field"><label>Bank Name</label><div class="value-box">${v(r.bank_name)}</div></div>
+448:             <div class="form-field"><label>Account Number</label><div class="value-box"><code>${v(r.bank_account)}</code></div></div>
+449:             <div class="form-field"><label>IFSC Code</label><div class="value-box"><code>${v(r.ifsc)}</code></div></div>
+450:           </div>
+451:         </div>`;
+452: 
+453:         // SECTION 7: Remarks
+454:         if (r.remarks) {
+455:             html += `<div class="form-section-card">
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

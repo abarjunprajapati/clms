@@ -1,0 +1,102 @@
+Created At: 2026-05-20T16:52:15Z
+Completed At: 2026-05-20T16:52:15Z
+File Path: `file:///c:/xampp/htdocs/clms/scratch/original_content.txt`
+Total Lines: 121
+Total Bytes: 4120
+Showing lines 1 to 121
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: Created At: 2026-05-20T16:51:56Z
+2: Completed At: 2026-05-20T16:51:56Z
+3: File Path: `file:///c:/xampp/htdocs/clms/pages/welfare/approve_contractors.php`
+4: Total Lines: 712
+5: Total Bytes: 30303
+6: Showing lines 300 to 520
+7: The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+8: 300:         font-weight: 700;
+9: 301:         color: #a5b4fc;
+10: 302:         text-transform: uppercase;
+11: 303:         letter-spacing: 0.5px;
+12: 304:         margin-bottom: 2px;
+13: 305:       }
+14: 306:       .doc-name {
+15: 307:         font-size: 13px;
+16: 308:         font-weight: 600;
+17: 309:         color: var(--text-primary);
+18: 310:         white-space: nowrap;
+19: 311:         overflow: hidden;
+20: 312:         text-overflow: ellipsis;
+21: 313:       }
+22: 314:       .doc-btn {
+23: 315:         font-size: 12px;
+24: 316:         font-weight: 700;
+25: 317:         color: #a5b4fc;
+26: 318:         text-decoration: none;
+27: 319:         display: flex;
+28: 320:         align-items: center;
+29: 321:         gap: 8px;
+30: 322:         background: rgba(99, 102, 241, 0.15);
+31: 323:         padding: 8px 16px;
+32: 324:         border-radius: 6px;
+33: 325:         transition: all 0.2s ease;
+34: 326:         flex-shrink: 0;
+35: 327:         border: 1px solid rgba(99, 102, 241, 0.2);
+36: 328:       }
+37: 329:       .doc-btn:hover {
+38: 330:         background: #6366f1;
+39: 331:    
+<truncated 1043 bytes>
+px 18px;
+69: 470:         transition: all 0.2s ease;
+70: 471:       }
+71: 472:       .doc-card:hover {
+72: 473:         background: rgba(99, 102, 241, 0.08);
+73: 474:         border-color: rgba(99, 102, 241, 0.25);
+74: 475:         transform: translateY(-1px);
+75: 476:       }
+76: 477:       .doc-info {
+77: 478:         display: flex;
+78: 479:         align-items: center;
+79: 480:         gap: 14px;
+80: 481:         min-width: 0; /* allows text truncation */
+81: 482:       }
+82: 483:       .doc-icon {
+83: 484:         font-size: 26px;
+84: 485:         color: #f87171;
+85: 486:         flex-shrink: 0;
+86: 487:       }
+87: 488:       .doc-meta {
+88: 489:         display: flex;
+89: 490:         flex-direction: column;
+90: 491:         min-width: 0;
+91: 492:       }
+92: 493:       .doc-type {
+93: 494:         font-size: 10px;
+94: 495:         font-weight: 700;
+95: 496:         color: #a5b4fc;
+96: 497:         text-transform: uppercase;
+97: 498:         letter-spacing: 0.5px;
+98: 499:         margin-bottom: 2px;
+99: 500:       }
+100: 501:       .doc-name {
+101: 502:         font-size: 13px;
+102: 503:         font-weight: 600;
+103: 504:         color: var(--text-primary);
+104: 505:         white-space: nowrap;
+105: 506:         overflow: hidden;
+106: 507:         text-overflow: ellipsis;
+107: 508:       }
+108: 509:       .doc-btn {
+109: 510:         font-size: 12px;
+110: 511:         font-weight: 700;
+111: 512:         color: #a5b4fc;
+112: 513:         text-decoration: none;
+113: 514:         display: flex;
+114: 515:         align-items: center;
+115: 516:         gap: 8px;
+116: 517:         background: rgba(99, 102, 241, 0.15);
+117: 518:         padding: 8px 16px;
+118: 519:         border-radius: 6px;
+119: 520:         transition: all 0.2s ease;
+120: The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+121: 
+The above content shows the entire, complete file contents of the requested file.

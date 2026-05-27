@@ -1,0 +1,89 @@
+Created At: 2026-05-20T16:47:52Z
+Completed At: 2026-05-20T16:47:53Z
+File Path: `file:///c:/xampp/htdocs/clms/pages/welfare/approve_contractors.php`
+Total Lines: 577
+Total Bytes: 32838
+Showing lines 1 to 577
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: <?php
+2: require_once __DIR__ . '/../../include/auth.php';
+3: checkAuth(['welfare_admin', 'super_admin', 'welfare_user', 'pass_user']);
+4: include __DIR__ . '/../../include/config.php';
+5: include __DIR__ . '/../../include/layout.php';
+6: 
+7: $role = $_SESSION['role'];
+8: $name = $_SESSION['name'] ?? 'Welfare Admin';
+9: 
+10: function renderContent() {
+11:     global $conn;
+12:     $pending_contractors = db_fetch_all($conn, "
+13:         SELECT a.*, c.vendor_code, c.license_file, c.epf_registered, c.esi_registered,
+14:                c.epf_code, c.esi_code, c.epf_esi_exemption_reason, c.wage_category,
+15:                c.ecp_number, c.ecp_valid_from, c.ecp_valid_to, c.workers_ecp,
+16:                c.workers_proposed_to_be_engaged, c.worker_category, c.contact_person as c_contact,
+17:                c.pan_no, c.gst_no, c.address, c.mobile as c_mobile, c.email as c_email,
+18:                a.contractor_id as cid,
+19:                COALESCE(a.contractor_name, c.contractor_name, c.vendor_name) as display_name
+20:         FROM annexure2a a 
+21:         JOIN contractors c ON a.contractor_id = c.id 
+22:         WHERE a.workflow_status IN ('submitted', 'under_review', 'pending') 
+23:         ORDER BY a.submitted_at DESC
+24:     ");
+25:     $threshold_row = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key = 'labour_license_threshold'");
+26:     $threshold = intval($threshold_row['setting_value'] ?? 20);
+27:     $can_edit_threshold = in_array($_SESSION['role'], ['welfare_admin', 'super_admin']);
+28:     ?>
+29:     <div 
+<truncated 32051 bytes>
+etch('../../api/welfare/update_threshold.php', { method:'POST', body:fd });
+528:             const d = await resp.json();
+529:             if (d.success) {
+530:                 document.getElementById('thresholdDisplay').textContent = val;
+531:                 closeModal('thresholdModal');
+532:                 alert(d.message);
+533:             } else {
+534:                 alert(d.message || 'Failed to save.');
+535:             }
+536:         } catch(e) { alert('Network error.'); }
+537:     }
+538: 
+539:     function closeModal(id) {
+540:         document.getElementById(id).classList.add('hidden');
+541:     }
+542: 
+543:     document.getElementById('actionForm').addEventListener('submit', async (e) => {
+544:         e.preventDefault();
+545:         const btn = document.getElementById('submitActionBtn');
+546:         btn.disabled = true;
+547:         btn.innerText = 'Processing...';
+548: 
+549:         const formData = new FormData(e.target);
+550:         
+551:         try {
+552:             const data = await window.apiFetch('../../api/welfare/update_contractor_status_v2.php', {
+553:                 method: 'POST',
+554:                 body: formData,
+555:                 silent: true
+556:             });
+557:             if (data.success) {
+558:                 alert('Contractor ' + formData.get('status') + ' successfully');
+559:                 location.reload();
+560:             } else {
+561:                 alert(data.error || 'Action failed');
+562:                 btn.disabled = false;
+563:                 btn.innerText = 'Confirm Action';
+564:             }
+565:         } catch (e) {
+566:             alert('Error updating status');
+567:             btn.disabled = false;
+568:             btn.innerText = 'Confirm Action';
+569:         }
+570:     });
+571:     </script>
+572:     <?php
+573: }
+574: renderLayout("Contractor Approval", 'renderContent', $role, $name);
+575: ?>
+576: 
+577: 
+The above content shows the entire, complete file contents of the requested file.

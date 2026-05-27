@@ -1,0 +1,5 @@
+[2026-05-16 12:10:51] Access Denied: User Role 'welfare_admin' tried to access '/clms/pages/contractor/dashboard.php'. Required: contractor
+[2026-05-16 12:10:55] Access Denied: User Role 'welfare_admin' tried to access ''. Required: welfare_user
+[2026-05-16 12:12:29] Access Denied: User Role 'welfare_admin' tried to access '/clms/pages/contractor/dashboard.php'. Required: contractor
+[2026-05-16 12:14:32] Access Denied: User Role 'welfare_admin' tried to access '/clms/pages/contractor/dashboard.php'. Required: contractor
+[2026-05-16 12:18:01] Access Denied: User Role 'welfare_admin' tried to access '/clms/pages/contractor/dashboard.php'. Required: contractor

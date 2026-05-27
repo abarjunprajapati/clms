@@ -1,0 +1,5 @@
+Deletion started at 2026-05-16 14:19:56
+Fatal Catch: array_merge(): Argument #3 must be of type array, string given
+Deletion started at 2026-05-16 14:20:30
+Target user_id: 0
+User not found: 0
