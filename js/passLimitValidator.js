@@ -70,7 +70,27 @@ const PassLimitValidator = (() => {
         `Trying to add: ${count}\n\n` +
         `Rule: ${limit.rule}\n\n` +
         `Contact Welfare Admin for override.`;
-      alert(msg);
+      if (typeof Swal !== 'undefined' && Swal.fire) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Enrollment Limit Reached',
+          html: `
+            <div style="text-align:left;line-height:1.6">
+              <p style="margin:0 0 12px;">This enrollment cannot be submitted because the approved limit for <strong>${passType}</strong> passes has already been reached.</p>
+              <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+                <div><strong>Allowed:</strong> ${limit.allowed}</div>
+                <div><strong>Already Enrolled:</strong> ${limit.current || 0}</div>
+                <div><strong>New Request:</strong> ${count}</div>
+                <div><strong>Rule:</strong> ${limit.rule || 'Fixed limit'}</div>
+              </div>
+              <p style="margin:12px 0 0;color:#64748b;">Please contact Welfare Admin if an exception or override is required.</p>
+            </div>`,
+          confirmButtonText: 'Understood',
+          confirmButtonColor: '#1e293b'
+        });
+      } else {
+        alert(msg);
+      }
       return false;
     }
 

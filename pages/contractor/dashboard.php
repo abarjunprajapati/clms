@@ -71,6 +71,7 @@ function contractorRecentRows(mysqli $conn, string $sql): array {
 
 function contractorWorkerTypeWhere(string $kind): string {
     $map = [
+        'contractor' => ["'contractor'", "'Contractor Pass'"],
         'representative' => ["'representative'", "'Representative Pass'"],
         'supervisor' => ["'supervisor'", "'Supervisor Pass'"],
         'workmen' => ["'workmen'", "'workman'", "'Workmen Pass'", "'Workman Pass'"],
@@ -189,9 +190,10 @@ function renderContent() {
         $flow = [
             ['label' => 'Dashboard', 'detail' => 'Overview of your workforce and compliance', 'icon' => 'fa-tachometer-alt', 'link' => 'dashboard.php', 'status' => 'done', 'count' => 'Live'],
             // ['label' => 'Customer Registration', 'detail' => 'Customer mapped statutory and manpower submission', 'icon' => 'fa-file-signature', 'link' => 'annexure-3a.php', 'status' => 'active', 'count' => 'Open'],
-            ['label' => 'Representative', 'detail' => 'Register official representatives (Max 2)', 'icon' => 'fa-user-tie', 'link' => 'annexure-3a-worker.php?type=representative', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('representative'))],
-            ['label' => 'Supervisor', 'detail' => 'Register site supervisors (1 per 50 workmen)', 'icon' => 'fa-user-shield', 'link' => 'annexure-3a-worker.php?type=supervisor', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('supervisor'))],
-            ['label' => 'Workmen', 'detail' => 'Register and manage your workers', 'icon' => 'fa-users', 'link' => 'annexure-3a-worker.php?type=workmen', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('workmen'))],
+            ['label' => 'Contractor', 'detail' => 'Enroll yourself for site access and training', 'icon' => 'fa-user-check', 'link' => 'enrolment-4a.php?type=contractor', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('contractor'))],
+            ['label' => 'Representative', 'detail' => 'Register official representatives (Max 2)', 'icon' => 'fa-user-tie', 'link' => 'enrolment-4a.php?type=representative', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('representative'))],
+            ['label' => 'Supervisor', 'detail' => 'Register site supervisors (1 per 50 workmen)', 'icon' => 'fa-user-shield', 'link' => 'enrolment-4a.php?type=supervisor', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('supervisor'))],
+            ['label' => 'Workmen', 'detail' => 'Register and manage your workers', 'icon' => 'fa-users', 'link' => 'enrolment-4a.php?type=workmen', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('workmen'))],
             ['label' => 'Safety Training', 'detail' => 'Request batches and view results', 'icon' => 'fa-graduation-cap', 'link' => 'training_request.php', 'status' => 'active', 'count' => 'Requests'],
             ['label' => 'Gate Pass', 'detail' => 'Generate temporary and monthly passes', 'icon' => 'fa-id-badge', 'link' => 'gatepass-6a.php', 'status' => 'active', 'count' => 'Generate'],
             ['label' => 'ACC Card', 'detail' => 'Track permanent biometric card status', 'icon' => 'fa-fingerprint', 'link' => 'pass_status.php', 'status' => 'active', 'count' => 'Track'],

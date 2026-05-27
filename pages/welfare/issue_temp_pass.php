@@ -14,11 +14,19 @@ function renderContent() {
     global $conn, $workman_id;
     
     if (!$workman_id) {
+        $issuedPasses = db_fetch_all($conn, "SELECT w.*, c.contractor_name
+                                            FROM workmen w
+                                            JOIN contractors c ON w.contractor_id = c.id
+                                            WHERE (
+                                                w.status = 'temporary_issued'
+                                                OR COALESCE(w.temp_pass_status, 0) = 1
+                                                OR COALESCE(w.temp_pass_no, '') != ''
+                                            )
+                                            ORDER BY COALESCE(w.temp_valid_to, w.valid_to, w.updated_at) DESC");
         // Show Search UI if no ID is provided
         ?>
         <div class="content-header">
-          <h2 class="page-title">Issue Temporary Gate Pass</h2>
-          <!-- <p class="page-subtitle">Search for a worker to issue their temporary gate pass.</p> -->
+          <h2 class="page-title">Temporary Gate Pass Issue</h2>
         </div>
         <div class="card glass">
           <div class="card-body">
@@ -67,6 +75,75 @@ function renderContent() {
               </table>
             </div>
             <?php endif; ?>
+          </div>
+        </div>
+
+        <div class="card glass mt-4">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-id-card"></i> Issued Temporary ID Cards</div>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Workman</th>
+                  <th>Temp Pass No</th>
+                  <th>Contractor</th>
+                  <th>Valid From</th>
+                  <th>Valid To</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php foreach($issuedPasses as $pass):
+                  $validFrom = $pass['temp_valid_from'] ?? $pass['valid_from'] ?? null;
+                  $validTo = $pass['temp_valid_to'] ?? $pass['valid_to'] ?? null;
+                  $daysLeft = $validTo ? ceil((strtotime($validTo) - time()) / 86400) : null;
+                ?>
+                <tr>
+                  <td>
+                    <div style="font-weight:600"><?= htmlspecialchars($pass['name'] ?? 'Unknown') ?></div>
+                    <div style="font-size:11px;opacity:0.65">ID: <?= htmlspecialchars($pass['id'] ?? '') ?> | <?= htmlspecialchars(ucfirst($pass['worker_type'] ?? 'Workmen')) ?></div>
+                  </td>
+                  <td><code><?= htmlspecialchars($pass['temp_pass_no'] ?? 'TEMP-PENDING') ?></code></td>
+                  <td><?= htmlspecialchars($pass['contractor_name'] ?? 'N/A') ?></td>
+                  <td><?= $validFrom ? date('d M Y', strtotime($validFrom)) : 'N/A' ?></td>
+                  <td><?= $validTo ? date('d M Y', strtotime($validTo)) : 'N/A' ?></td>
+                  <td>
+                    <?php if($daysLeft !== null && $daysLeft < 0): ?>
+                      <span class="badge badge-danger">Expired</span>
+                    <?php elseif($daysLeft !== null && $daysLeft <= 3): ?>
+                      <span class="badge badge-warning"><?= $daysLeft ?> Days Left</span>
+                    <?php else: ?>
+                      <span class="badge badge-success">Active</span>
+                    <?php endif; ?>
+                  </td>
+                  <td style="display:flex;gap:8px;flex-wrap:wrap">
+                    <a href="../../api/welfare/download_pass.php?id=<?= (int)$pass['id'] ?>&type=temp" target="_blank" class="btn btn-sm btn-outline">
+                      <i class="fas fa-eye"></i> View
+                    </a>
+                    <a href="../../api/welfare/download_pass.php?id=<?= (int)$pass['id'] ?>&type=temp&action=print" target="_blank" class="btn btn-sm btn-primary">
+                      <i class="fas fa-print"></i> Print
+                    </a>
+                    <?php if(empty($pass['acc_number'])): ?>
+                    <a href="acc_generation.php" class="btn btn-sm btn-success">
+                      <i class="fas fa-microchip"></i> Generate ACC
+                    </a>
+                    <?php endif; ?>
+                  </td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if(empty($issuedPasses)): ?>
+                <tr>
+                  <td colspan="7" style="text-align:center;padding:40px;color:var(--gray-500)">
+                    <i class="fas fa-id-card" style="font-size:42px;opacity:0.3"></i><br>
+                    No temporary ID cards issued yet.
+                  </td>
+                </tr>
+                <?php endif; ?>
+              </tbody>
+            </table>
           </div>
         </div>
         <?php
@@ -205,7 +282,7 @@ function renderContent() {
           const result = await res.json();
           if (result.success) {
             alert(result.message || 'Temporary pass issued successfully!');
-            window.location.href = 'issue_acc_pass.php?id=' + data.workman_id;
+            window.location.href = 'acc_generation.php';
           } else {
             alert('Error: ' + (result.message || result.error || 'Unknown error'));
           }
@@ -218,4 +295,3 @@ function renderContent() {
 }
 
 renderLayout("Issue Temporary Pass", 'renderContent', $role, $name);
-

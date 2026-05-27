@@ -144,8 +144,9 @@ function renderContent() {
       </thead>
       <tbody>
         <?php foreach ($limits as $l):
-          $max = (int)($l['max_allowed'] ?? 0);
-          $cur = (int)($l['current_count'] ?? 0);
+          $calc = calculateAllowed($conn, (int)$l['contractor_id'], $l['pass_type']);
+          $max = $calc['allowed'];
+          $cur = getCurrentPassCount($conn, (int)$l['contractor_id'], $l['pass_type']);
           $util = $max > 0 ? round(($cur / $max) * 100) : 0;
           $barColor = $util > 90 ? '#ef4444' : ($util > 70 ? '#f59e0b' : '#10b981');
         ?>
@@ -155,7 +156,7 @@ function renderContent() {
             <div style="font-size:11px;color:var(--text-muted);"><?= htmlspecialchars($l['vendor_code'] ?? '') ?></div>
           </td>
           <td><span class="badge <?= getBadgeClass($l['pass_type']) ?>"><?= $l['pass_type'] ?></span></td>
-          <td><strong><?= $l['max_allowed'] ?? '<em>Dynamic</em>' ?></strong></td>
+          <td><strong><?= $max === null ? '<em>Dynamic</em>' : (int)$max ?></strong></td>
           <td><?= $cur ?></td>
           <td>
             <div style="display:flex;align-items:center;gap:8px;">
@@ -165,7 +166,7 @@ function renderContent() {
               <span style="font-size:11px;font-weight:600;"><?= $util ?>%</span>
             </div>
           </td>
-          <td style="font-size:12px;"><?= htmlspecialchars($l['rule'] ?? 'Fixed') ?></td>
+          <td style="font-size:12px;"><?= htmlspecialchars($calc['rule'] ?? ($l['rule'] ?? 'Fixed')) ?></td>
           <td>
             <?php if ($l['override_allowed'] ?? 1): ?>
               <span class="badge badge-success" style="font-size:10px;">Yes</span>

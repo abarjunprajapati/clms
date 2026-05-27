@@ -73,7 +73,7 @@ function renderContent() {
                             <td><?= htmlspecialchars($w['trade']) ?> (<?= htmlspecialchars($w['skill']) ?>)</td>
                             <td><span class="badge badge-gray"><?= strtoupper($w['status']) ?></span></td>
                             <td>
-                                <a href="annexure-3a-worker.php?type=workmen&aadhaar=<?= $w['aadhaar'] ?>" class="btn btn-sm btn-outline-primary"><i class="fas fa-user-plus"></i> Enroll</a>
+                                <a href="enrolment-4a.php?type=workmen&aadhaar=<?= $w['aadhaar'] ?>" class="btn btn-sm btn-outline-primary"><i class="fas fa-user-plus"></i> Enroll</a>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -109,14 +109,14 @@ function renderContent() {
                                 Name: ${w.name} | Trade: ${w.trade || 'N/A'}<br>
                                 Status: Eligible for re-enrollment.
                             </div>
-                            <a href="annexure-3a-worker.php?type=workmen&aadhaar=${aadhaar}" class="btn btn-primary"><i class="fas fa-user-plus"></i> Proceed to Enroll</a>
+                            <a href="enrolment-4a.php?type=workmen&aadhaar=${aadhaar}" class="btn btn-primary"><i class="fas fa-user-plus"></i> Proceed to Enroll</a>
                         </div>
                     `;
                 } else {
                     resDiv.innerHTML = `
                         <div class="alert alert-warning">
                             <i class="fas fa-info-circle"></i> Worker not found in the pool. They might be new or currently active under another contractor.
-                            <br><a href="annexure-3a-worker.php?type=workmen" class="btn btn-sm btn-outline-dark mt-2">Register as New Worker</a>
+                            <br><a href="enrolment-4a.php?type=workmen" class="btn btn-sm btn-outline-dark mt-2">Register as New Worker</a>
                         </div>
                     `;
                 }

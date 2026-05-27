@@ -11,14 +11,42 @@ $name = $_SESSION['name'] ?? 'Pass Issuing Officer';
 function renderContent() {
     global $conn;
     
-    $query = "SELECT w.*, c.contractor_name, gpr.request_no, gprw.status as request_status, gprw.created_at as request_date
+    $query = "(SELECT
+                w.*,
+                c.contractor_name,
+                gpr.request_no,
+                COALESCE(gprw.status, gpr.status, 'approved') AS request_status,
+                COALESCE(gprw.updated_at, gpr.updated_at, gprw.created_at, gpr.created_at) AS request_date
               FROM gate_pass_request_workers gprw
               JOIN gate_pass_requests gpr ON gprw.request_id = gpr.id
               JOIN workmen w ON gprw.workman_id = w.id
               LEFT JOIN contractors c ON w.contractor_id = c.id
-              WHERE gprw.status = 'approved'
-                AND (w.safety_training_status = 1 OR w.training_status IN ('pass','passed','training_passed','qualified','completed'))
-              ORDER BY gprw.created_at ASC";
+              WHERE (
+                  LOWER(COALESCE(gprw.status, '')) = 'approved'
+                  OR LOWER(COALESCE(gpr.status, '')) = 'approved'
+                )
+                AND LOWER(COALESCE(gprw.status, '')) != 'issued'
+                AND LOWER(COALESCE(gpr.status, '')) != 'issued'
+                AND COALESCE(w.is_blocked, 0) = 0)
+              UNION
+              (SELECT
+                w.*,
+                c.contractor_name,
+                CONCAT('VERIFIED-', w.id) AS request_no,
+                'approved' AS request_status,
+                COALESCE(w.updated_at, w.created_at) AS request_date
+              FROM workmen w
+              LEFT JOIN contractors c ON w.contractor_id = c.id
+              WHERE w.pass_issuer_verified = 1
+                AND w.status = 'verified'
+                AND COALESCE(w.is_blocked, 0) = 0
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM gate_pass_request_workers existing_gprw
+                  WHERE existing_gprw.workman_id = w.id
+                    AND LOWER(COALESCE(existing_gprw.status, '')) IN ('approved', 'issued')
+                ))
+              ORDER BY request_date ASC";
     $pending = db_fetch_all($conn, $query);
     ?>
     <div class="content-header">
@@ -73,4 +101,3 @@ function renderContent() {
 }
 
 renderLayout("Pending Pass Requests", 'renderContent', $role, $name);
-

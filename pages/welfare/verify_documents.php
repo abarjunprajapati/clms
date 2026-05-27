@@ -285,10 +285,10 @@ function renderContent() {
                                                 <input type="text" class="form-control form-control-sm doc-remarks" id="remarks-<?= $doc['id'] ?>" value="<?= htmlspecialchars($doc['remarks'] ?? '') ?>" placeholder="Remarks (Mandatory if Rejecting)...">
                                                 
                                                 <div class="doc-action-row">
-                                                    <button class="btn btn-sm btn-success" onclick="updateDoc(<?= $doc['id'] ?>, 'approved', '<?= $doc['source_table'] ?>')">
+                                                    <button class="btn btn-sm btn-success" onclick="updateDoc(<?= $doc['id'] ?>, 'approved', '<?= $doc['source_table'] ?>', <?= (int)$app['request_id'] ?>)">
                                                         <i class="fas fa-check-circle"></i> Approve
                                                     </button>
-                                                    <button class="btn btn-sm btn-danger" onclick="updateDoc(<?= $doc['id'] ?>, 'reupload_required', '<?= $doc['source_table'] ?>')">
+                                                    <button class="btn btn-sm btn-danger" onclick="updateDoc(<?= $doc['id'] ?>, 'reupload_required', '<?= $doc['source_table'] ?>', <?= (int)$app['request_id'] ?>)">
                                                         <i class="fas fa-times-circle"></i> Reject
                                                     </button>
                                                 </div>
@@ -500,7 +500,7 @@ function renderContent() {
         }
     }
 
-    async function updateDoc(id, status, sourceTable) {
+    async function updateDoc(id, status, sourceTable, requestId = 0) {
         const remarks = document.getElementById('remarks-' + id).value;
         if (status === 'reupload_required' && !remarks) {
             alert('Mandatory Remark: Please provide a reason for rejection (PDF Page 24).');
@@ -515,7 +515,8 @@ function renderContent() {
                     doc_id: id, 
                     status: status, 
                     remarks: remarks,
-                    source_table: sourceTable
+                    source_table: sourceTable,
+                    request_id: requestId
                 })
             });
             const data = await res.json();

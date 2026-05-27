@@ -9,6 +9,19 @@ include '../../include/layout.php';
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
 $user_id = $_SESSION['user_id'];
+$enrolmentTypeMap = [
+    'contractor' => ['pass' => 'Contractor', 'label' => 'Contractor Self Enrollment', 'plural' => 'Contractor'],
+    'representative' => ['pass' => 'Representative', 'label' => 'Representative Enrollment', 'plural' => 'Representatives'],
+    'supervisor' => ['pass' => 'Supervisor', 'label' => 'Supervisor Enrollment', 'plural' => 'Supervisors'],
+    'workmen' => ['pass' => 'Workman', 'label' => 'Workmen Enrollment', 'plural' => 'Workmen'],
+    'workman' => ['pass' => 'Workman', 'label' => 'Workmen Enrollment', 'plural' => 'Workmen'],
+];
+$requestedType = strtolower(trim($_GET['type'] ?? 'workmen'));
+if (!isset($enrolmentTypeMap[$requestedType])) {
+    $requestedType = 'workmen';
+}
+$selectedType = $enrolmentTypeMap[$requestedType];
+$prefillAadhaar = preg_replace('/\D+/', '', (string)($_GET['aadhaar'] ?? ''));
 if ($role !== 'customer') {
     clms_get_portal_contractor($conn);
 }
@@ -53,6 +66,31 @@ function enrolment_fetch_all($conn, $sql) {
     return $rows;
 }
 
+function enrolment_worker_type_condition($conn, $table, $type) {
+    if (!enrolment_column_exists($conn, $table, 'worker_type')) {
+        return '1=1';
+    }
+
+    if ($type === 'workmen' || $type === 'workman') {
+        return '1=1';
+    }
+
+    $map = [
+        'contractor' => ['contractor', 'Contractor', 'Contractor Pass'],
+        'representative' => ['representative', 'Representative', 'Representative Pass'],
+        'supervisor' => ['supervisor', 'Supervisor', 'Supervisor Pass'],
+    ];
+    $values = $map[$type] ?? [];
+    if (!$values) {
+        return '1=1';
+    }
+    $quoted = array_map(function($value) use ($conn) {
+        return "'" . mysqli_real_escape_string($conn, $value) . "'";
+    }, $values);
+
+    return 'worker_type IN (' . implode(',', $quoted) . ')';
+}
+
 function enrolment_customer_contractor_ids($conn) {
     $customerCode = $_SESSION['customer_code'] ?? '';
     if ($customerCode === '' || !enrolment_table_exists($conn, 'contractors')) {
@@ -91,7 +129,7 @@ function enrolment_customer_contractor_ids($conn) {
 }
 
 function renderContent() {
-    global $conn, $user_id, $vendor_code, $educationFlow, $role;
+    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar;
 
     // Get contractor record
     $contractor = null;
@@ -192,6 +230,7 @@ function renderContent() {
     if ($c_id && enrolment_table_exists($conn, 'workmen')) {
         $workerTypeExpr = enrolment_column_exists($conn, 'workmen', 'worker_type') ? 'worker_type' : "''";
         $orderExpr = enrolment_column_exists($conn, 'workmen', 'created_at') ? 'created_at DESC' : 'id DESC';
+        $typeWhere = enrolment_worker_type_condition($conn, 'workmen', $requestedType);
         $workers = enrolment_fetch_all($conn, "
             SELECT
                 " . enrolment_expr($conn, 'workmen', 'id', 'id', '0') . ",
@@ -251,7 +290,7 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
                 " . enrolment_expr($conn, 'workmen', 'created_at', 'created_at') . "
             FROM workmen
-            WHERE $contractorWhere
+            WHERE $contractorWhere AND $typeWhere
             ORDER BY $orderExpr
         ");
     }
@@ -344,14 +383,39 @@ function renderContent() {
     
     .doc-card { background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; }
     .badge-status { font-size:10px; padding:3px 8px; border-radius:10px; font-weight:600; text-transform:uppercase; }
+    #enrollForm .form-control {
+      min-height: 42px;
+      border: 1.5px solid #cbd5e1 !important;
+      border-radius: 8px;
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+      padding: 10px 12px;
+      box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    #enrollForm select.form-control {
+      appearance: auto;
+    }
+    #enrollForm textarea.form-control {
+      min-height: 82px;
+      resize: vertical;
+    }
+    #enrollForm .form-control:focus {
+      border-color: #2563eb !important;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+      outline: none;
+    }
+    #enrollForm .form-control[readonly] {
+      background-color: #f8fafc !important;
+      color: #334155 !important;
+    }
     </style>
 
     <div class="content-header">
       <div>
-        <h2 class="page-title"><i class="fas fa-users" style="color:#6366f1;margin-right:10px;"></i> Worker Enrollment</h2>
+        <h2 class="page-title"><i class="fas fa-users" style="color:#6366f1;margin-right:10px;"></i> <?= htmlspecialchars($selectedType['label']) ?></h2>
         <!-- <p class="page-subtitle">Add workers with full Annexure 4A details and document uploads.</p> -->
       </div>
-      <button class="btn btn-primary" id="btnOpenModal"><i class="fas fa-plus"></i> New Enrollment</button>
+      <button class="btn btn-primary" id="btnOpenModal"><i class="fas fa-plus"></i> New <?= htmlspecialchars($selectedType['pass']) ?></button>
     </div>
 
     <!-- Summary Stats -->
@@ -359,7 +423,7 @@ function renderContent() {
       <div class="stat-card glass">
         <div class="stat-icon" style="background:rgba(99,102,241,0.1);color:#6366f1"><i class="fas fa-users"></i></div>
         <div class="stat-value"><?= count($workers) ?></div>
-        <div class="stat-label">Total Enrolled</div>
+        <div class="stat-label"><?= htmlspecialchars($selectedType['plural']) ?> Enrolled</div>
       </div>
       <div class="stat-card glass">
         <div class="stat-icon" style="background:rgba(16,185,129,0.1);color:#10b981"><i class="fas fa-check"></i></div>
@@ -404,7 +468,7 @@ function renderContent() {
     <div class="card">
       <div class="card-header">
         <div class="d-flex align-items-center gap-3">
-          <div class="card-title">Worker List</div>
+          <div class="card-title"><?= htmlspecialchars($selectedType['plural']) ?> List</div>
           <button class="btn btn-sm btn-outline-primary" onclick="downloadWorkerList()">
             <i class="fas fa-file-pdf"></i> Download PDF
           </button>
@@ -415,7 +479,7 @@ function renderContent() {
         <table class="data-table" id="workerTable">
           <thead>
             <tr>
-              <th>Worker Details</th>
+              <th>Person Details</th>
               <th>Aadhaar</th>
               <th>Pass / Role</th>
               <th>Department / Work</th>
@@ -483,7 +547,7 @@ function renderContent() {
     <div id="formSection" class="hidden">
       <div class="card">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-          <h3 class="card-title" id="enrollFormTitle"> Workforce Enrollment</h3>
+          <h3 class="card-title" id="enrollFormTitle"> <?= htmlspecialchars($selectedType['pass']) ?> Enrollment</h3>
           <button class="btn btn-outline" onclick="closeForm()">Back to List</button>
         </div>
         <form id="enrollForm" enctype="multipart/form-data">
@@ -503,10 +567,10 @@ function renderContent() {
               <div class="form-group">
                 <label class="form-label required">Pass Type</label>
                 <select class="form-control" name="pass_type" required>
-                  <option value="Contractor">Contractor</option>
-                  <option value="Representative">Representative</option>
-                  <option value="Supervisor">Supervisor</option>
-                  <option value="Workman">Workman</option>
+                  <option value="Contractor" <?= $selectedType['pass'] === 'Contractor' ? 'selected' : '' ?>>Contractor</option>
+                  <option value="Representative" <?= $selectedType['pass'] === 'Representative' ? 'selected' : '' ?>>Representative</option>
+                  <option value="Supervisor" <?= $selectedType['pass'] === 'Supervisor' ? 'selected' : '' ?>>Supervisor</option>
+                  <option value="Workman" <?= $selectedType['pass'] === 'Workman' ? 'selected' : '' ?>>Workman</option>
                 </select>
               </div>
               <div class="form-group">
@@ -929,11 +993,19 @@ function renderContent() {
         
         const defaultDepartment = <?= json_encode($department_name) ?>;
         const workOptions = <?= json_encode($workOptions, JSON_UNESCAPED_SLASHES) ?>;
+        const requestedPassType = <?= json_encode($selectedType['pass']) ?>;
+        const requestedPassLabel = <?= json_encode($selectedType['label']) ?>;
+        const prefillAadhaar = <?= json_encode($prefillAadhaar) ?>;
+        const currentContractorId = <?= $c_id ? (int)$c_id : 0 ?>;
 
         document.getElementById('btnOpenModal').onclick = () => {
           form.reset();
           document.getElementById('workerEditId').value = '';
-          document.getElementById('enrollFormTitle').textContent = ' New Worker Enrollment';
+          document.getElementById('enrollFormTitle').textContent = ' New ' + requestedPassLabel;
+          setFieldValue('pass_type', requestedPassType);
+          if (prefillAadhaar) {
+            setFieldValue('aadhaar', prefillAadhaar);
+          }
           const deptField = form.querySelector('[name="department"]');
           if (deptField && defaultDepartment) {
             deptField.value = defaultDepartment;
@@ -958,6 +1030,9 @@ function renderContent() {
           activateTab('basic');
           toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
           toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
+          if (prefillAadhaar) {
+            document.getElementById('aadhaarInput')?.dispatchEvent(new Event('blur'));
+          }
         };
         
         function closeForm() {
@@ -965,7 +1040,7 @@ function renderContent() {
           listSection.style.display = 'block';
           form.reset();
           document.getElementById('workerEditId').value = '';
-          document.getElementById('enrollFormTitle').textContent = ' New Worker Enrollment';
+          document.getElementById('enrollFormTitle').textContent = ' New ' + requestedPassLabel;
           resetWorkFlow();
         }
         
@@ -975,7 +1050,8 @@ function renderContent() {
           const index = tabOrder.indexOf(tabId);
           document.getElementById('btnPrevTab').style.visibility = index <= 0 ? 'hidden' : 'visible';
           document.getElementById('btnNextTab').style.display = index === tabOrder.length - 1 ? 'none' : 'inline-flex';
-          document.getElementById('btnSaveDraft').style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
+          const draftBtn = document.getElementById('btnSaveDraft');
+          if (draftBtn) draftBtn.style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
           document.getElementById('btnSubmit').style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
         }
         
@@ -1306,7 +1382,7 @@ function renderContent() {
         function editWorker(worker) {
           form.reset();
           document.getElementById('workerEditId').value = worker.id || '';
-          document.getElementById('enrollFormTitle').textContent = ' Edit Worker Enrollment';
+          document.getElementById('enrollFormTitle').textContent = ' Edit ' + requestedPassLabel;
 
           const values = {
             work_order_no: worker.work_order_no,
@@ -1448,6 +1524,10 @@ function renderContent() {
           
           if (typeof PassLimitValidator !== 'undefined') {
             const isEdit = Boolean(document.getElementById('workerEditId')?.value);
+            if (!isEdit && currentContractorId) {
+              await PassLimitValidator.fetchLimits(currentContractorId);
+              PassLimitValidator.renderSummary(document.getElementById('passLimitsWidget'));
+            }
             if (!isEdit && !PassLimitValidator.validate(limitType, 1)) return;
           }
           // ========== END ANNEXURE 5/A CHECK ==========
@@ -1475,7 +1555,12 @@ function renderContent() {
           finally { btn.disabled = false; btn.innerText = 'Submit Enrollment'; }
         }
 
-        document.getElementById('btnSaveDraft').onclick = () => submitEnrollment('draft');
+        const saveDraftButton = document.getElementById('btnSaveDraft');
+        if (saveDraftButton) saveDraftButton.onclick = () => submitEnrollment('draft');
+
+        if (prefillAadhaar) {
+          document.getElementById('btnOpenModal')?.click();
+        }
 
         form.onsubmit = async (e) => {
           e.preventDefault();

@@ -34,33 +34,43 @@ function getPassLimit($conn, $contractor_id, $pass_type) {
  * Count current enrollments for a contractor by pass_type.
  */
 function getCurrentPassCount($conn, $contractor_id, $pass_type) {
+    $typeMap = [
+        'Contractor' => ['contractor', 'Contractor', 'Contractor Pass'],
+        'Representative' => ['representative', 'Representative', 'Representative Pass'],
+        'Supervisor' => ['supervisor', 'Supervisor', 'Supervisor Pass'],
+        'Workman' => ['workman', 'workmen', 'Workman', 'Workmen', 'Workman Pass', 'Workmen Pass'],
+    ];
+    $types = $typeMap[$pass_type] ?? [$pass_type];
+    $placeholders = implode(',', array_fill(0, count($types), '?'));
+    $bindTypes = 'i' . str_repeat('s', count($types));
+    $params = array_merge([$contractor_id], $types);
+
     switch ($pass_type) {
         case 'Contractor':
-            // Main contractor representatives are sometimes stored in workmen with worker_type='contractor'
-            $row = db_single($conn, 
-                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type = 'contractor' AND status != 'rejected'", 
-                'i', [$contractor_id]
+            $row = db_single($conn,
+                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND status != 'rejected'",
+                $bindTypes, $params
             );
             return (int)($row['cnt'] ?? 0);
             
         case 'Representative':
-            $row = db_single($conn, 
-                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type = 'representative' AND status != 'rejected'", 
-                'i', [$contractor_id]
+            $row = db_single($conn,
+                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND status != 'rejected'",
+                $bindTypes, $params
             );
             return (int)($row['cnt'] ?? 0);
             
         case 'Supervisor':
-            $row = db_single($conn, 
-                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type = 'supervisor' AND status != 'rejected'", 
-                'i', [$contractor_id]
+            $row = db_single($conn,
+                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND status != 'rejected'",
+                $bindTypes, $params
             );
             return (int)($row['cnt'] ?? 0);
             
         case 'Workman':
-            $row = db_single($conn, 
-                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type = 'workman' AND status != 'rejected'", 
-                'i', [$contractor_id]
+            $row = db_single($conn,
+                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND status != 'rejected'",
+                $bindTypes, $params
             );
             return (int)($row['cnt'] ?? 0);
             
@@ -73,8 +83,8 @@ function getCurrentPassCount($conn, $contractor_id, $pass_type) {
  * Get the number of workmen for a contractor (used for supervisor ratio calculation).
  */
 function getWorkmenCount($conn, $contractor_id) {
-    $row = db_single($conn, 
-        "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND status != 'removed'", 
+    $row = db_single($conn,
+        "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ('workman','workmen','Workman','Workmen','Workman Pass','Workmen Pass') AND status != 'removed'",
         'i', [$contractor_id]
     );
     $count = (int)($row['cnt'] ?? 0);

@@ -15,7 +15,8 @@ function renderContent() {
     $queryReady = "SELECT w.*, c.contractor_name 
                    FROM workmen w 
                    JOIN contractors c ON w.contractor_id = c.id 
-                   WHERE w.status = 'temporary_issued' AND (w.acc_number IS NULL OR w.acc_number = '')
+                   WHERE (w.status = 'temporary_issued' OR COALESCE(w.temp_pass_status, 0) = 1 OR COALESCE(w.temp_pass_no, '') != '')
+                     AND (w.acc_number IS NULL OR w.acc_number = '')
                    ORDER BY w.updated_at ASC";
     $ready_for_acc = db_fetch_all($conn, $queryReady);
 
@@ -211,4 +212,3 @@ function renderContent() {
 }
 
 renderLayout("ACC Number Generation", 'renderContent', $role, $name);
-

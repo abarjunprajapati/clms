@@ -8,6 +8,16 @@ $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
 $user_id = $_SESSION['user_id'];
 $type = $_GET['type'] ?? 'workmen'; // representative, supervisor, workmen
+$allowedTypes = ['contractor', 'representative', 'supervisor', 'workmen', 'workman'];
+if (!in_array($type, $allowedTypes, true)) {
+    $type = 'workmen';
+}
+$redirectParams = ['type' => $type];
+if (!empty($_GET['aadhaar'])) {
+    $redirectParams['aadhaar'] = $_GET['aadhaar'];
+}
+header('Location: enrolment-4a.php?' . http_build_query($redirectParams));
+exit;
 
 // Set display label based on type
 $type_label = "Workmen";

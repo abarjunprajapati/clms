@@ -8,28 +8,70 @@ include __DIR__ . '/../../include/layout.php';
 $role = get_normalized_role();
 $name = $_SESSION['name'] ?? 'Pass Issuing Officer';
 
+function passValidityColumnExists($table, $column) {
+    global $conn;
+    $table = str_replace('`', '``', $table);
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $result && mysqli_num_rows($result) > 0;
+}
+
 function renderContent() {
     global $conn;
     
-    // Find all passes nearing expiry or expired
-    $query = "SELECT w.*, c.contractor_name 
-              FROM workmen w 
-              JOIN contractors c ON w.contractor_id = c.id 
-              WHERE 
-                (w.status = 'temporary_issued' AND IFNULL(w.temp_valid_to, w.valid_to) <= DATE_ADD(CURDATE(), INTERVAL 3 DAY))
-                OR 
-                (w.status = 'permanent_active' AND w.valid_to <= DATE_ADD(CURDATE(), INTERVAL 7 DAY))
-              ORDER BY IFNULL(w.temp_valid_to, w.valid_to) ASC";
-    $expiring = db_fetch_all($conn, $query);
+    $hasTempValidTo = passValidityColumnExists('workmen', 'temp_valid_to');
+    $hasValidTo = passValidityColumnExists('workmen', 'valid_to');
+    $hasAccNumber = passValidityColumnExists('workmen', 'acc_number');
+    $hasContractorName = passValidityColumnExists('contractors', 'contractor_name');
+    $hasContractorDisplayName = passValidityColumnExists('contractors', 'name');
+
+    $expiryExpr = $hasTempValidTo && $hasValidTo ? "COALESCE(w.temp_valid_to, w.valid_to)" : ($hasValidTo ? "w.valid_to" : ($hasTempValidTo ? "w.temp_valid_to" : "NULL"));
+    $accExpr = $hasAccNumber ? "w.acc_number" : "''";
+    $contractorExpr = $hasContractorName && $hasContractorDisplayName ? "COALESCE(c.contractor_name, c.name, 'N/A')" : ($hasContractorName ? "COALESCE(c.contractor_name, 'N/A')" : ($hasContractorDisplayName ? "COALESCE(c.name, 'N/A')" : "'N/A'"));
+    $queryError = '';
+    $expiring = [];
+
+    if ($expiryExpr === 'NULL') {
+        $queryError = 'Pass validity columns are missing in workmen table.';
+    } else {
+        // Find all passes nearing expiry or expired. LEFT JOIN keeps worker rows visible even if contractor master is missing.
+        $query = "SELECT w.id, w.name, w.status, $accExpr AS acc_number, $expiryExpr AS expiry_date,
+                         $contractorExpr AS contractor_name
+                  FROM workmen w
+                  LEFT JOIN contractors c ON w.contractor_id = c.id
+                  WHERE
+                    (w.status = 'temporary_issued' AND $expiryExpr <= DATE_ADD(CURDATE(), INTERVAL 3 DAY))
+                    OR
+                    (w.status IN ('permanent_active', 'permanent_issued', 'acc_generated') AND $expiryExpr <= DATE_ADD(CURDATE(), INTERVAL 7 DAY))
+                  ORDER BY $expiryExpr ASC";
+        $result = mysqli_query($conn, $query);
+        if ($result) {
+            while ($row = mysqli_fetch_assoc($result)) {
+                $expiring[] = $row;
+            }
+        } else {
+            $queryError = mysqli_error($conn);
+        }
+    }
     ?>
     <div class="content-header">
       <h2 class="page-title">Pass Validity Management</h2>
       <!-- <p class="page-subtitle">Track expiry dates and extend gate passes as per welfare rules.</p> -->
     </div>
 
+    <?php if($queryError): ?>
+      <div class="alert alert-danger">
+        <i class="fas fa-exclamation-circle"></i>
+        <div>Pass validity data load nahi ho pa raha hai: <?= htmlspecialchars($queryError) ?></div>
+      </div>
+    <?php endif; ?>
+
     <div class="card glass">
       <div class="card-body" style="padding:0">
-        <table class="data-table">
+        <?php if(empty($expiring)): ?>
+          <div class="text-center" style="padding:40px;">No expiring passes found at the moment.</div>
+        <?php else: ?>
+        <table class="validity-table">
           <thead>
             <tr>
               <th>Workman</th>
@@ -42,15 +84,15 @@ function renderContent() {
           <tbody>
             <?php foreach($expiring as $e): 
                 $is_temp = ($e['status'] === 'temporary_issued');
-                $expiry_date = $is_temp ? ($e['temp_valid_to'] ?: $e['valid_to']) : $e['valid_to'];
+                $expiry_date = $e['expiry_date'];
                 if (!$expiry_date) continue;
-                $days_left = (strtotime($expiry_date) - strtotime('today')) / (60 * 60 * 24);
+                $days_left = (int)((strtotime($expiry_date) - strtotime('today')) / (60 * 60 * 24));
                 $threshold = $is_temp ? 3 : 7;
             ?>
             <tr>
               <td>
                 <div style="font-weight:600"><?= htmlspecialchars($e['name']) ?></div>
-                <div style="font-size:11px; opacity:0.6"><?= $e['acc_number'] ?: 'Temporary' ?></div>
+                <div style="font-size:11px; opacity:0.6"><?= htmlspecialchars($e['acc_number'] ?: 'Temporary') ?></div>
               </td>
               <td><?= htmlspecialchars($e['contractor_name']) ?></td>
               <td>
@@ -81,11 +123,9 @@ function renderContent() {
               </td>
             </tr>
             <?php endforeach; ?>
-            <?php if(empty($expiring)): ?>
-            <tr><td colspan="5" class="text-center" style="padding:40px;">No expiring passes found at the moment.</td></tr>
-            <?php endif; ?>
           </tbody>
         </table>
+        <?php endif; ?>
       </div>
     </div>
 
@@ -110,6 +150,9 @@ function renderContent() {
 
     <style>
       .modal-backdrop { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; backdrop-filter:blur(4px); }
+      .validity-table { width:100%; border-collapse:collapse; }
+      .validity-table th, .validity-table td { padding:14px 16px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:middle; }
+      .validity-table th { color:#64748b; font-size:12px; font-weight:800; text-transform:uppercase; }
     </style>
 
     <script>
@@ -164,4 +207,3 @@ function renderContent() {
 }
 
 renderLayout("Pass Validity Management", 'renderContent', $role, $name);
-

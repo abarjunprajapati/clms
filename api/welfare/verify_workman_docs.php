@@ -25,7 +25,8 @@ if ($workman['is_blocked']) {
     json_response(false, null, 'Worker is blocked and cannot be verified');
 }
 
-if ($workman['safety_training_status'] != 1) {
+$trainingPassed = ((int)$workman['safety_training_status'] === 1 || in_array(strtolower($workman['training_status']), ['pass', 'passed', 'training_passed', 'qualified', 'completed']));
+if (!$trainingPassed) {
     json_response(false, null, 'Safety training not completed or failed. Cannot proceed.');
 }
 
