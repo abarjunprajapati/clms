@@ -14,10 +14,18 @@ try {
         throw new Exception("Worker ID is required.");
     }
 
+    $hasNationality = false;
+    $colRes = mysqli_query($conn, "SHOW COLUMNS FROM workmen LIKE 'nationality'");
+    if ($colRes && mysqli_num_rows($colRes) > 0) {
+        $hasNationality = true;
+    }
+    $nationalitySelect = $hasNationality ? "wm.nationality" : "'Indian'";
+
     // 1. Fetch Master & Workmen Details
     $masterQuery = "
         SELECT w.*, 
                wm.name as worker_name, wm.father_name, wm.spouse_name, wm.dob, wm.gender,
+               $nationalitySelect as nationality,
                wm.mobile as workmen_mobile, wm.email as workmen_email, wm.permanent_address, 
                wm.present_address, wm.state, wm.district, wm.education, wm.nature_of_work,
                wm.training_status, wm.safety_training_status, wm.status as workmen_status,

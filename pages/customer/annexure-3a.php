@@ -77,16 +77,22 @@ function renderContent() {
     $is_resubmit_mode = (($_GET['resubmit'] ?? '') === '1');
     $is_locked = in_array($a3_status, ['pending', 'resubmitted'], true);
     $is_approved_limited_edit = $a3_status === 'approved';
+    $is_limited_update_mode = $is_locked || $is_approved_limited_edit;
     $is_approved_view_only = false;
     $statusClass = $a3_status === 'approved' ? 'success' : ($a3_status === 'rejected' ? 'danger' : (in_array($a3_status, ['pending', 'resubmitted'], true) ? 'warning' : 'secondary'));
     $readonly_attr = ($is_locked || $is_approved_limited_edit || $is_approved_view_only) ? 'readonly' : '';
     $disabled_attr = ($is_locked || $is_approved_limited_edit || $is_approved_view_only) ? 'disabled' : '';
-    $limited_edit_readonly_attr = $is_locked ? 'readonly' : '';
-    $limited_edit_disabled_attr = $is_locked ? 'disabled' : '';
-    $submit_disabled_attr = ($is_locked || $is_approved_view_only) ? 'disabled' : '';
+    $limited_edit_readonly_attr = $is_approved_view_only ? 'readonly' : '';
+    $limited_edit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
+    $saved_limited_row_readonly_attr = $is_limited_update_mode ? 'readonly' : $limited_edit_readonly_attr;
+    $saved_limited_file_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
+    $saved_limited_action_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
+    $ecp_choice_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
+    $submit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
+    $draft_disabled_attr = ($is_locked || $is_approved_view_only) ? 'disabled' : '';
     $worker_category_source = $existing_data['worker_category'] ?? '';
     $worker_cats = !empty($worker_category_source) ? array_map('trim', explode(',', $worker_category_source)) : [];
-    $selected_ecp_covered = $existing_data['ecp_covered'] ?? '';
+    $selected_ecp_covered = $existing_data['ecp_covered'] ?? 'YES';
 
     $stored_reason = $existing_data['epf_esi_exemption_reason'] ?? '';
     $clean_reason = function($value) {
@@ -110,6 +116,20 @@ function renderContent() {
     if (empty($epf_reason) && empty($esi_reason) && empty($ecp_reason) && !empty($stored_reason)) {
         $ecp_reason = $clean_reason($stored_reason);
     }
+
+    $yes_selected_by_default = function($raw, $no_reason, $yes_detail = '') {
+        $value = strtoupper(trim((string)$raw));
+        if ($value === 'YES' || $value === '1' || $value === '') {
+            return true;
+        }
+        if (($value === 'NO' || $value === '0') && trim((string)$no_reason) !== '' && trim((string)$yes_detail) === '') {
+            return false;
+        }
+        return true;
+    };
+    $epf_selected_yes = $yes_selected_by_default($existing_data['is_epf_registered'] ?? 'YES', $epf_reason, $existing_data['epf_code'] ?? '');
+    $esi_selected_yes = $yes_selected_by_default($existing_data['is_esi_registered'] ?? 'YES', $esi_reason, $existing_data['esi_code'] ?? '');
+    $ecp_selected_yes = $yes_selected_by_default($selected_ecp_covered, $ecp_reason, $existing_data['ecp_details_json'] ?? '');
 
     $ecp_rows = [];
     if (!empty($existing_data['ecp_details_json'])) {
@@ -381,11 +401,26 @@ function renderContent() {
             <?php if ($existing_data): ?>
                 <span class="badge rounded-pill bg-<?= $statusClass ?> px-4 py-2 shadow-sm me-2" style="font-size:12px;"><?= strtoupper($a3_status) ?></span>
             <?php endif; ?>
+            <a href="welfare-actions.php" class="btn btn-outline-primary rounded-pill px-3 me-2">
+                <i class="fas fa-clock-rotate-left me-1"></i> Welfare Action History
+            </a>
             <button class="btn btn-outline-secondary rounded-pill px-3 me-2" onclick="window.print()">
                 <i class="fas fa-print me-1"></i> Print / PDF
             </button>
         </div>
     </div>
+
+    <?php if (in_array($a3_status, ['rejected', 'correction_required', 'hold'], true)): ?>
+        <div class="alert alert-warning border-0 shadow-sm mb-4" style="background:#fff7ed; color:#9a3412;">
+            <div class="d-flex justify-content-between gap-3 flex-wrap align-items-center">
+                <div>
+                    <i class="fas fa-circle-exclamation me-2"></i>
+                    Welfare action recorded. Please open history to view reason, rejection date and attachment.
+                </div>
+                <a href="welfare-actions.php" class="btn btn-sm btn-warning fw-bold">View History</a>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <!-- Nav Tabs -->
     <ul class="nav nav-tabs mb-4 border-bottom" id="complianceTabs" role="tablist">
@@ -493,37 +528,32 @@ function renderContent() {
 
                     <div class="registration-card">
                         <div class="registration-section-header">2. Whether Registered under EPF</div>
-                        <div class="gov-radio-group">
-                            <?php
-                            $epfRegisteredSource = $existing_data['is_epf_registered'] ?? '';
-                            $epfYes = ($epfRegisteredSource === 'YES' || (string)$epfRegisteredSource === '1');
-                            ?>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="epf_registered" id="epf_yes" value="YES" <?= $epfYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
-                                <label class="form-check-label" for="epf_yes">YES</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="epf_registered" id="epf_no" value="NO" <?= !$epfYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
-                                <label class="form-check-label" for="epf_no">NO</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="registration-card" id="epfDetailsCard">
-                        <div class="registration-section-header">3. EPF Establishment Code</div>
                         <div class="registration-grid">
                             <div>
+                                <div class="gov-radio-group">
+                                    <?php
+                                    $epfYes = $epf_selected_yes;
+                                    ?>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="epf_registered" id="epf_yes" value="YES" <?= $epfYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
+                                        <label class="form-check-label" for="epf_yes">YES</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="epf_registered" id="epf_no" value="NO" <?= !$epfYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
+                                        <label class="form-check-label" for="epf_no">NO</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="epfDetailsCard">
                                 <label class="form-label required">EPF Establishment Code</label>
                                 <input type="text" name="epf_code" id="epf_code" class="form-control" value="<?= htmlspecialchars($existing_data['epf_code'] ?? '') ?>" <?= $readonly_attr ?>>
+                                <input type="hidden" name="epf_account_no" id="epf_account_no" value="<?= htmlspecialchars($existing_data['epf_account_no'] ?? '') ?>">
+                            </div>
+                            <div class="span-2" id="epfReasonCard">
+                                <label class="form-label required">3. EPF Non-Registration Reason</label>
+                                <textarea class="form-control" name="epf_non_registration_reason" id="epf_non_registration_reason" rows="3" placeholder="Enter reason for not registered under EPF" <?= $readonly_attr ?>><?= htmlspecialchars($epf_reason) ?></textarea>
                             </div>
                         </div>
-                        <input type="hidden" name="epf_account_no" id="epf_account_no" value="<?= htmlspecialchars($existing_data['epf_account_no'] ?? '') ?>">
-                    </div>
-
-                    <div class="registration-card" id="epfReasonCard">
-                        <div class="registration-section-header">3. EPF Non-Registration Reason</div>
-                        <label class="form-label required">Reason</label>
-                        <textarea class="form-control" name="epf_non_registration_reason" id="epf_non_registration_reason" rows="3" placeholder="Enter reason for not registered under EPF" <?= $readonly_attr ?>><?= htmlspecialchars($epf_reason) ?></textarea>
                     </div>
 
                     <div class="registration-card">
@@ -532,8 +562,7 @@ function renderContent() {
                             <div>
                                 <div class="gov-radio-group">
                                     <?php
-                                    $esiRegisteredSource = $existing_data['is_esi_registered'] ?? '';
-                                    $esiYes = ($esiRegisteredSource === 'YES' || (string)$esiRegisteredSource === '1');
+                                    $esiYes = $esi_selected_yes;
                                     ?>
                                     <div class="form-check">
                                         <input class="form-check-input" type="radio" name="esi_registered" id="esi_yes" value="YES" <?= $esiYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
@@ -554,7 +583,7 @@ function renderContent() {
                                 <textarea class="form-control" name="esi_non_registration_reason" id="esi_non_registration_reason" rows="3" placeholder="Enter reason for not registered under ESI" <?= $readonly_attr ?>><?= htmlspecialchars($esi_reason) ?></textarea>
                             </div>
                             <div class="span-2">
-                                <div class="alert alert-warning py-2 px-3 mb-0 d-none" id="esi-ec-warning">Employee Compensation Policy details are mandatory when ESI is No.</div>
+                                <div class="alert alert-warning py-2 px-3 mb-0 d-none" id="esi-ec-warning">Either ESI or EC Policy is mandatory</div>
                             </div>
                         </div>
                     </div>
@@ -574,14 +603,17 @@ function renderContent() {
                         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                             <div class="gov-radio-group">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_yes" value="YES" <?= $selected_ecp_covered === 'YES' ? 'checked' : '' ?> required <?= $limited_edit_disabled_attr ?>>
+                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_yes" value="YES" <?= $ecp_selected_yes ? 'checked' : '' ?> required <?= $ecp_choice_disabled_attr ?>>
                                     <label class="form-check-label" for="ecp_yes">YES</label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_no" value="NO" <?= $selected_ecp_covered !== 'YES' ? 'checked' : '' ?> required <?= $limited_edit_disabled_attr ?>>
+                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_no" value="NO" <?= !$ecp_selected_yes ? 'checked' : '' ?> required <?= $ecp_choice_disabled_attr ?>>
                                     <label class="form-check-label" for="ecp_no">NO</label>
                                 </div>
                             </div>
+                            <?php if ($ecp_choice_disabled_attr): ?>
+                                <input type="hidden" name="ecp_covered" value="<?= $ecp_selected_yes ? 'YES' : 'NO' ?>">
+                            <?php endif; ?>
                             <button type="button" class="btn btn-sm btn-reg-draft" id="addEcpBtn" onclick="addEcpRow()" <?= $limited_edit_disabled_attr ?>>Add Row</button>
                         </div>
                         <div class="table-responsive" id="ecpTableWrap">
@@ -593,11 +625,11 @@ function renderContent() {
                                     <?php foreach ($ecp_rows as $i => $row): ?>
                                         <tr class="ecp-row">
                                             <td class="sl-no text-center fw-bold"><?= $i + 1 ?></td>
-                                            <td><input type="text" class="form-control" name="ecp_number[]" value="<?= htmlspecialchars($row['ecp_number'] ?? '') ?>" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td><input type="date" class="form-control ecp-from" name="ecp_valid_from[]" value="<?= htmlspecialchars($row['ecp_valid_from'] ?? '') ?>" onchange="validateEcpRowDates(this)" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td><input type="date" class="form-control ecp-to" name="ecp_valid_to[]" value="<?= htmlspecialchars($row['ecp_valid_to'] ?? '') ?>" onchange="validateEcpRowDates(this)" <?= $limited_edit_readonly_attr ?>><div class="invalid-feedback ecp-date-error">Valid From must be before Valid To.</div></td>
-                                            <td><input type="number" class="form-control" name="ecp_workers[]" min="0" value="<?= htmlspecialchars($row['workers_under_policy'] ?? '') ?>" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td class="text-center"><button type="button" class="btn btn-sm text-danger delete-btn" onclick="deleteEcpRow(this)" <?= $limited_edit_disabled_attr ?>>Remove</button></td>
+                                            <td><input type="text" class="form-control" name="ecp_number[]" value="<?= htmlspecialchars($row['ecp_number'] ?? '') ?>" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td><input type="date" class="form-control ecp-from" name="ecp_valid_from[]" value="<?= htmlspecialchars($row['ecp_valid_from'] ?? '') ?>" onchange="validateEcpRowDates(this)" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td><input type="date" class="form-control ecp-to" name="ecp_valid_to[]" value="<?= htmlspecialchars($row['ecp_valid_to'] ?? '') ?>" onchange="validateEcpRowDates(this)" <?= $saved_limited_row_readonly_attr ?>><div class="invalid-feedback ecp-date-error">Valid From must be before Valid To.</div></td>
+                                            <td><input type="number" class="form-control" name="ecp_workers[]" min="0" value="<?= htmlspecialchars($row['workers_under_policy'] ?? '') ?>" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td class="text-center"><button type="button" class="btn btn-sm text-danger delete-btn" onclick="deleteEcpRow(this)" title="Delete row" <?= $saved_limited_action_disabled_attr ?> <?= $saved_limited_action_disabled_attr ? 'style="display:none;"' : '' ?>><i class="fas fa-trash-alt"></i><span class="visually-hidden">Delete</span></button></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -645,16 +677,16 @@ function renderContent() {
                                     <?php foreach ($license_rows as $i => $row): $file_path = $row['file_path'] ?? ''; ?>
                                         <tr class="license-row">
                                             <td class="sl-no text-center fw-bold"><?= $i + 1 ?></td>
-                                            <td><input type="text" class="form-control" name="license_no[]" value="<?= htmlspecialchars($row['license_no'] ?? '') ?>" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td><input type="text" class="form-control" name="license_validity[]" value="<?= htmlspecialchars($row['validity'] ?? ($row['license_issued'] ?? '')) ?>" <?= $limited_edit_readonly_attr ?>><input type="hidden" name="license_issued[]" value="<?= htmlspecialchars($row['license_issued'] ?? ($row['validity'] ?? '')) ?>"></td>
-                                            <td><input type="date" class="form-control lic-issued" name="issued_date[]" value="<?= htmlspecialchars($row['issued_date'] ?? '') ?>" onchange="validateLicRowDates(this)" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td><input type="date" class="form-control lic-expiry" name="expiry_date[]" value="<?= htmlspecialchars($row['expiry_date'] ?? '') ?>" onchange="validateLicRowDates(this)" <?= $limited_edit_readonly_attr ?>><div class="invalid-feedback lic-date-error">Issued Date must be before Expiry Date.</div></td>
+                                            <td><input type="text" class="form-control" name="license_no[]" value="<?= htmlspecialchars($row['license_no'] ?? '') ?>" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td><input type="text" class="form-control" name="license_validity[]" value="<?= htmlspecialchars($row['validity'] ?? ($row['license_issued'] ?? '')) ?>" <?= $saved_limited_row_readonly_attr ?>><input type="hidden" name="license_issued[]" value="<?= htmlspecialchars($row['license_issued'] ?? ($row['validity'] ?? '')) ?>"></td>
+                                            <td><input type="date" class="form-control lic-issued" name="issued_date[]" value="<?= htmlspecialchars($row['issued_date'] ?? '') ?>" onchange="validateLicRowDates(this)" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td><input type="date" class="form-control lic-expiry" name="expiry_date[]" value="<?= htmlspecialchars($row['expiry_date'] ?? '') ?>" onchange="validateLicRowDates(this)" <?= $saved_limited_row_readonly_attr ?>><div class="invalid-feedback lic-date-error">Issued Date must be before Expiry Date.</div></td>
                                             <td>
-                                                <input type="file" class="form-control" name="license_file[]" accept="application/pdf,.pdf" <?= $limited_edit_disabled_attr ?>>
+                                                <input type="file" class="form-control" name="license_file[]" accept="application/pdf,.pdf" <?= $saved_limited_file_disabled_attr ?> <?= $saved_limited_file_disabled_attr ? 'style="display:none;"' : '' ?>>
                                                 <input type="hidden" name="existing_license_file[]" value="<?= htmlspecialchars($file_path) ?>">
                                                 <?php if (!empty($file_path)): ?><a href="../../<?= htmlspecialchars($file_path) ?>" target="_blank" class="d-block mt-1 text-success fw-bold" style="font-size:12px;">Uploaded File</a><?php endif; ?>
                                             </td>
-                                            <td class="text-center"><button type="button" class="btn btn-sm text-danger delete-btn" onclick="deleteLicenseRow(this)" <?= $limited_edit_disabled_attr ?>>Remove</button></td>
+                                            <td class="text-center"><button type="button" class="btn btn-sm text-danger delete-btn" onclick="deleteLicenseRow(this)" title="Delete row" <?= $saved_limited_action_disabled_attr ?> <?= $saved_limited_action_disabled_attr ? 'style="display:none;"' : '' ?>><i class="fas fa-trash-alt"></i><span class="visually-hidden">Delete</span></button></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -662,8 +694,19 @@ function renderContent() {
                         </div>
                     </div>
 
-                    <div class="registration-card"><div class="registration-section-header">10. Kerala Labour Welfare Fund Registration No</div><input type="text" class="form-control" name="labour_license_appl_no" value="<?= htmlspecialchars($existing_data['labour_license_appl_no'] ?? '') ?>" <?= $readonly_attr ?>></div>
-                    <div class="registration-card"><div class="registration-section-header">11. Labour Identification Number</div><input type="text" class="form-control" name="labour_identification_no" id="labour_identification_no" pattern="^[0-9]+$" value="<?= htmlspecialchars($existing_data['labour_identification_no'] ?? '') ?>" placeholder="Numeric digits only" <?= $readonly_attr ?>><div class="invalid-feedback">LIN number must be numeric only.</div></div>
+                    <div class="registration-card">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="registration-section-header">10. Kerala Labour Welfare Fund Registration No</div>
+                                <input type="text" class="form-control" name="labour_license_appl_no" value="<?= htmlspecialchars($existing_data['labour_license_appl_no'] ?? '') ?>" <?= $readonly_attr ?>>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="registration-section-header">11. Labour Identification Number</div>
+                                <input type="text" class="form-control" name="labour_identification_no" id="labour_identification_no" pattern="^[0-9]+$" value="<?= htmlspecialchars($existing_data['labour_identification_no'] ?? '') ?>" placeholder="Numeric digits only" <?= $readonly_attr ?>>
+                                <div class="invalid-feedback">LIN number must be numeric only.</div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="registration-card"><div class="registration-section-header">12. Name of Contact Person</div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($existing_data['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>></div>
                     <div class="registration-card">
                         <div class="registration-section-header">13. Mobile Number + Alternate Mobile Number</div>
@@ -678,11 +721,11 @@ function renderContent() {
                 <div class="registration-actions">
                     <button type="button" class="btn btn-reg-prev px-4" onclick="showTab('contractorDetails')">Previous</button>
                     <?php if ($is_locked): ?>
-                        <span class="alert alert-info mb-0 py-2 px-3">Submitted form is locked while Welfare review is pending.</span>
+                        <span class="alert alert-info mb-0 py-2 px-3">Submitted form is locked except EC Policy and Labour License add rows.</span>
                     <?php else: ?>
                         <button type="button" class="btn btn-reg-draft px-4" id="saveDraftBtn" onclick="saveDraft()">Save Draft</button>
                     <?php endif; ?>
-                    <button type="submit" class="btn btn-reg-submit px-4" id="submitBtn" <?= $submit_disabled_attr ?>><?= $is_approved_limited_edit ? 'Resubmit for Welfare Approval' : 'Submit Registration' ?></button>
+                    <button type="submit" class="btn btn-reg-submit px-4" id="submitBtn" <?= $submit_disabled_attr ?>><?= $is_limited_update_mode ? 'Resubmit for Welfare Approval' : 'Submit Registration' ?></button>
                 </div>
             </div>
 
@@ -924,7 +967,7 @@ function renderContent() {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
-    const ANNEXURE3A_LIMITED_EDIT = <?= $is_approved_limited_edit ? 'true' : 'false' ?>;
+    const ANNEXURE3A_LIMITED_EDIT = <?= $is_limited_update_mode ? 'true' : 'false' ?>;
 
     const workOrders = <?= json_encode($work_orders ?? []) ?>;
 
@@ -988,7 +1031,7 @@ function renderContent() {
         const warning = document.getElementById('esi-ec-warning');
         if (warning) warning.classList.toggle('d-none', !invalid);
         if (invalid && showPopup && typeof window.notifyUser === 'function') {
-            window.notifyUser('Employee Compensation Policy details are mandatory when ESI is No.', 'warning', 'EC Policy required');
+            window.notifyUser('Either ESI or EC Policy is mandatory', 'warning', 'Either ESI or EC Policy is mandatory');
         }
         return !invalid;
     }
@@ -1036,12 +1079,25 @@ function renderContent() {
         if (hidden) hidden.value = parts.join('\n');
     }
 
+    function syncLicenseIssuedFields() {
+        document.querySelectorAll('#licenseTableBody .license-row').forEach(row => {
+            const validity = row.querySelector('input[name="license_validity[]"]')?.value || '';
+            const issuedBy = row.querySelector('input[name="license_issued[]"]');
+            if (issuedBy) issuedBy.value = validity;
+        });
+    }
+
     function updateSlNos(tbodyId) {
         const rows = document.querySelectorAll(`#${tbodyId} tr`);
         rows.forEach((row, index) => {
             row.querySelector('.sl-no').innerText = index + 1;
             const deleteBtn = row.querySelector('.delete-btn');
-            if (deleteBtn) deleteBtn.style.display = rows.length > 1 ? 'inline-block' : 'none';
+            if (!deleteBtn) return;
+            if (deleteBtn.disabled) {
+                deleteBtn.style.display = 'none';
+                return;
+            }
+            deleteBtn.style.display = rows.length > 1 ? 'inline-block' : 'none';
         });
     }
 
@@ -1100,8 +1156,15 @@ function renderContent() {
         const row = tbody.querySelector('.ecp-row').cloneNode(true);
         row.querySelectorAll('input').forEach(input => {
             input.value = '';
+            input.readOnly = false;
+            input.disabled = false;
+            input.style.display = '';
             input.classList.remove('is-invalid');
             input.required = getRadioValue('ecp_covered') === 'YES' && input.type !== 'hidden';
+        });
+        row.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.disabled = false;
+            btn.style.display = 'inline-block';
         });
         row.querySelectorAll('.invalid-feedback').forEach(error => error.style.display = 'none');
         tbody.appendChild(row);
@@ -1109,6 +1172,7 @@ function renderContent() {
     }
 
     function deleteEcpRow(btn) {
+        if (btn.disabled) return;
         const rows = document.querySelectorAll('#ecpTableBody tr');
         if (rows.length > 1) btn.closest('tr').remove();
         updateSlNos('ecpTableBody');
@@ -1119,7 +1183,14 @@ function renderContent() {
         const row = tbody.querySelector('.license-row').cloneNode(true);
         row.querySelectorAll('input').forEach(input => {
             input.value = '';
+            input.readOnly = false;
+            input.disabled = false;
+            input.style.display = '';
             input.classList.remove('is-invalid');
+        });
+        row.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.disabled = false;
+            btn.style.display = 'inline-block';
         });
         row.querySelectorAll('.invalid-feedback').forEach(error => error.style.display = 'none');
         row.querySelectorAll('a').forEach(a => a.remove());
@@ -1129,6 +1200,7 @@ function renderContent() {
     }
 
     function deleteLicenseRow(btn) {
+        if (btn.disabled) return;
         const rows = document.querySelectorAll('#licenseTableBody tr');
         if (rows.length > 1) btn.closest('tr').remove();
         updateSlNos('licenseTableBody');
@@ -1259,6 +1331,7 @@ function renderContent() {
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> SUBMITTING...';
 
         syncReasonSummary();
+        syncLicenseIssuedFields();
         const formData = new FormData(e.target);
         formData.append('action', ANNEXURE3A_LIMITED_EDIT ? 'resubmit' : 'submit');
         formData.set('total_workers', String(updateWorkerTotal()));
@@ -1301,6 +1374,7 @@ function renderContent() {
 
     async function saveDraft() {
         syncReasonSummary();
+        syncLicenseIssuedFields();
         const formData = new FormData(document.getElementById('annexure3AForm'));
         formData.append('action', 'draft');
         formData.set('total_workers', String(updateWorkerTotal()));

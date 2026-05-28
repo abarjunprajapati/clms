@@ -294,6 +294,7 @@ $c_master = $vendor_code !== '' ? db_single($conn, "SELECT id FROM contractors W
 $contractor_id = $c_master ? $c_master['id'] : 0;
 $edit_id = isset($_POST['edit_id']) ? intval($_POST['edit_id']) : null;
 $existing_a3_row = null;
+$limited_existing_edit = false;
 $approved_limited_edit = false;
 
 if ($edit_id) {
@@ -302,11 +303,10 @@ if ($edit_id) {
     } else {
         $existing_lock = db_single($conn, "SELECT * FROM contractor_annexure3a WHERE id = ? AND vendor_code = ?", 'is', [$edit_id, $vendor_code]);
     }
-    if ($existing_lock && in_array(strtolower($existing_lock['status'] ?? ''), ['pending', 'resubmitted'], true)) {
-        failJson('This Annexure 3A is currently pending Welfare review and cannot be edited.');
-    }
     $existing_a3_row = $existing_lock;
-    $approved_limited_edit = $existing_lock && strtolower($existing_lock['status'] ?? '') === 'approved';
+    $existing_status = strtolower($existing_lock['status'] ?? '');
+    $limited_existing_edit = in_array($existing_status, ['approved', 'pending', 'submitted', 'resubmitted', 'under_review', 'hold'], true);
+    $approved_limited_edit = $existing_status === 'approved';
 } elseif (!empty($work_order_no)) {
     if ($is_customer_submission) {
         $existing_submission = db_single($conn, "SELECT id, status FROM contractor_annexure3a WHERE customer_code = ? AND work_order_no = ? ORDER BY id DESC LIMIT 1", 'ss', [$customer_code, $work_order_no]);
@@ -315,11 +315,9 @@ if ($edit_id) {
     }
     if ($existing_submission) {
         $existing_status = strtolower($existing_submission['status'] ?? '');
-        if (in_array($existing_status, ['pending', 'resubmitted'], true)) {
-            failJson('Annexure 3A for this work order is currently pending Welfare review and cannot be edited.');
-        }
         $edit_id = intval($existing_submission['id']);
         $existing_a3_row = db_single($conn, "SELECT * FROM contractor_annexure3a WHERE id = ?", 'i', [$edit_id]);
+        $limited_existing_edit = in_array($existing_status, ['approved', 'pending', 'submitted', 'resubmitted', 'under_review', 'hold'], true);
         $approved_limited_edit = $existing_status === 'approved';
     }
 }
@@ -433,7 +431,7 @@ if ($salary_category === '' && $wage_category !== '') {
     $salary_category = $wage_category;
 }
 
-if ($approved_limited_edit && $existing_a3_row) {
+if ($limited_existing_edit && $existing_a3_row) {
     $pin_code = $existing_a3_row['pin_code'] ?? $pin_code;
     $work_awarding_department = $existing_a3_row['work_awarding_department'] ?? $work_awarding_department;
     $is_epf_registered = intval($existing_a3_row['is_epf_registered'] ?? $is_epf_registered);
@@ -486,19 +484,21 @@ if ($approved_limited_edit && $existing_a3_row) {
 }
 
 // Validation
-if (!$approved_limited_edit && $action === 'submit' && $is_epf_registered && empty($epf_code)) {
+$is_final_submit = in_array($action, ['submit', 'resubmit'], true);
+
+if (!$limited_existing_edit && $is_final_submit && $is_epf_registered && empty($epf_code)) {
     failJson('EPF Establishment Code is mandatory if registered.');
 }
-if (!$approved_limited_edit && $action === 'submit' && $is_esi_registered && empty($esi_code)) {
+if (!$limited_existing_edit && $is_final_submit && $is_esi_registered && empty($esi_code)) {
     failJson('ESI Establishment Code is mandatory if registered.');
 }
-if ($action === 'submit' && !$is_esi_registered && $ecp_covered !== 'YES') {
-    failJson('Employee Compensation Policy details are mandatory when ESI is No.');
+if ($is_final_submit && !$is_esi_registered && $ecp_covered !== 'YES') {
+    failJson('Either ESI or EC Policy is mandatory');
 }
-if ($action === 'submit' && $ecp_covered === 'YES' && empty($ecps)) {
+if ($is_final_submit && $ecp_covered === 'YES' && empty($ecps)) {
     failJson('Please add at least one Employee Compensation Policy row.');
 }
-if ($action === 'submit' && $ecp_covered === 'YES') {
+if ($is_final_submit && $ecp_covered === 'YES') {
     foreach ($ecps as $policy) {
         if (empty($policy['ecp_number']) || empty($policy['ecp_valid_from']) || empty($policy['ecp_valid_to'])) {
             failJson('EC Policy Number, Valid From and Valid To are mandatory when EC Policy is Yes.');
@@ -508,22 +508,22 @@ if ($action === 'submit' && $ecp_covered === 'YES') {
         }
     }
 }
-if (!$approved_limited_edit && $action === 'submit' && $total_workers < 1) {
+if (!$limited_existing_edit && $is_final_submit && $total_workers < 1) {
     failJson('At least one proposed worker is required.');
 }
-if (!$approved_limited_edit && $action === 'submit' && empty($worker_categories)) {
+if (!$limited_existing_edit && $is_final_submit && empty($worker_categories)) {
     failJson('Please select at least one Category of Workmen.');
 }
-if (!$approved_limited_edit && $action === 'submit' && (empty($contact_person) || !preg_match('/^[a-zA-Z\s]+$/', $contact_person))) {
+if (!$limited_existing_edit && $is_final_submit && (empty($contact_person) || !preg_match('/^[a-zA-Z\s]+$/', $contact_person))) {
     failJson('Name of Contact Person is mandatory and must contain alphabets only.');
 }
-if (!$approved_limited_edit && $action === 'submit' && (empty($mobile) || !preg_match('/^[0-9]{10}$/', $mobile))) {
+if (!$limited_existing_edit && $is_final_submit && (empty($mobile) || !preg_match('/^[0-9]{10}$/', $mobile))) {
     failJson('Mobile Number must be exactly 10 digits.');
 }
-if (!$approved_limited_edit && $vendor_mob2 !== '' && !preg_match('/^[0-9]{10}$/', $vendor_mob2)) {
+if (!$limited_existing_edit && $vendor_mob2 !== '' && !preg_match('/^[0-9]{10}$/', $vendor_mob2)) {
     failJson('Alternate Mobile Number must be exactly 10 digits.');
 }
-if (!$approved_limited_edit && $labour_identification_no !== '' && !preg_match('/^[0-9]+$/', $labour_identification_no)) {
+if (!$limited_existing_edit && $labour_identification_no !== '' && !preg_match('/^[0-9]+$/', $labour_identification_no)) {
     failJson('Labour Identification Number must contain digits only.');
 }
 
@@ -573,20 +573,22 @@ if (!empty($licenses)) {
     $labour_license_issue_date = null;
     $labour_license_expiry_date = null;
 }
-if ($action === 'submit' && !empty($labour_license_issue_date) && !empty($labour_license_expiry_date) && strtotime($labour_license_expiry_date) <= strtotime($labour_license_issue_date)) {
+if ($is_final_submit && !empty($labour_license_issue_date) && !empty($labour_license_expiry_date) && strtotime($labour_license_expiry_date) <= strtotime($labour_license_issue_date)) {
     failJson('Labour License Expiry Date must be later than Issue Date.');
 }
 
-if ($approved_limited_edit && $existing_a3_row && empty($ecps)) {
+if ($limited_existing_edit && $existing_a3_row && empty($ecps)) {
     $insurance_policy_name = $existing_a3_row['insurance_policy_name'] ?? $insurance_policy_name;
     $insurance_policy_no = $existing_a3_row['insurance_policy_no'] ?? $insurance_policy_no;
     $insurance_validity = $existing_a3_row['insurance_validity'] ?? $insurance_validity;
     $insurance_workers_count = intval($existing_a3_row['insurance_workers_count'] ?? $insurance_workers_count);
 }
 
-$record_status = $approved_limited_edit
-    ? (in_array($action, ['submit', 'resubmit'], true) ? 'resubmitted' : 'approved')
-    : ($action === 'draft' ? 'draft' : 'pending');
+if ($limited_existing_edit) {
+    $record_status = in_array($action, ['submit', 'resubmit'], true) ? 'resubmitted' : strtolower($existing_a3_row['status'] ?? 'approved');
+} else {
+    $record_status = $action === 'draft' ? 'draft' : 'pending';
+}
 
 if ($edit_id) {
     // Update existing

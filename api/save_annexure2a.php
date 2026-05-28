@@ -344,16 +344,13 @@ $workers_ecp = !empty($ecps) ? intval($ecps[0]['workers_under_policy'] ?? 0) : $
 // 4. Retrieve existing contractor profile for license file uploads
 $existing = db_single($conn, "SELECT * FROM contractors WHERE vendor_code = ?", 's', [$vendor_code]);
 $contractor_id = $existing ? $existing['id'] : null;
+$current_status = '';
+$limited_existing_edit = false;
 $approved_limited_edit = false;
 
 if ($existing) {
     $current_status = strtolower($existing['status'] ?? '');
-    if (in_array($current_status, ['pending', 'submitted', 'resubmitted', 'under_review', 'hold'], true)) {
-        annexure2a_json_response([
-            'success' => false,
-            'message' => 'This contractor registration is locked while it is pending Welfare action.'
-        ], 409);
-    }
+    $limited_existing_edit = in_array($current_status, ['approved', 'pending', 'submitted', 'resubmitted', 'under_review', 'hold'], true);
     $approved_limited_edit = $current_status === 'approved';
 }
 
@@ -428,7 +425,7 @@ if (empty($license_file_path) && $existing && !empty($existing['license_file']))
     $license_file_path = $existing['license_file'];
 }
 
-if ($approved_limited_edit && $existing) {
+if ($limited_existing_edit && $existing) {
     $vendor_name = $existing['vendor_name'] ?? $vendor_name;
     $mobile_legacy = $existing['mobile'] ?? $mobile_legacy;
     $email = $existing['email'] ?? $email;
@@ -482,7 +479,10 @@ $request_action = $_POST['action'] ?? 'submit';
 $is_final_submit = in_array($request_action, ['submit', 'resubmit'], true);
 
 if ($is_final_submit) {
-    if ($approved_limited_edit) {
+    if ($limited_existing_edit) {
+        if ($esi_registered === 'NO' && $ecp_covered !== 'YES') {
+            annexure2a_json_response(['success' => false, 'message' => 'Either ESI or EC Policy is mandatory'], 400);
+        }
         if ($ecp_covered === 'YES' && empty($ecps)) {
             annexure2a_json_response(['success' => false, 'message' => 'Please provide at least one Employee Compensation (EC) Policy details row.'], 400);
         }
@@ -518,7 +518,7 @@ if ($is_final_submit) {
     }
     
     if ($esi_registered === 'NO' && $ecp_covered !== 'YES') {
-        annexure2a_json_response(['success' => false, 'message' => 'Employee Compensation Policy details are mandatory when ESI is No.'], 400);
+        annexure2a_json_response(['success' => false, 'message' => 'Either ESI or EC Policy is mandatory'], 400);
     }
     if ($ecp_covered === 'YES' && empty($ecps)) {
         annexure2a_json_response(['success' => false, 'message' => 'Please provide at least one Employee Compensation (EC) Policy details row.'], 400);
@@ -570,9 +570,11 @@ if ($is_final_submit) {
 
 annexure2a_validation_complete:
 
-$status = $approved_limited_edit
-    ? ($request_action === 'resubmit' ? 'pending' : ($request_action === 'draft' ? 'approved' : 'pending'))
-    : (($request_action === 'submit') ? 'pending' : 'draft');
+if ($limited_existing_edit) {
+    $status = ($request_action === 'draft') ? ($current_status ?: 'approved') : 'pending';
+} else {
+    $status = ($request_action === 'submit') ? 'pending' : 'draft';
+}
 
 // 6. DB INSERT OR UPDATE for 'contractors' table
 if ($existing) {
@@ -657,9 +659,11 @@ $app_id = "APP-" . str_pad($user_id, 5, '0', STR_PAD_LEFT);
 db_execute($conn, "UPDATE contractors SET application_no = ? WHERE id = ?", 'si', [$app_id, $contractor_id]);
 $check_app = db_single($conn, "SELECT id FROM annexure2a WHERE contractor_id = ?", 'i', [$contractor_id]);
 
-$wf_status = $request_action === 'resubmit'
-    ? 'resubmitted'
-    : ($status === 'pending' ? 'submitted' : ($request_action === 'draft' && $approved_limited_edit ? 'draft' : 'draft'));
+if ($limited_existing_edit && $request_action !== 'draft') {
+    $wf_status = 'resubmitted';
+} else {
+    $wf_status = ($status === 'pending') ? 'submitted' : 'draft';
+}
 
 if ($check_app) {
     db_execute($conn, 
@@ -737,7 +741,7 @@ if (in_array($status, ['pending', 'resubmitted'], true)) {
 $message = 'Contractor Registration Submitted Successfully';
 if ($request_action === 'draft') {
     $message = 'Contractor Registration Saved as Draft';
-} elseif ($request_action === 'resubmit') {
+} elseif ($request_action === 'resubmit' || ($limited_existing_edit && $request_action === 'submit')) {
     $message = 'Contractor Registration Resubmitted Successfully';
 }
 

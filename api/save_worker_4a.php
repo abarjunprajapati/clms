@@ -234,6 +234,7 @@ function worker4a_ensure_schema($conn) {
         'dob' => 'DATE NULL',
         'gender' => 'VARCHAR(20) NULL',
         'marital_status' => 'VARCHAR(30) NULL',
+        'nationality' => "VARCHAR(100) NULL DEFAULT 'Indian'",
         'aadhaar' => 'VARCHAR(20) NULL',
         'mobile' => 'VARCHAR(20) NULL',
         'emergency_contact' => 'VARCHAR(20) NULL',
@@ -508,6 +509,7 @@ worker4a_ensure_schema($conn);
         'dob' => trim((string)($data['dob'] ?? '')) !== '' ? $data['dob'] : null,
         'gender' => $data['gender'] ?? '',
         'marital_status' => $data['marital_status'] ?? '',
+        'nationality' => $data['nationality'] ?? 'Indian',
         'aadhaar' => $data['aadhaar'] ?? '',
         'mobile' => $data['mobile'] ?? '',
         'emergency_contact' => $data['emergency_contact'] ?? '',
@@ -685,4 +687,3 @@ worker4a_ensure_schema($conn);
     ]);
 }
 ?>
-

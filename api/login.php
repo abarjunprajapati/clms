@@ -15,6 +15,10 @@ try {
     $username = trim($input['contractor_id'] ?? $input['username'] ?? '');
     $password = $input['password'] ?? '';
     $captcha = trim($input['captcha'] ?? '');
+    $login_scope = strtolower(trim($input['login_scope'] ?? 'external'));
+    if (!in_array($login_scope, ['external', 'internal'], true)) {
+        $login_scope = 'external';
+    }
 
     // 1. Validation
     if (empty($username)) apiError('Username/Contractor Code is required', 400);
@@ -118,6 +122,15 @@ try {
 
     if (!$user_data) {
         apiError('Invalid credentials', 401);
+    }
+
+    $external_roles = ['contractor', 'customer'];
+    $is_external_user = in_array($user_data['role'], $external_roles, true);
+    if ($login_scope === 'external' && !$is_external_user) {
+        apiError('Internal users must login from the Internal Staff Login page.', 403, null, 'internal-login.php');
+    }
+    if ($login_scope === 'internal' && $is_external_user) {
+        apiError('Contractor and Customer users must login from the External Login page.', 403, null, 'index.php');
     }
 
     // 7. Two-Step Verification (OTP)

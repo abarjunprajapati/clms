@@ -614,6 +614,28 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
                         <div class="detail-val" id="detail-gender">-</div>
                     </div>
                     <div class="detail-item">
+                        <div class="detail-label">Nationality</div>
+                        <div class="detail-val edit-field-container">
+                            <span class="view-mode" id="detail-nationality">-</span>
+                            <input type="text" class="form-control edit-mode" id="edit-nationality" list="welfareNationalityList" style="display:none" />
+                            <datalist id="welfareNationalityList">
+                                <option value="Indian"></option>
+                                <option value="Nepalese"></option>
+                                <option value="Bangladeshi"></option>
+                                <option value="Sri Lankan"></option>
+                                <option value="Myanmar"></option>
+                                <option value="Filipino"></option>
+                                <option value="Malaysian"></option>
+                                <option value="Singaporean"></option>
+                                <option value="Emirati"></option>
+                                <option value="Saudi Arabian"></option>
+                                <option value="Omani"></option>
+                                <option value="Qatari"></option>
+                                <option value="Kuwaiti"></option>
+                            </datalist>
+                        </div>
+                    </div>
+                    <div class="detail-item">
                         <div class="detail-label">Blood Group</div>
                         <div class="detail-val edit-field-container">
                             <span class="view-mode" id="detail-blood_group">-</span>
@@ -1326,6 +1348,7 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
                 document.getElementById('detail-spouse_name').textContent = worker.spouse_name || 'N/A';
                 document.getElementById('detail-dob').textContent = worker.dob || 'N/A';
                 document.getElementById('detail-gender').textContent = worker.gender || 'N/A';
+                document.getElementById('detail-nationality').textContent = worker.nationality || 'Indian';
                 document.getElementById('detail-blood_group').textContent = worker.blood_group || 'N/A';
                 document.getElementById('detail-present_address').textContent = worker.present_address || 'N/A';
                 document.getElementById('detail-permanent_address').textContent = worker.permanent_address || 'N/A';
@@ -1334,6 +1357,7 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
                 document.getElementById('edit-worker_name').value = worker.worker_name || '';
                 document.getElementById('edit-mobile_no').value = worker.mobile_no || '';
                 document.getElementById('edit-email').value = worker.email || '';
+                document.getElementById('edit-nationality').value = worker.nationality || 'Indian';
                 document.getElementById('edit-blood_group').value = worker.blood_group || 'A+';
 
                 // Populate Employment Info
@@ -1531,6 +1555,7 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
         const name = document.getElementById('edit-worker_name').value.trim();
         const mobile = document.getElementById('edit-mobile_no').value.trim();
         const email = document.getElementById('edit-email').value.trim();
+        const nationality = document.getElementById('edit-nationality').value.trim();
         const blood = document.getElementById('edit-blood_group').value;
 
         if (!name) {
@@ -1543,6 +1568,7 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
             formData.append('worker_id', currentWorkerId);
             formData.append('mobile_no', mobile);
             formData.append('email', email);
+            formData.append('nationality', nationality || 'Indian');
             formData.append('blood_group', blood);
             
             // Support updating name in workmen

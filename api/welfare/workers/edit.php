@@ -26,6 +26,15 @@ try {
     }
     $worker = mysqli_fetch_assoc($result);
 
+    $hasNationality = false;
+    $colRes = mysqli_query($conn, "SHOW COLUMNS FROM workmen LIKE 'nationality'");
+    if ($colRes && mysqli_num_rows($colRes) > 0) {
+        $hasNationality = true;
+    }
+    if (!$hasNationality) {
+        @mysqli_query($conn, "ALTER TABLE workmen ADD COLUMN nationality VARCHAR(100) NULL DEFAULT 'Indian'");
+    }
+
     // Extract fields from POST. In a real scenario, loop through allowed fields.
     $allowedFields = ['mobile_no', 'email', 'blood_group', 'contractor_id', 'department_id', 'skill_category'];
     $updates = [];
@@ -47,6 +56,11 @@ try {
     
     if (!mysqli_query($conn, $updateQuery)) {
         throw new Exception("Failed to update worker: " . mysqli_error($conn));
+    }
+
+    if (isset($_POST['nationality'])) {
+        $nationality = mysqli_real_escape_string($conn, trim($_POST['nationality']) ?: 'Indian');
+        mysqli_query($conn, "UPDATE workmen SET nationality = '$nationality' WHERE id = $worker_id");
     }
 
     // Log the action

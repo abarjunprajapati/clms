@@ -140,6 +140,26 @@ if (!$contractor_id || !$pass_type) {
     passLimitJson(['success' => false, 'error' => 'Contractor and Pass Type are required.'], 400);
 }
 
+$activeContractor = db_single(
+    $conn,
+    "SELECT c.id
+     FROM contractors c
+     WHERE c.id = ?
+       AND EXISTS (
+           SELECT 1
+           FROM users u
+           WHERE u.role = 'contractor'
+             AND u.status = 'active'
+             AND (u.id = c.user_id OR u.contractor_id = c.vendor_code)
+       )
+     LIMIT 1",
+    'i',
+    [$contractor_id]
+);
+if (!$activeContractor) {
+    passLimitJson(['success' => false, 'error' => 'Only active contractor users can be assigned pass limits.'], 400);
+}
+
 $valid_types = ['Contractor', 'Representative', 'Supervisor', 'Workman'];
 if (!in_array($pass_type, $valid_types, true)) {
     passLimitJson(['success' => false, 'error' => 'Invalid pass type. Must be one of: ' . implode(', ', $valid_types)], 400);

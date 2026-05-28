@@ -15,11 +15,21 @@ function renderContent() {
         return;
     }
 
+    $fileUrl = function($path) {
+        $path = trim((string)$path);
+        if ($path === '') return '';
+        if (preg_match('/^https?:\/\//i', $path)) return $path;
+        if (strpos($path, '../../') === 0 || strpos($path, '../') === 0) return $path;
+        return '../../uploads/' . ltrim($path, '/\\');
+    };
+
     // History of Customer Registration actions for this customer
-    $hist_sql = "SELECT annexure3a_id, vendor_code, work_order_no, status, reason, updated_at
-                 FROM contractor_annexure3a_history
-                 WHERE customer_code = ?
-                 ORDER BY updated_at DESC";
+    $hist_sql = "SELECT h.annexure3a_id, h.vendor_code, h.work_order_no, h.status, h.reason, h.updated_at,
+                        a.approval_reason, a.approval_file, a.verified_at
+                 FROM contractor_annexure3a_history h
+                 LEFT JOIN contractor_annexure3a a ON a.id = h.annexure3a_id
+                 WHERE h.customer_code = ?
+                 ORDER BY COALESCE(a.verified_at, h.updated_at) DESC";
     $annex_history = db_fetch_all($conn, $hist_sql, 's', [$customer_code]);
 
     // Documents related to Customer Registration for this customer
@@ -43,15 +53,23 @@ function renderContent() {
                 <div class="text-center" style="padding:20px">No  actions recorded yet.</div>
             <?php else: ?>
                 <table class="simple-table">
-                    <thead><tr><th>When</th><th>Vendor Code</th><th>WO</th><th>Action</th><th>Reason</th></tr></thead>
+                    <thead><tr><th>When</th><th>Vendor Code</th><th>WO</th><th>Action</th><th>Reason</th><th>Attachment</th></tr></thead>
                     <tbody>
                     <?php foreach ($annex_history as $h): ?>
+                        <?php $when = $h['verified_at'] ?: ($h['updated_at'] ?? ''); ?>
                         <tr>
-                            <td><?= htmlspecialchars($h['updated_at'] ?? '') ?></td>
+                            <td><?= htmlspecialchars($when) ?></td>
                             <td><?= htmlspecialchars($h['vendor_code'] ?? '') ?></td>
                             <td><?= htmlspecialchars($h['work_order_no'] ?? '') ?></td>
                             <td><?= strtoupper(htmlspecialchars($h['status'] ?? '')) ?></td>
-                            <td><?= nl2br(htmlspecialchars($h['reason'] ?? '')) ?></td>
+                            <td><?= nl2br(htmlspecialchars($h['approval_reason'] ?: ($h['reason'] ?? ''))) ?></td>
+                            <td>
+                                <?php if (!empty($h['approval_file'])): ?>
+                                    <a href="<?= htmlspecialchars($fileUrl($h['approval_file'])) ?>" target="_blank">View Attachment</a>
+                                <?php else: ?>
+                                    -
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -75,7 +93,7 @@ function renderContent() {
                             <td><?= htmlspecialchars($d['vendor_code'] ?? '') ?></td>
                             <td><?= htmlspecialchars($d['work_order_no'] ?? '') ?></td>
                             <td><?= htmlspecialchars($d['doc_type'] ?? '') ?></td>
-                            <td><?php if (!empty($d['file_path'])): ?><a href="<?= htmlspecialchars($d['file_path']) ?>" target="_blank"><?= htmlspecialchars($d['original_name'] ?: basename($d['file_path'])) ?></a><?php else: ?>-<?php endif; ?></td>
+                            <td><?php if (!empty($d['file_path'])): ?><a href="<?= htmlspecialchars($fileUrl($d['file_path'])) ?>" target="_blank"><?= htmlspecialchars($d['original_name'] ?: basename($d['file_path'])) ?></a><?php else: ?>-<?php endif; ?></td>
                             <td><?= htmlspecialchars($d['status'] ?? '') ?></td>
                         </tr>
                     <?php endforeach; ?>

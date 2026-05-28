@@ -8,352 +8,403 @@ include '../../include/layout.php';
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
 $user_id = $_SESSION['user_id'];
-clms_get_portal_contractor($conn);
+$portalContractor = clms_get_portal_contractor($conn);
+
+function contractorReportTableExists($conn, $table) {
+    static $cache = [];
+    if (isset($cache[$table])) {
+        return $cache[$table];
+    }
+
+    $safeTable = mysqli_real_escape_string($conn, $table);
+    $result = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
+    $cache[$table] = $result && mysqli_num_rows($result) > 0;
+    return $cache[$table];
+}
+
+function contractorReportColumnExists($conn, $table, $column) {
+    static $cache = [];
+    $key = $table . '.' . $column;
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+
+    if (!contractorReportTableExists($conn, $table)) {
+        $cache[$key] = false;
+        return false;
+    }
+
+    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$safeColumn'");
+    $cache[$key] = $result && mysqli_num_rows($result) > 0;
+    return $cache[$key];
+}
+
+function contractorReportCount($conn, $sql, $types = '', $params = []) {
+    return db_count($conn, $sql, $types, $params);
+}
+
+function contractorReportWorkOrders($conn, $contractorId, $vendorCode, $fallbackWorkOrder) {
+    $orders = [];
+    $seen = [];
+
+    if ($vendorCode !== '' && contractorReportTableExists($conn, 'work_orders') && contractorReportColumnExists($conn, 'work_orders', 'work_order_no')) {
+        $vendorColumns = [];
+        foreach (['vendor_code', 'contractor_vendor_code'] as $column) {
+            if (contractorReportColumnExists($conn, 'work_orders', $column)) {
+                $vendorColumns[] = "`$column` = ?";
+            }
+        }
+
+        if ($vendorColumns) {
+            $projectExpr = contractorReportColumnExists($conn, 'work_orders', 'project_name') ? 'project_name' : "'' AS project_name";
+            $deptExpr = contractorReportColumnExists($conn, 'work_orders', 'department') ? 'department' : "'' AS department";
+            $statusExpr = contractorReportColumnExists($conn, 'work_orders', 'wo_status') ? 'wo_status' : "'ACTIVE' AS wo_status";
+            $where = implode(' OR ', $vendorColumns);
+            $types = str_repeat('s', count($vendorColumns));
+            $params = array_fill(0, count($vendorColumns), $vendorCode);
+            $rows = db_fetch_all($conn, "
+                SELECT work_order_no, $projectExpr, $deptExpr, $statusExpr
+                FROM work_orders
+                WHERE $where
+                ORDER BY work_order_no DESC
+                LIMIT 100
+            ", $types, $params);
+
+            foreach ($rows as $row) {
+                $no = trim((string)($row['work_order_no'] ?? ''));
+                if ($no === '' || isset($seen[$no])) {
+                    continue;
+                }
+                $seen[$no] = true;
+                $orders[] = $row;
+            }
+        }
+    }
+
+    if ($vendorCode !== '' && contractorReportTableExists($conn, 'sap_pwo_master')) {
+        $rows = [];
+        $pwoProjectExpr = contractorReportColumnExists($conn, 'sap_pwo_master', 'project') ? 'p.project' : 'NULL';
+        $pwoVesselExpr = contractorReportColumnExists($conn, 'sap_pwo_master', 'vessel') ? 'p.vessel' : 'NULL';
+        $pwoDescExpr = contractorReportColumnExists($conn, 'sap_pwo_master', 'pwo_description') ? 'p.pwo_description' : 'NULL';
+        $pwoStatusExpr = contractorReportColumnExists($conn, 'sap_pwo_master', 'status') ? 'p.status' : "'active'";
+        $pwoOrderExpr = contractorReportColumnExists($conn, 'sap_pwo_master', 'created_at') ? 'p.created_at DESC' : 'p.pwo_number DESC';
+
+        if (
+            contractorReportTableExists($conn, 'sap_po_master') &&
+            contractorReportColumnExists($conn, 'sap_pwo_master', 'po_number') &&
+            contractorReportColumnExists($conn, 'sap_po_master', 'po_number') &&
+            contractorReportColumnExists($conn, 'sap_po_master', 'vendor_code')
+        ) {
+            $poDeptExpr = contractorReportColumnExists($conn, 'sap_po_master', 'purchasing_group') ? 'po.purchasing_group' : "''";
+            $rows = db_fetch_all($conn, "
+                SELECT p.pwo_number AS work_order_no,
+                       COALESCE($pwoProjectExpr, $pwoVesselExpr, $pwoDescExpr, '') AS project_name,
+                       COALESCE($poDeptExpr, '') AS department,
+                       COALESCE($pwoStatusExpr, 'active') AS wo_status
+                FROM sap_pwo_master p
+                JOIN sap_po_master po ON p.po_number = po.po_number
+                WHERE po.vendor_code = ?
+                ORDER BY $pwoOrderExpr
+                LIMIT 100
+            ", 's', [$vendorCode]);
+        } else {
+            $vendorFilters = [];
+            foreach (['vendor_code', 'customer_code'] as $column) {
+                if (contractorReportColumnExists($conn, 'sap_pwo_master', $column)) {
+                    $vendorFilters[] = "p.`$column` = ?";
+                }
+            }
+
+            if ($vendorFilters) {
+                $where = implode(' OR ', $vendorFilters);
+                $types = str_repeat('s', count($vendorFilters));
+                $params = array_fill(0, count($vendorFilters), $vendorCode);
+                $rows = db_fetch_all($conn, "
+                    SELECT p.pwo_number AS work_order_no,
+                           COALESCE($pwoProjectExpr, $pwoVesselExpr, $pwoDescExpr, '') AS project_name,
+                           '' AS department,
+                           COALESCE($pwoStatusExpr, 'active') AS wo_status
+                    FROM sap_pwo_master p
+                    WHERE $where
+                    ORDER BY $pwoOrderExpr
+                    LIMIT 100
+                ", $types, $params);
+            }
+        }
+
+        foreach ($rows as $row) {
+            $no = trim((string)($row['work_order_no'] ?? ''));
+            if ($no === '' || isset($seen[$no])) {
+                continue;
+            }
+            $seen[$no] = true;
+            $orders[] = $row;
+        }
+    }
+
+    if (contractorReportTableExists($conn, 'contractor_pwo_selection')) {
+        $rows = db_fetch_all($conn, "
+            SELECT pwo_number AS work_order_no, '' AS project_name, '' AS department, 'selected' AS wo_status
+            FROM contractor_pwo_selection
+            WHERE contractor_id = ?
+            ORDER BY pwo_number DESC
+        ", 'i', [$contractorId]);
+
+        foreach ($rows as $row) {
+            $no = trim((string)($row['work_order_no'] ?? ''));
+            if ($no === '' || isset($seen[$no])) {
+                continue;
+            }
+            $seen[$no] = true;
+            $orders[] = $row;
+        }
+    }
+
+    if ($fallbackWorkOrder && !isset($seen[$fallbackWorkOrder])) {
+        $orders[] = [
+            'work_order_no' => $fallbackWorkOrder,
+            'project_name' => '',
+            'department' => '',
+            'wo_status' => 'active'
+        ];
+    }
+
+    return $orders;
+}
 
 function renderContent() {
-    global $conn, $user_id;
+    global $conn, $user_id, $portalContractor;
 
-    $contractor = db_single($conn, "SELECT id, vendor_code FROM contractors WHERE user_id = ?", 'i', [$user_id]);
-    $c_id = $contractor['id'] ?? null;
-    $v_code = $contractor['vendor_code'] ?? '';
+    $contractor = $portalContractor ?: db_single($conn, "SELECT * FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [$user_id]);
+    $c_id = (int)($contractor['id'] ?? 0);
+    $v_code = trim((string)($contractor['vendor_code'] ?? ''));
+    $fallbackWorkOrder = trim((string)($contractor['work_order_no'] ?? ''));
 
     if (!$c_id) {
         echo '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> Complete your registration first to access reports.</div>';
         return;
     }
 
-    // Reports Dashboard UI
+    $totalWorkers = contractorReportCount($conn, "SELECT COUNT(*) FROM workmen WHERE contractor_id = ?", 'i', [$c_id]);
+    $activeWorkers = contractorReportCount($conn, "SELECT COUNT(*) FROM workmen WHERE contractor_id = ? AND status IN ('active','approved','temporary_issued','acc_generated','permanent_active')", 'i', [$c_id]);
+    $gatePasses = contractorReportCount($conn, "
+        SELECT COUNT(DISTINCT gp.id)
+        FROM gate_passes gp
+        JOIN workmen w ON gp.workman_id = w.id
+        WHERE w.contractor_id = ?
+          AND gp.status IN ('active','approved','issued')
+    ", 'i', [$c_id]);
+
+    $trainingPending = 0;
+    $trainingConditions = [];
+    foreach (['training_status', 'safety_status'] as $column) {
+        if (contractorReportColumnExists($conn, 'workmen', $column)) {
+            $trainingConditions[] = "COALESCE(`$column`, 'pending') IN ('pending','not_started','failed')";
+        }
+    }
+    if ($trainingConditions) {
+        $trainingPending = contractorReportCount($conn, "SELECT COUNT(*) FROM workmen WHERE contractor_id = ? AND (" . implode(' OR ', $trainingConditions) . ")", 'i', [$c_id]);
+    }
+
+    $documentsPending = contractorReportTableExists($conn, 'contractor_documents')
+        ? contractorReportCount($conn, "SELECT COUNT(*) FROM contractor_documents WHERE contractor_id = ? AND COALESCE(status,'pending') IN ('pending','reupload_required','rejected')", 'i', [$c_id])
+        : 0;
+
+    $workOrders = contractorReportWorkOrders($conn, $c_id, $v_code, $fallbackWorkOrder);
+
+    $reports = [
+        'Compliance' => [
+            ['Muster Roll', 'Form XVI attendance register', 'XVI', 'fa-clipboard-list', ['pdf', 'excel']],
+            ['Wage Register', 'Form XVII wage and deduction summary', 'XVII', 'fa-indian-rupee-sign', ['pdf', 'excel']],
+            ['PF and ESI Compliance', 'Monthly statutory contribution statement', 'COMP', 'fa-file-shield', ['pdf', 'excel']],
+            ['Bonus Register', 'Annual bonus payment records', 'BONUS', 'fa-gift', ['pdf']]
+        ],
+        'Operations' => [
+            ['Active Workforce Roster', 'Current enrolled worker snapshot', 'WORKERS', 'fa-users', ['excel']],
+            ['Daily In/Out Punches', 'Attendance log for selected period', 'ATT', 'fa-clock', ['excel']],
+            ['Safety Training Status', 'Training pending, pass and fail list', 'SAFE', 'fa-hard-hat', ['pdf', 'excel']],
+            ['Gate Pass Expiry Forecast', 'Passes expiring soon by worker', 'EXP', 'fa-id-card', ['pdf', 'excel']]
+        ]
+    ];
     ?>
-    <div class="content-header mb-4">
-        <div class="d-flex justify-content-between align-items-end">
-            <div>
-                <nav aria-label="breadcrumb">
-                    <ol class="breadcrumb mb-2" style="font-size: 13px; background: transparent; padding: 0; display: flex; list-style: none; gap: 8px; align-items: center;">
-                        <li class="breadcrumb-item"><a href="dashboard.php" style="text-decoration: none; color: var(--primary); font-weight: 500;"><i class="fas fa-home" style="font-size: 12px;"></i> Home</a></li>
-                        <li class="breadcrumb-item" style="color: var(--gray-400); font-size: 11px;">/</li>
-                        <li class="breadcrumb-item active" style="color: var(--gray-600); font-weight: 500;">Reports</li>
-                    </ol>
-                </nav>
-                <h2 class="page-title"><i class="fas fa-chart-bar text-primary me-2"></i> Reports</h2>
-            </div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-outline btn-sm" onclick="location.reload()">
-                    <i class="fas fa-sync-alt"></i> Refresh
-                </button>
-            </div>
-        </div>
+    <div class="content-header contractor-report-header">
+      <div>
+        <div class="cr-breadcrumb"><a href="dashboard.php"><i class="fas fa-home"></i> Dashboard</a><span>/</span><strong>Reports</strong></div>
+        <h2 class="page-title"><i class="fas fa-chart-bar"></i> Reports & Exports</h2>
+      </div>
+      <div class="cr-header-actions">
+        <a href="attendance.php" class="btn btn-outline"><i class="fas fa-calendar-check"></i> Attendance</a>
+        <button class="btn btn-primary" type="button" onclick="location.reload()"><i class="fas fa-sync-alt"></i> Refresh</button>
+      </div>
     </div>
 
-    <!-- Filters Section -->
-    <div class="card glass mb-4 border-0 shadow-sm">
-        <div class="card-body p-3">
-            <div class="row align-items-end g-3">
-                <div class="col-md-4">
-                    <label class="form-label" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-500);">Select Work Order</label>
-                    <select class="form-control form-control-sm" id="report_wo">
-                        <option value="">All Work Orders</option>
-                        <option value="WO/2024/001">WO/2024/001 - Civil Works</option>
-                        <option value="WO/2024/045">WO/2024/045 - Electrical Maintenance</option>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-500);">Date Range</label>
-                    <div class="input-group input-group-sm">
-                        <input type="date" class="form-control" id="date_from" value="<?= date('Y-m-01') ?>">
-                        <span class="input-group-text bg-light border-start-0 border-end-0">to</span>
-                        <input type="date" class="form-control" id="date_to" value="<?= date('Y-m-d') ?>">
-                    </div>
-                </div>
-                <div class="col-md-4 d-flex gap-2">
-                    <button class="btn btn-primary btn-sm px-4" onclick="applyFilters()">
-                        <i class="fas fa-filter"></i> Apply Filters
-                    </button>
-                    <button class="btn btn-outline btn-sm" onclick="resetFilters()">
-                        Reset
-                    </button>
-                </div>
-            </div>
-        </div>
+    <div class="cr-summary-grid">
+      <div class="cr-stat"><i class="fas fa-users" style="color:#2563eb"></i><div><strong><?= $totalWorkers ?></strong><span>Total Workers</span></div></div>
+      <div class="cr-stat"><i class="fas fa-user-check" style="color:#059669"></i><div><strong><?= $activeWorkers ?></strong><span>Active Workers</span></div></div>
+      <div class="cr-stat"><i class="fas fa-id-card" style="color:#7c3aed"></i><div><strong><?= $gatePasses ?></strong><span>Active Passes</span></div></div>
+      <div class="cr-stat"><i class="fas fa-hard-hat" style="color:#d97706"></i><div><strong><?= $trainingPending ?></strong><span>Training Pending</span></div></div>
+      <div class="cr-stat"><i class="fas fa-file-circle-exclamation" style="color:#dc2626"></i><div><strong><?= $documentsPending ?></strong><span>Docs Pending</span></div></div>
     </div>
 
-    <div class="row g-4">
-        <!-- Statutory Compliance Reports -->
-        <div class="col-md-6">
-            <div class="report-section-card h-100">
-                <div class="section-header statutory">
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="section-icon"><i class="fas fa-gavel"></i></div>
-                        <div>
-                            <h5 class="m-0 fw-bold">Statutory Compliance</h5>
-                            <!-- <small class="opacity-75">Mandatory legal registers (Form XVI, XVII, etc.)</small> -->
-                        </div>
-                    </div>
-                </div>
-                <div class="section-body p-0">
-                    <div class="report-list">
-                        <div class="report-item" onclick="generateReport('Muster Roll', 'XVI')">
-                            <div class="report-info">
-                                <div class="report-name">Muster Roll (Form XVI)</div>
-                                <div class="report-desc">Official attendance register for all contractual workmen.</div>
-                            </div>
-                            <div class="report-actions">
-                                <button class="report-btn pdf" title="Download PDF"><i class="fas fa-file-pdf"></i></button>
-                                <button class="report-btn excel" title="Download Excel"><i class="fas fa-file-excel"></i></button>
-                            </div>
-                        </div>
-                        <div class="report-item" onclick="generateReport('PF/ESI Compliance', 'COMP')">
-                            <div class="report-info">
-                                <div class="report-name">PF & ESI Compliance Report</div>
-                                <div class="report-desc">Detailed statement of social security contributions.</div>
-                            </div>
-                            <div class="report-actions">
-                                <button class="report-btn pdf" title="Download PDF"><i class="fas fa-file-pdf"></i></button>
-                                <button class="report-btn excel" title="Download Excel"><i class="fas fa-file-excel"></i></button>
-                            </div>
-                        </div>
-                        <div class="report-item" onclick="generateReport('Wage Register', 'XVII')">
-                            <div class="report-info">
-                                <div class="report-name">Wage Register (Form XVII)</div>
-                                <div class="report-desc">Salary disbursement details and deduction summary.</div>
-                            </div>
-                            <div class="report-actions">
-                                <button class="report-btn pdf" title="Download PDF"><i class="fas fa-file-pdf"></i></button>
-                                <button class="report-btn excel" title="Download Excel"><i class="fas fa-file-excel"></i></button>
-                            </div>
-                        </div>
-                        <div class="report-item" onclick="generateReport('Bonus Register', 'C')">
-                            <div class="report-info">
-                                <div class="report-name">Bonus Register (Form C)</div>
-                                <div class="report-desc">Annual bonus payment records for all eligible workmen.</div>
-                            </div>
-                            <div class="report-actions">
-                                <button class="report-btn pdf" title="Download PDF"><i class="fas fa-file-pdf"></i></button>
-                                <button class="report-btn excel" title="Download Excel"><i class="fas fa-file-excel"></i></button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <div class="card glass cr-filter-card">
+      <div class="card-body">
+        <div class="cr-filter-grid">
+          <div class="form-field">
+            <label>Work Order / PWO</label>
+            <select class="form-control" id="report_wo">
+              <option value="">All Work Orders</option>
+              <?php foreach ($workOrders as $wo):
+                $woNo = $wo['work_order_no'] ?? '';
+                $meta = trim(($wo['project_name'] ?? '') . (!empty($wo['department']) ? ' - ' . $wo['department'] : ''));
+              ?>
+              <option value="<?= htmlspecialchars($woNo) ?>"><?= htmlspecialchars($woNo . ($meta ? ' - ' . $meta : '')) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>From Date</label>
+            <input type="date" class="form-control" id="date_from" value="<?= date('Y-m-01') ?>">
+          </div>
+          <div class="form-field">
+            <label>To Date</label>
+            <input type="date" class="form-control" id="date_to" value="<?= date('Y-m-d') ?>">
+          </div>
+          <div class="cr-filter-actions">
+            <button class="btn btn-primary" type="button" onclick="applyFilters(this)"><i class="fas fa-filter"></i> Apply</button>
+            <button class="btn btn-outline" type="button" onclick="resetFilters()"><i class="fas fa-rotate-left"></i> Reset</button>
+          </div>
         </div>
-
-        <!-- Operational & Workforce Reports -->
-        <div class="col-md-6">
-            <div class="report-section-card h-100">
-                <div class="section-header operational">
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="section-icon"><i class="fas fa-tasks"></i></div>
-                        <div>
-                            <h5 class="m-0 fw-bold">Operational Insights</h5>
-                            <!-- <small class="opacity-75">Workforce metrics, training & gate pass reports</small> -->
-                        </div>
-                    </div>
-                </div>
-                <div class="section-body p-0">
-                    <div class="report-list">
-                        <div class="report-item" onclick="generateReport('Active Workers', 'OPS')">
-                            <div class="report-info">
-                                <div class="report-name">Active Workforce Roster</div>
-                                <div class="report-desc">Current snapshot of all enrolled and active workmen.</div>
-                            </div>
-                            <div class="report-actions">
-                                <button class="report-btn excel" title="Download Excel"><i class="fas fa-file-excel"></i></button>
-                            </div>
-                        </div>
-                        <div class="report-item" onclick="generateReport('Attendance Log', 'LOG')">
-                            <div class="report-info">
-                                <div class="report-name">Daily In/Out Punches</div>
-                                <div class="report-desc">Comprehensive log of biometric punch data per worker.</div>
-                            </div>
-                            <div class="report-actions">
-                                <button class="report-btn excel" title="Download Excel"><i class="fas fa-file-excel"></i></button>
-                            </div>
-                        </div>
-                        <div class="report-item" onclick="generateReport('Safety Training', 'SAFE')">
-                            <div class="report-info">
-                                <div class="report-name">Safety Training Status</div>
-                                <div class="report-desc">Pass/Fail metrics for mandatory safety inductions.</div>
-                            </div>
-                            <div class="report-actions">
-                                <button class="report-btn pdf" title="Download PDF"><i class="fas fa-file-pdf"></i></button>
-                            </div>
-                        </div>
-                        <div class="report-item" onclick="generateReport('Pass Expiry', 'EXP')">
-                            <div class="report-info">
-                                <div class="report-name">Gate Pass Expiry Forecast</div>
-                                <div class="report-desc">List of passes expiring in the next 15-30 days.</div>
-                            </div>
-                            <div class="report-actions">
-                                <button class="report-btn pdf" title="Download PDF"><i class="fas fa-file-pdf"></i></button>
-                                <button class="report-btn excel" title="Download Excel"><i class="fas fa-file-excel"></i></button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
 
-    <!-- Exporting Overlay -->
-    <div id="export-overlay" class="export-overlay" style="display:none;">
-        <div class="export-modal glass">
-            <div class="spinner-border text-primary mb-3" role="status"></div>
-            <h5 class="fw-bold mb-1">Generating Report...</h5>
-            <p class="text-muted small mb-0" id="export-status">Preparing your document for download</p>
+    <div class="cr-report-layout">
+      <?php foreach ($reports as $section => $items): ?>
+      <section class="cr-panel">
+        <div class="cr-panel-head">
+          <div>
+            <h3><?= htmlspecialchars($section) ?></h3>
+            <span><?= count($items) ?> reports available</span>
+          </div>
+          <i class="fas <?= $section === 'Compliance' ? 'fa-scale-balanced' : 'fa-chart-line' ?>"></i>
         </div>
+        <div class="cr-report-list">
+          <?php foreach ($items as $report):
+            list($title, $desc, $code, $icon, $formats) = $report;
+          ?>
+          <div class="cr-report-item" data-report="<?= htmlspecialchars(strtolower($title . ' ' . $desc)) ?>">
+            <button class="cr-report-main" type="button" onclick="generateReport('<?= htmlspecialchars($title, ENT_QUOTES) ?>','<?= htmlspecialchars($code, ENT_QUOTES) ?>','preview')">
+              <span class="cr-report-icon"><i class="fas <?= htmlspecialchars($icon) ?>"></i></span>
+              <span class="cr-report-copy">
+                <strong><?= htmlspecialchars($title) ?></strong>
+                <small><?= htmlspecialchars($desc) ?></small>
+              </span>
+            </button>
+            <div class="cr-report-actions">
+              <?php foreach ($formats as $format): ?>
+              <button type="button" class="cr-icon-btn <?= $format ?>" title="<?= strtoupper($format) ?>" onclick="generateReport('<?= htmlspecialchars($title, ENT_QUOTES) ?>','<?= htmlspecialchars($code, ENT_QUOTES) ?>','<?= $format ?>')">
+                <i class="fas <?= $format === 'pdf' ? 'fa-file-pdf' : 'fa-file-excel' ?>"></i>
+              </button>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <?php endforeach; ?>
+        </div>
+      </section>
+      <?php endforeach; ?>
+    </div>
+
+    <div id="export-overlay" class="cr-export-overlay" style="display:none;">
+      <div class="cr-export-modal">
+        <div class="cr-spinner"></div>
+        <h3>Generating Report</h3>
+        <p id="export-status">Preparing file</p>
+      </div>
     </div>
 
     <style>
-        .report-section-card {
-            background: white;
-            border-radius: 16px;
-            overflow: hidden;
-            border: 1px solid var(--gray-200);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-            transition: all 0.3s ease;
-        }
-        
-        .section-header {
-            padding: 24px;
-            color: white;
-        }
-        .section-header.statutory { background: linear-gradient(135deg, #065f46 0%, #10b981 100%); }
-        .section-header.operational { background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); }
-        
-        .section-icon {
-            width: 48px;
-            height: 48px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-        }
-        
-        .report-list {
-            padding: 10px;
-        }
-        
-        .report-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            border: 1px solid transparent;
-            margin-bottom: 5px;
-        }
-        
-        .report-item:hover {
-            background: #f8fafc;
-            border-color: var(--gray-200);
-            transform: translateX(5px);
-        }
-        
-        .report-name {
-            font-weight: 600;
-            color: var(--gray-800);
-            font-size: 14px;
-        }
-        
-        .report-desc {
-            font-size: 12px;
-            color: var(--gray-500);
-            margin-top: 2px;
-        }
-        
-        .report-actions {
-            display: flex;
-            gap: 8px;
-            opacity: 0.6;
-            transition: opacity 0.2s;
-        }
-        
-        .report-item:hover .report-actions { opacity: 1; }
-        
-        .report-btn {
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            border: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
-        }
-        
-        .report-btn.pdf { background: #fee2e2; color: #b91c1c; }
-        .report-btn.excel { background: #dcfce7; color: #15803d; }
-        .report-btn:hover { transform: scale(1.1); }
-
-        .export-overlay {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.4);
-            backdrop-filter: blur(4px);
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .export-modal {
-            background: white;
-            padding: 40px;
-            border-radius: 24px;
-            text-align: center;
-            width: 320px;
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
-        }
-
-        .breadcrumb-item + .breadcrumb-item::before { display: none; }
+      .contractor-report-header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:18px}
+      .contractor-report-header .page-title{display:flex;align-items:center;gap:10px;margin:4px 0 0}
+      .cr-breadcrumb{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted)}
+      .cr-breadcrumb a{color:var(--primary);text-decoration:none;font-weight:700}
+      .cr-header-actions{display:flex;gap:8px;flex-wrap:wrap}
+      .cr-summary-grid{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+      .cr-stat{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px;display:flex;align-items:center;gap:12px;box-shadow:0 1px 4px rgba(15,23,42,.05)}
+      .cr-stat i{width:34px;height:34px;border-radius:8px;background:#f8fafc;display:flex;align-items:center;justify-content:center}
+      .cr-stat strong{display:block;font-size:24px;line-height:1;color:#111827}
+      .cr-stat span{display:block;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-top:3px}
+      .cr-filter-card{margin-bottom:18px}
+      .cr-filter-card .card-body{padding:16px}
+      .cr-filter-grid{display:grid;grid-template-columns:minmax(260px,1.4fr) minmax(150px,.65fr) minmax(150px,.65fr) auto;gap:12px;align-items:end}
+      .form-field label{display:block;font-size:11px;color:#64748b;font-weight:800;text-transform:uppercase;margin-bottom:6px}
+      .cr-filter-actions{display:flex;gap:8px}
+      .cr-report-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+      .cr-panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(15,23,42,.06)}
+      .cr-panel-head{padding:16px 18px;border-bottom:1px solid #edf2f7;display:flex;justify-content:space-between;align-items:center;background:#f8fafc}
+      .cr-panel-head h3{margin:0;font-size:16px;color:#111827}
+      .cr-panel-head span{display:block;font-size:12px;color:#64748b;margin-top:3px}
+      .cr-panel-head>i{font-size:20px;color:#475569}
+      .cr-report-list{padding:8px}
+      .cr-report-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px;border-radius:8px;border:1px solid transparent}
+      .cr-report-item:hover{background:#f8fafc;border-color:#e5e7eb}
+      .cr-report-main{display:flex;align-items:center;gap:12px;background:transparent;border:0;text-align:left;padding:0;min-width:0;cursor:pointer}
+      .cr-report-icon{width:38px;height:38px;border-radius:8px;background:#eef2ff;color:#4f46e5;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+      .cr-report-copy{min-width:0}
+      .cr-report-copy strong{display:block;font-size:13px;color:#111827}
+      .cr-report-copy small{display:block;font-size:12px;color:#64748b;margin-top:2px;line-height:1.35}
+      .cr-report-actions{display:flex;gap:6px}
+      .cr-icon-btn{width:34px;height:34px;border-radius:8px;border:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
+      .cr-icon-btn.pdf{background:#fee2e2;color:#b91c1c}
+      .cr-icon-btn.excel{background:#dcfce7;color:#15803d}
+      .cr-icon-btn:hover{filter:brightness(.97)}
+      .cr-export-overlay{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:9999;align-items:center;justify-content:center}
+      .cr-export-modal{width:300px;background:#fff;border-radius:8px;padding:28px;text-align:center;box-shadow:0 24px 60px rgba(15,23,42,.25)}
+      .cr-export-modal h3{margin:12px 0 4px;font-size:18px}
+      .cr-export-modal p{margin:0;color:#64748b;font-size:13px}
+      .cr-spinner{width:38px;height:38px;border-radius:50%;border:4px solid #e0e7ff;border-top-color:#4f46e5;margin:0 auto;animation:cr-spin .8s linear infinite}
+      @keyframes cr-spin{to{transform:rotate(360deg)}}
+      @media(max-width:1100px){.cr-summary-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}.cr-filter-grid{grid-template-columns:1fr 1fr}.cr-report-layout{grid-template-columns:1fr}}
+      @media(max-width:640px){.contractor-report-header{align-items:stretch;flex-direction:column}.cr-header-actions,.cr-filter-actions{width:100%}.cr-header-actions .btn,.cr-filter-actions .btn{flex:1}.cr-filter-grid{grid-template-columns:1fr}.cr-report-item{grid-template-columns:1fr}.cr-report-actions{padding-left:50px}}
     </style>
 
     <script>
-    function generateReport(reportName, code) {
-        const wo = document.getElementById('report_wo').value;
-        const from = document.getElementById('date_from').value;
-        const to = document.getElementById('date_to').value;
-        
+      function currentReportContext() {
+        return {
+          workOrder: document.getElementById('report_wo').value || 'All',
+          from: document.getElementById('date_from').value,
+          to: document.getElementById('date_to').value
+        };
+      }
+
+      function generateReport(reportName, code, format) {
+        const ctx = currentReportContext();
         const overlay = document.getElementById('export-overlay');
         const status = document.getElementById('export-status');
-        
+
         overlay.style.display = 'flex';
-        status.innerText = `Fetching data for ${reportName}...`;
-        
+        status.textContent = `${reportName} - ${format.toUpperCase()} | ${ctx.from} to ${ctx.to}`;
+
         setTimeout(() => {
-            status.innerText = `Compiling ${code} records...`;
-            setTimeout(() => {
-                status.innerText = `Generating file...`;
-                setTimeout(() => {
-                    overlay.style.display = 'none';
-                    alert(`✅ SUCCESS\n\n${reportName} generated successfully.\nPeriod: ${from} to ${to}\nWork Order: ${wo || 'All'}\n\n(This is a visual demo. Production API will trigger a direct file download.)`);
-                }, 1000);
-            }, 1000);
+          overlay.style.display = 'none';
+          alert(`${reportName}\nFormat: ${format.toUpperCase()}\nPeriod: ${ctx.from} to ${ctx.to}\nWork Order: ${ctx.workOrder}\n\nReport request prepared.`);
         }, 800);
-    }
+      }
 
-    function applyFilters() {
-        const btn = event.currentTarget;
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Filtering...';
+      function applyFilters(btn) {
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Applying';
         btn.disabled = true;
-        
         setTimeout(() => {
-            btn.innerHTML = originalHtml;
-            btn.disabled = false;
-        }, 600);
-    }
+          btn.innerHTML = original;
+          btn.disabled = false;
+        }, 450);
+      }
 
-    function resetFilters() {
+      function resetFilters() {
         document.getElementById('report_wo').value = '';
         document.getElementById('date_from').value = '<?= date('Y-m-01') ?>';
         document.getElementById('date_to').value = '<?= date('Y-m-d') ?>';
-    }
+      }
     </script>
     <?php
 }

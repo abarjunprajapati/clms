@@ -1,6 +1,7 @@
 <?php
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+require_once __DIR__ . '/onboarding_status.php';
 /**
  * Unified Layout for CLMS
  * Handles role-based sidebars and topbar.
@@ -202,14 +203,60 @@ function renderLayout($page_title, $content_callback, $role, $name) {
 
   // Global DataTables Initialization with Auto S.No
   $(document).ready(function() {
+      function getDataTableColumnCount(table) {
+          var count = 0;
+          table.find('thead tr:last th, thead tr:last td').each(function() {
+              count += parseInt($(this).attr('colspan') || '1', 10);
+          });
+          return count;
+      }
+
+      function prepareTableForDataTables(table) {
+          var columnCount = getDataTableColumnCount(table);
+          if (!columnCount) return {};
+
+          var options = {};
+          table.find('tbody tr').each(function() {
+              var row = $(this);
+              var cells = row.children('td, th');
+              if (cells.length === columnCount) return;
+
+              if (cells.length === 1 && cells.first().is('[colspan]')) {
+                  var text = $.trim(cells.first().text());
+                  if (text) {
+                      options.emptyTable = text;
+                      options.zeroRecords = text;
+                  }
+                  row.remove();
+                  return;
+              }
+
+              if (cells.length < columnCount) {
+                  for (var i = cells.length; i < columnCount; i++) {
+                      row.append('<td></td>');
+                  }
+                  return;
+              }
+
+              cells.slice(columnCount).remove();
+          });
+
+          return options;
+      }
+
       $('.data-table').each(function() {
           var table = $(this);
+          if ($.fn.DataTable.isDataTable(table)) return;
+
+          var tableMessages = prepareTableForDataTables(table);
           var t = table.DataTable({
               "pageLength": 10,
               "ordering": false,
               "language": {
                   "search": "<i class='fas fa-search'></i> Filter:",
-                  "lengthMenu": "Show _MENU_ entries"
+                  "lengthMenu": "Show _MENU_ entries",
+                  "emptyTable": tableMessages.emptyTable || "No data available in table",
+                  "zeroRecords": tableMessages.zeroRecords || "No matching records found"
               }
           });
 
@@ -282,7 +329,6 @@ function renderSidebar($role) {
             echo '<a href="'.$ab.'compliance_dashboard.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Dashboard</a>';
             echo '<a href="'.$ab.'attendance_dashboard.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance Dashboard</a>';
             echo '<a href="'.$ab.'biometric_dashboard.php" class="sidebar-item"><i class="fas fa-fingerprint"></i> Biometric Governance</a>';
-            echo '<a href="'.$ab.'manage_work_orders.php" class="sidebar-item"><i class="fas fa-handshake"></i> Work Order Mapping</a>';
             echo '<a href="'.$ab.'pass_limits.php" class="sidebar-item"><i class="fas fa-sliders-h"></i> Pass Limits</a>';
             echo '<a href="'.$ab.'master_data.php" class="sidebar-item"><i class="fas fa-database"></i> Master Data</a>';
             
@@ -324,7 +370,6 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'training_monitor.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Training Monitor</a>';
             echo '<a href="'.$wb.'gatepass_monitor.php" class="sidebar-item"><i class="fas fa-id-card-clip"></i> Gate Pass Monitor</a>';
             echo '<a href="'.$wb.'acc_tracking.php" class="sidebar-item"><i class="fas fa-fingerprint"></i> ACC Monitor</a>';
-            echo '<a href="'.$ab.'manage_work_orders.php" class="sidebar-item"><i class="fas fa-handshake"></i> Work Order Mapping</a>';
             echo '<a href="'.$wb.'productivity_dashboard.php" class="sidebar-item"><i class="fas fa-chart-line"></i> Productivity Dashboard</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Lifecycle</div>';
             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';
@@ -369,19 +414,16 @@ function renderSidebar($role) {
         case 'contractor':
             $user_id = $_SESSION['user_id'] ?? 0;
             $contractor = db_single($conn, "SELECT status, vendor_code FROM contractors WHERE user_id = ?", 'i', [$user_id]);
-            $status = strtolower($contractor['status'] ?? 'new');
-            $sap_code = $contractor['vendor_code'] ?? '';
+            $sap_code = $contractor['vendor_code'] ?? ($_SESSION['contractor_id'] ?? $_SESSION['vendor_code'] ?? '');
+            $onboardingComplete = clms_onboarding_is_complete($conn, 'contractor', $sap_code, $user_id);
 
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Contractor Lifecycle</div>';
-            echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
-            echo '<a href="profile.php" class="sidebar-item"><i class="fas fa-id-card"></i> Basic Details</a>';
-            
-            // Annexure 2A (Always visible, but status changes)
             echo '<a href="annexure-2a.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Contractor Registration</a>';
+            echo '<a href="welfare-actions.php" class="sidebar-item"><i class="fas fa-clock-rotate-left"></i> Welfare Action History</a>';
             
-            // Annexure 3A (Only visible/active if 2A is approved)
-            if ($status === 'approved') {
-                // echo '<a href="annexure-3a.php" class="sidebar-item"><i class="fas fa-file-contract"></i> Contractor Info</a>';
+            if ($onboardingComplete) {
+                echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
+                echo '<a href="profile.php" class="sidebar-item"><i class="fas fa-id-card"></i> Basic Details</a>';
                 
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Management</div>';
                 echo '<a href="enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Worker Management</a>';
@@ -396,7 +438,7 @@ function renderSidebar($role) {
                 echo '<a href="reports.php" class="sidebar-item"><i class="fas fa-chart-bar"></i> Reports</a>';
             } else {
                 echo '<div class="sidebar-item text-muted" style="font-size:12px; padding:10px 15px; background:rgba(0,0,0,0.03); margin-top:10px; border-radius:8px;">';
-                echo '<i class="fas fa-lock me-2"></i> Approve Annexure 2A to unlock further modules.';
+                echo '<i class="fas fa-lock me-2"></i> Annexure 2A approval ke baad dashboard aur modules unlock honge.';
                 echo '</div>';
             }
             break;
@@ -438,10 +480,21 @@ function renderSidebar($role) {
         case 'customer':
             $cb = BASE_URL . 'pages/customer/';
             $cp = BASE_URL . 'pages/contractor/';
+            $customerCode = $_SESSION['customer_code'] ?? $_SESSION['contractor_id'] ?? '';
+            $onboardingComplete = clms_onboarding_is_complete($conn, 'customer', $customerCode, $_SESSION['user_id'] ?? 0);
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Customer Portal</div>';
+            echo '<a href="'.$cb.'annexure-3a.php" class="sidebar-item"><i class="fas fa-file-contract"></i> Contractor Info (3A)</a>';
+            echo '<a href="'.$cb.'welfare-actions.php" class="sidebar-item"><i class="fas fa-clock-rotate-left"></i> Welfare Action History</a>';
+
+            if (!$onboardingComplete) {
+                echo '<div class="sidebar-item text-muted" style="font-size:12px; padding:10px 15px; background:rgba(0,0,0,0.03); margin-top:10px; border-radius:8px;">';
+                echo '<i class="fas fa-lock me-2"></i> Annexure 3A approval ke baad dashboard aur modules unlock honge.';
+                echo '</div>';
+                break;
+            }
+
             echo '<a href="'.$cb.'dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
             echo '<a href="'.$cb.'profile.php" class="sidebar-item"><i class="fas fa-id-card"></i> Basic Details</a>';
-            echo '<a href="'.$cb.'annexure-3a.php" class="sidebar-item"><i class="fas fa-file-contract"></i> Contractor Info (3A)</a>';
             
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Monitoring</div>';
             echo '<a href="'.$cp.'enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Worker Management</a>';
@@ -461,7 +514,7 @@ function renderSidebar($role) {
             echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
             echo '<a href="training_requests.php" class="sidebar-item"><i class="fas fa-envelope-open-text"></i> Training Requests</a>';
             echo '<a href="training_schedule.php" class="sidebar-item"><i class="fas fa-calendar-alt"></i> Training Schedule</a>';
-            echo '<a href="manage_session.php" class="sidebar-item"><i class="fas fa-users-cog"></i> Conduct & Results</a>';
+            echo '<a href="conduct_results.php" class="sidebar-item"><i class="fas fa-users-cog"></i> Conduct & Results</a>';
             echo '<a href="training_status.php" class="sidebar-item"><i class="fas fa-user-check"></i> Training Status</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Monitoring</div>';
             echo '<a href="pending_training.php" class="sidebar-item"><i class="fas fa-hourglass-half"></i> Pending Workers</a>';

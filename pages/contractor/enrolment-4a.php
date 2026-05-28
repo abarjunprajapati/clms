@@ -50,6 +50,30 @@ function enrolment_expr($conn, $table, $column, $alias = null, $default = "''") 
     return "$default AS `$safeAlias`";
 }
 
+function enrolment_col_ref($conn, $table, $alias, $column, $default = "''") {
+    $safeColumn = str_replace('`', '``', $column);
+    if (enrolment_column_exists($conn, $table, $column)) {
+        return "$alias.`$safeColumn`";
+    }
+    return $default;
+}
+
+function enrolment_add_work_option(&$workOptions, &$seenWorkOrders, $workOrderNo, $projectName = '', $department = '', $projectNo = '', $source = '') {
+    $workOrderNo = trim((string)$workOrderNo);
+    if ($workOrderNo === '' || isset($seenWorkOrders[$workOrderNo])) {
+        return;
+    }
+
+    $seenWorkOrders[$workOrderNo] = true;
+    $workOptions[] = [
+        'work_order_no' => $workOrderNo,
+        'project_name' => trim((string)$projectName),
+        'department' => trim((string)$department),
+        'project_no' => trim((string)($projectNo !== '' ? $projectNo : $workOrderNo)),
+        'source' => trim((string)$source),
+    ];
+}
+
 function enrolment_fetch_one($conn, $sql) {
     $result = mysqli_query($conn, $sql);
     return ($result && mysqli_num_rows($result) > 0) ? mysqli_fetch_assoc($result) : null;
@@ -64,6 +88,75 @@ function enrolment_fetch_all($conn, $sql) {
         }
     }
     return $rows;
+}
+
+function enrolment_insert_contractor_from_a3($conn, $a3) {
+    if (!enrolment_table_exists($conn, 'contractors')) {
+        return 0;
+    }
+
+    $vendorCode = trim((string)($a3['vendor_code'] ?? ''));
+    $workOrderNo = trim((string)($a3['work_order_no'] ?? ''));
+    if ($vendorCode === '' && $workOrderNo === '') {
+        return 0;
+    }
+
+    $whereParts = [];
+    if ($vendorCode !== '' && enrolment_column_exists($conn, 'contractors', 'vendor_code')) {
+        $whereParts[] = "vendor_code = '" . mysqli_real_escape_string($conn, $vendorCode) . "'";
+    }
+    if ($workOrderNo !== '' && enrolment_column_exists($conn, 'contractors', 'work_order_no')) {
+        $whereParts[] = "work_order_no = '" . mysqli_real_escape_string($conn, $workOrderNo) . "'";
+    }
+
+    if ($whereParts) {
+        $existing = enrolment_fetch_one($conn, "SELECT id FROM contractors WHERE " . implode(' OR ', $whereParts) . " ORDER BY id DESC LIMIT 1");
+        if (!empty($existing['id'])) {
+            return (int)$existing['id'];
+        }
+    }
+
+    $displayName = $vendorCode ?: ($workOrderNo ?: 'Approved Contractor');
+    if ($vendorCode !== '' && enrolment_table_exists($conn, 'sap_vendors')) {
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCode);
+        $vendorNameExpr = enrolment_column_exists($conn, 'sap_vendors', 'vendor_name') ? 'vendor_name' : "'' AS vendor_name";
+        $contractorNameExpr = enrolment_column_exists($conn, 'sap_vendors', 'contractor_name') ? 'contractor_name' : "'' AS contractor_name";
+        $nameExpr = enrolment_column_exists($conn, 'sap_vendors', 'name') ? 'name' : "'' AS name";
+        $vendor = enrolment_fetch_one($conn, "SELECT $vendorNameExpr, $contractorNameExpr, $nameExpr FROM sap_vendors WHERE vendor_code = '$safeVendor' LIMIT 1");
+        $displayName = ($vendor['vendor_name'] ?? '') ?: (($vendor['contractor_name'] ?? '') ?: (($vendor['name'] ?? '') ?: $displayName));
+    }
+
+    $values = [
+        'vendor_code' => $vendorCode,
+        'sap_code' => $vendorCode,
+        'contractor_id' => $vendorCode,
+        'contractor_name' => $displayName,
+        'vendor_name' => $displayName,
+        'name' => $displayName,
+        'work_order_no' => $workOrderNo,
+        'work_awarding_department' => $a3['work_awarding_department'] ?? '',
+        'application_no' => 'A3-' . ($a3['id'] ?? time()),
+        'status' => 'approved',
+        'created_at' => date('Y-m-d H:i:s'),
+        'updated_at' => date('Y-m-d H:i:s'),
+    ];
+
+    $columns = [];
+    $escapedValues = [];
+    foreach ($values as $column => $value) {
+        if (!enrolment_column_exists($conn, 'contractors', $column)) {
+            continue;
+        }
+        $columns[] = '`' . str_replace('`', '``', $column) . '`';
+        $escapedValues[] = "'" . mysqli_real_escape_string($conn, (string)$value) . "'";
+    }
+
+    if (!$columns) {
+        return 0;
+    }
+
+    $ok = mysqli_query($conn, "INSERT INTO contractors (" . implode(',', $columns) . ") VALUES (" . implode(',', $escapedValues) . ")");
+    return $ok ? (int)mysqli_insert_id($conn) : 0;
 }
 
 function enrolment_worker_type_condition($conn, $table, $type) {
@@ -93,43 +186,55 @@ function enrolment_worker_type_condition($conn, $table, $type) {
 
 function enrolment_customer_contractor_ids($conn) {
     $customerCode = $_SESSION['customer_code'] ?? '';
-    if ($customerCode === '' || !enrolment_table_exists($conn, 'contractors')) {
+    if ($customerCode === '') {
         return [];
     }
 
     $customerCode = mysqli_real_escape_string($conn, $customerCode);
-    $queries = [];
-
-    if (enrolment_table_exists($conn, 'work_orders')) {
-        $queries[] = "
-        SELECT DISTINCT c.id
-        FROM contractors c
-        JOIN work_orders wo ON wo.vendor_code = c.vendor_code
-        WHERE wo.customer_code = '$customerCode'
-        ";
-    }
+    $ids = [];
 
     if (enrolment_table_exists($conn, 'contractor_annexure3a')) {
-        $queries[] = "
-        SELECT DISTINCT c.id
-        FROM contractors c
-        JOIN contractor_annexure3a a3 ON a3.vendor_code = c.vendor_code
-        WHERE a3.customer_code = '$customerCode'
-          AND COALESCE(a3.status, '') IN ('approved', 'pending', 'resubmitted')
-        ";
+        $a3Rows = enrolment_fetch_all($conn, "
+            SELECT *
+            FROM contractor_annexure3a
+            WHERE customer_code = '$customerCode'
+              AND LOWER(COALESCE(status, '')) = 'approved'
+            ORDER BY " . (enrolment_column_exists($conn, 'contractor_annexure3a', 'updated_at') ? 'updated_at DESC,' : '') . " id DESC
+        ");
+
+        foreach ($a3Rows as $a3) {
+            $id = enrolment_insert_contractor_from_a3($conn, $a3);
+            if ($id) {
+                $ids[] = $id;
+            }
+        }
     }
 
-    if (!$queries) {
-        return [];
+    if (!$ids && enrolment_table_exists($conn, 'work_orders') && enrolment_table_exists($conn, 'contractors')) {
+        $rows = enrolment_fetch_all($conn, "
+            SELECT DISTINCT c.id
+            FROM contractors c
+            JOIN work_orders wo ON wo.vendor_code = c.vendor_code
+            WHERE wo.customer_code = '$customerCode'
+        ");
+        $ids = array_map('intval', array_column($rows, 'id'));
     }
 
-    $rows = enrolment_fetch_all($conn, implode(' UNION ', $queries));
-
-    return array_values(array_filter(array_map('intval', array_column($rows, 'id'))));
+    return array_values(array_unique(array_filter(array_map('intval', $ids))));
 }
 
 function renderContent() {
     global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar;
+    $nationalityOptions = [
+        'Indian', 'Afghan', 'Albanian', 'Algerian', 'American', 'Angolan', 'Argentine', 'Armenian', 'Australian', 'Austrian',
+        'Bahraini', 'Bangladeshi', 'Belgian', 'Bhutanese', 'Brazilian', 'British', 'Bulgarian', 'Canadian', 'Chinese',
+        'Danish', 'Egyptian', 'Emirati', 'Ethiopian', 'Filipino', 'Finnish', 'French', 'German', 'Ghanaian', 'Greek',
+        'Indonesian', 'Iranian', 'Iraqi', 'Irish', 'Israeli', 'Italian', 'Japanese', 'Jordanian', 'Kenyan', 'Kuwaiti',
+        'Malaysian', 'Maldivian', 'Mexican', 'Moroccan', 'Myanmar', 'Nepalese', 'Netherlands', 'New Zealander', 'Nigerian',
+        'Norwegian', 'Omani', 'Pakistani', 'Polish', 'Portuguese', 'Qatari', 'Russian', 'Saudi Arabian', 'Singaporean',
+        'South African', 'South Korean', 'Spanish', 'Sri Lankan', 'Sudanese', 'Swedish', 'Swiss', 'Syrian', 'Thai',
+        'Turkish', 'Ugandan', 'Ukrainian', 'Vietnamese', 'Yemeni', 'Zimbabwean'
+    ];
 
     // Get contractor record
     $contractor = null;
@@ -137,13 +242,17 @@ function renderContent() {
         $customerContractorIds = enrolment_customer_contractor_ids($conn);
         if ($customerContractorIds) {
             $idList = implode(',', $customerContractorIds);
+            $vendorSelect = enrolment_column_exists($conn, 'contractors', 'vendor_code') ? 'MIN(vendor_code)' : "''";
+            $workOrderSelect = enrolment_column_exists($conn, 'contractors', 'work_order_no') ? 'MIN(work_order_no)' : "''";
+            $deptSelect = enrolment_column_exists($conn, 'contractors', 'work_awarding_department') ? 'MIN(work_awarding_department)' : "''";
             $contractor = enrolment_fetch_one($conn, "
                 SELECT
                     MIN(id) AS id,
                     'Mapped Contractors' AS contractor_name,
                     'approved' AS status,
-                    '' AS work_order_no,
-                    '' AS work_awarding_department
+                    $vendorSelect AS vendor_code,
+                    $workOrderSelect AS work_order_no,
+                    $deptSelect AS work_awarding_department
                 FROM contractors
                 WHERE id IN ($idList)
             ");
@@ -152,6 +261,7 @@ function renderContent() {
         $contractorSelect = implode(', ', [
             enrolment_expr($conn, 'contractors', 'id', 'id', '0'),
             enrolment_expr($conn, 'contractors', 'contractor_name', 'contractor_name'),
+            enrolment_expr($conn, 'contractors', 'vendor_code', 'vendor_code'),
             enrolment_expr($conn, 'contractors', 'vendor_name', 'vendor_name'),
             enrolment_expr($conn, 'contractors', 'status', 'status'),
             enrolment_expr($conn, 'contractors', 'work_order_no', 'work_order_no'),
@@ -171,8 +281,8 @@ function renderContent() {
 
     if ($contractorWhere === '1=0') {
         $target = $role === 'customer' ? '../customer/annexure-3a.php' : 'annexure-2a.php';
-        $label = $role === 'customer' ? 'Open Annexure 3A' : 'Open Contractor Registration';
-        echo '<div class="alert alert-warning" style="margin:20px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><i class="fas fa-exclamation-triangle"></i> No mapped contractor workforce found for this account. Please complete/approve the registration mapping first.</div><a class="btn btn-sm btn-primary" href="' . htmlspecialchars($target) . '">' . htmlspecialchars($label) . '</a></div>';
+        $label = $role === 'customer' ? 'Open Contractor Info 3A' : 'Open Contractor Registration';
+        echo '<div class="alert alert-warning" style="margin:20px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><i class="fas fa-exclamation-triangle"></i> Worker Management will open after Customer form is approved for this customer.</div><a class="btn btn-sm btn-primary" href="' . htmlspecialchars($target) . '">' . htmlspecialchars($label) . '</a></div>';
         return;
     }
 
@@ -180,37 +290,160 @@ function renderContent() {
     $department_name = $contractor['work_awarding_department'] ?? '';
     $vendorCodeForSap = $contractor['vendor_code'] ?? ($_SESSION['contractor_id'] ?? '');
     $workOptions = [];
-    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'work_orders')) {
+    $seenWorkOrders = [];
+    $selectedContractorWhere = $role === 'customer'
+        ? ($customerContractorIds ? "s.contractor_id IN (" . implode(',', $customerContractorIds) . ")" : '1=0')
+        : ($c_id ? "s.contractor_id = " . (int)$c_id : '1=0');
+
+    if ($selectedContractorWhere !== '1=0' && enrolment_table_exists($conn, 'contractor_po_selection')) {
+        $joinPo = enrolment_table_exists($conn, 'sap_po_master') && enrolment_column_exists($conn, 'sap_po_master', 'po_number');
+        $poText = $joinPo ? enrolment_col_ref($conn, 'sap_po_master', 'po', 'header_text', "''") : "''";
+        $poDept = $joinPo ? enrolment_col_ref($conn, 'sap_po_master', 'po', 'purchasing_group', "''") : "''";
+        $poJoinSql = $joinPo ? "LEFT JOIN sap_po_master po ON po.po_number = s.po_number" : "";
+        $poRows = enrolment_fetch_all($conn, "
+            SELECT s.po_number AS work_order_no,
+                   COALESCE($poText, '') AS project_name,
+                   COALESCE($poDept, '') AS department,
+                   s.po_number AS project_no
+            FROM contractor_po_selection s
+            $poJoinSql
+            WHERE $selectedContractorWhere
+            ORDER BY s.po_number DESC
+        ");
+        foreach ($poRows as $row) {
+            enrolment_add_work_option($workOptions, $seenWorkOrders, $row['work_order_no'], $row['project_name'], $row['department'], $row['project_no'], 'PO');
+        }
+    }
+
+    if ($selectedContractorWhere !== '1=0' && enrolment_table_exists($conn, 'contractor_pwo_selection')) {
+        $joinPwo = enrolment_table_exists($conn, 'sap_pwo_master') && enrolment_column_exists($conn, 'sap_pwo_master', 'pwo_number');
+        $pwoProject = $joinPwo ? enrolment_col_ref($conn, 'sap_pwo_master', 'pwo', 'project', 'NULL') : 'NULL';
+        $pwoVessel = $joinPwo ? enrolment_col_ref($conn, 'sap_pwo_master', 'pwo', 'vessel', 'NULL') : 'NULL';
+        $pwoDesc = $joinPwo ? enrolment_col_ref($conn, 'sap_pwo_master', 'pwo', 'pwo_description', 'NULL') : 'NULL';
+        $pwoJoinSql = $joinPwo ? "LEFT JOIN sap_pwo_master pwo ON pwo.pwo_number = s.pwo_number" : "";
+        $pwoRows = enrolment_fetch_all($conn, "
+            SELECT s.pwo_number AS work_order_no,
+                   COALESCE($pwoProject, $pwoVessel, $pwoDesc, '') AS project_name,
+                   '' AS department,
+                   s.pwo_number AS project_no
+            FROM contractor_pwo_selection s
+            $pwoJoinSql
+            WHERE $selectedContractorWhere
+            ORDER BY s.pwo_number DESC
+        ");
+        foreach ($pwoRows as $row) {
+            enrolment_add_work_option($workOptions, $seenWorkOrders, $row['work_order_no'], $row['project_name'], $row['department'], $row['project_no'], 'PWO');
+        }
+    }
+
+    if ($selectedContractorWhere !== '1=0' && enrolment_table_exists($conn, 'contractor_so_selection')) {
+        $joinSo = enrolment_table_exists($conn, 'sap_sale_order_master') && enrolment_column_exists($conn, 'sap_sale_order_master', 'sale_order_no');
+        $soDesc = $joinSo ? enrolment_col_ref($conn, 'sap_sale_order_master', 'so', 'description', "''") : "''";
+        $soDept = $joinSo ? enrolment_col_ref($conn, 'sap_sale_order_master', 'so', 'department', "''") : "''";
+        $soJoinSql = $joinSo ? "LEFT JOIN sap_sale_order_master so ON so.sale_order_no = s.sale_order_no" : "";
+        $soRows = enrolment_fetch_all($conn, "
+            SELECT s.sale_order_no AS work_order_no,
+                   COALESCE($soDesc, '') AS project_name,
+                   COALESCE($soDept, '') AS department,
+                   s.sale_order_no AS project_no
+            FROM contractor_so_selection s
+            $soJoinSql
+            WHERE $selectedContractorWhere
+            ORDER BY s.sale_order_no DESC
+        ");
+        foreach ($soRows as $row) {
+            enrolment_add_work_option($workOptions, $seenWorkOrders, $row['work_order_no'], $row['project_name'], $row['department'], $row['project_no'], 'SO');
+        }
+    }
+
+    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_po_master') && enrolment_column_exists($conn, 'sap_po_master', 'po_number')) {
         $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
-        $workOptions = enrolment_fetch_all($conn, "
+        $vendorFilters = [];
+        if (enrolment_column_exists($conn, 'sap_po_master', 'vendor_code')) {
+            $vendorFilters[] = "vendor_code = '$safeVendor'";
+        }
+        if (enrolment_column_exists($conn, 'sap_po_master', 'customer_code')) {
+            $vendorFilters[] = "customer_code = '$safeVendor'";
+        }
+        $orderExpr = enrolment_column_exists($conn, 'sap_po_master', 'document_date') ? 'document_date DESC' : 'po_number DESC';
+        $poRows = $vendorFilters ? enrolment_fetch_all($conn, "
+            SELECT
+                po_number AS work_order_no,
+                COALESCE(" . (enrolment_column_exists($conn, 'sap_po_master', 'header_text') ? 'header_text' : 'NULL') . ", po_number) AS project_name,
+                COALESCE(" . (enrolment_column_exists($conn, 'sap_po_master', 'purchasing_group') ? 'purchasing_group' : 'NULL') . ", '') AS department,
+                po_number AS project_no
+            FROM sap_po_master
+            WHERE " . implode(' OR ', $vendorFilters) . "
+            ORDER BY $orderExpr
+        ") : [];
+        foreach ($poRows as $row) {
+            enrolment_add_work_option($workOptions, $seenWorkOrders, $row['work_order_no'], $row['project_name'], $row['department'], $row['project_no'], 'PO');
+        }
+    }
+
+    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_pwo_master') && enrolment_column_exists($conn, 'sap_pwo_master', 'pwo_number')) {
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
+        $vendorFilters = [];
+        if (enrolment_column_exists($conn, 'sap_pwo_master', 'vendor_code')) {
+            $vendorFilters[] = "vendor_code = '$safeVendor'";
+        }
+        if (enrolment_column_exists($conn, 'sap_pwo_master', 'customer_code')) {
+            $vendorFilters[] = "customer_code = '$safeVendor'";
+        }
+        $statusWhere = enrolment_column_exists($conn, 'sap_pwo_master', 'status') ? "AND COALESCE(status, 'active') = 'active'" : "";
+        $orderExpr = enrolment_column_exists($conn, 'sap_pwo_master', 'id') ? 'id DESC' : 'pwo_number DESC';
+        $pwoRows = $vendorFilters ? enrolment_fetch_all($conn, "
+            SELECT
+                pwo_number AS work_order_no,
+                COALESCE(" . (enrolment_column_exists($conn, 'sap_pwo_master', 'project') ? 'project' : 'NULL') . ", " . (enrolment_column_exists($conn, 'sap_pwo_master', 'vessel') ? 'vessel' : 'NULL') . ", pwo_number) AS project_name,
+                '' AS department,
+                pwo_number AS project_no
+            FROM sap_pwo_master
+            WHERE (" . implode(' OR ', $vendorFilters) . ") $statusWhere
+            ORDER BY $orderExpr
+        ") : [];
+        foreach ($pwoRows as $pwoRow) {
+            enrolment_add_work_option($workOptions, $seenWorkOrders, $pwoRow['work_order_no'], $pwoRow['project_name'], $pwoRow['department'], $pwoRow['project_no'], 'PWO');
+        }
+    }
+    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_sale_order_master') && enrolment_column_exists($conn, 'sap_sale_order_master', 'sale_order_no')) {
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
+        $vendorFilters = [];
+        if (enrolment_column_exists($conn, 'sap_sale_order_master', 'vendor_code')) {
+            $vendorFilters[] = "vendor_code = '$safeVendor'";
+        }
+        if (enrolment_column_exists($conn, 'sap_sale_order_master', 'customer_code')) {
+            $vendorFilters[] = "customer_code = '$safeVendor'";
+        }
+        $orderExpr = enrolment_column_exists($conn, 'sap_sale_order_master', 'doc_date') ? 'doc_date DESC' : 'sale_order_no DESC';
+        $soRows = $vendorFilters ? enrolment_fetch_all($conn, "
+            SELECT
+                sale_order_no AS work_order_no,
+                COALESCE(" . (enrolment_column_exists($conn, 'sap_sale_order_master', 'description') ? 'description' : 'NULL') . ", sale_order_no) AS project_name,
+                COALESCE(" . (enrolment_column_exists($conn, 'sap_sale_order_master', 'department') ? 'department' : 'NULL') . ", '') AS department,
+                sale_order_no AS project_no
+            FROM sap_sale_order_master
+            WHERE " . implode(' OR ', $vendorFilters) . "
+            ORDER BY $orderExpr
+        ") : [];
+        foreach ($soRows as $row) {
+            enrolment_add_work_option($workOptions, $seenWorkOrders, $row['work_order_no'], $row['project_name'], $row['department'], $row['project_no'], 'SO');
+        }
+    }
+    if (empty($workOptions) && $vendorCodeForSap !== '' && enrolment_table_exists($conn, 'work_orders')) {
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
+        $workOrderRows = enrolment_fetch_all($conn, "
             SELECT work_order_no, project_name, department, work_order_no AS project_no
             FROM work_orders
             WHERE vendor_code = '$safeVendor' AND COALESCE(wo_status, 'ACTIVE') = 'ACTIVE'
             ORDER BY id DESC
         ");
-    }
-    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_pwo_master')) {
-        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
-        $pwoRows = enrolment_fetch_all($conn, "
-            SELECT pwo_number AS work_order_no, COALESCE(project, vessel, pwo_number) AS project_name, '' AS department, pwo_number AS project_no
-            FROM sap_pwo_master
-            WHERE vendor_code = '$safeVendor' AND COALESCE(status, 'active') = 'active'
-            ORDER BY id DESC
-        ");
-        $seenWorkOrders = array_column($workOptions, 'work_order_no');
-        foreach ($pwoRows as $pwoRow) {
-            if (!in_array($pwoRow['work_order_no'], $seenWorkOrders, true)) {
-                $workOptions[] = $pwoRow;
-            }
+        foreach ($workOrderRows as $row) {
+            enrolment_add_work_option($workOptions, $seenWorkOrders, $row['work_order_no'], $row['project_name'], $row['department'], $row['project_no'], 'WO');
         }
     }
     if (empty($workOptions) && !empty($contractor['work_order_no'])) {
-        $workOptions[] = [
-            'work_order_no' => $contractor['work_order_no'],
-            'project_name' => $project_name ?: 'General Project',
-            'department' => $department_name,
-            'project_no' => $contractor['work_order_no'],
-        ];
+        enrolment_add_work_option($workOptions, $seenWorkOrders, $contractor['work_order_no'], $project_name ?: 'General Project', $department_name, $contractor['work_order_no'], 'WO');
     }
     if (!empty($contractor['work_order_no']) && enrolment_table_exists($conn, 'work_orders') && enrolment_column_exists($conn, 'work_orders', 'work_order_no')) {
         $woSelect = implode(', ', [
@@ -249,7 +482,7 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'gender', 'gender') . ",
                 " . enrolment_expr($conn, 'workmen', 'dob', 'dob') . ",
                 " . enrolment_expr($conn, 'workmen', 'marital_status', 'marital_status') . ",
-                '' AS nationality,
+                " . enrolment_expr($conn, 'workmen', 'nationality', 'nationality', "'Indian'") . ",
                 '' AS identification_mark,
                 " . enrolment_expr($conn, 'workmen', 'present_address', 'present_address') . ",
                 " . enrolment_expr($conn, 'workmen', 'permanent_address', 'permanent_address') . ",
@@ -582,7 +815,7 @@ function renderContent() {
                             data-project="<?= htmlspecialchars($wo['project_name'] ?? '') ?>"
                             data-project-no="<?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>"
                             data-department="<?= htmlspecialchars($wo['department'] ?? '') ?>">
-                      <?= htmlspecialchars($wo['work_order_no']) ?><?= !empty($wo['project_name']) ? ' - ' . htmlspecialchars($wo['project_name']) : '' ?>
+                      <?= !empty($wo['source']) ? '[' . htmlspecialchars($wo['source']) . '] ' : '' ?><?= htmlspecialchars($wo['work_order_no']) ?>
                     </option>
                   <?php endforeach; ?>
                 </select>
@@ -593,7 +826,7 @@ function renderContent() {
                   <option value="">Select project / WBS</option>
                   <?php foreach ($workOptions as $wo): ?>
                     <option value="<?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>" data-work-order="<?= htmlspecialchars($wo['work_order_no']) ?>">
-                      <?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?><?= !empty($wo['project_name']) ? ' - ' . htmlspecialchars($wo['project_name']) : '' ?>
+                      <?= !empty($wo['source']) ? '[' . htmlspecialchars($wo['source']) . '] ' : '' ?><?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>
                     </option>
                   <?php endforeach; ?>
                 </select>
@@ -638,7 +871,12 @@ function renderContent() {
               </div>
               <div class="form-group">
                 <label class="form-label required">Nationality</label>
-                <input type="text" class="form-control" name="nationality" value="Indian" required>
+                <input type="text" class="form-control" name="nationality" list="nationalityList" value="Indian" required>
+                <datalist id="nationalityList">
+                  <?php foreach ($nationalityOptions as $nationality): ?>
+                    <option value="<?= htmlspecialchars($nationality) ?>"></option>
+                  <?php endforeach; ?>
+                </datalist>
               </div>
               <div class="form-group">
                 <label class="form-label">Identification Mark</label>
@@ -686,22 +924,27 @@ function renderContent() {
           <div class="modal-tab-content hidden" id="tab-address">
             <div class="form-grid-2">
               <div class="form-group">
-                <label class="form-label required">Present Address</label>
-                <textarea class="form-control" name="present_address" rows="2" required></textarea>
-              </div>
-              <div class="form-group">
                 <label class="form-label required">Permanent Address</label>
                 <textarea class="form-control" name="permanent_address" rows="2" required></textarea>
+              </div>
+              <div class="form-group">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:5px;">
+                  <label class="form-label required" style="margin-bottom:0;">Present Address</label>
+                  <button type="button" class="btn btn-sm btn-primary-soft" id="btnCopyPermanentAddress" style="min-height:30px;min-width:auto;padding:5px 10px;">Same as Permanent</button>
+                </div>
+                <textarea class="form-control" name="present_address" rows="2" required></textarea>
               </div>
             </div>
             <div class="form-grid-3">
               <div class="form-group">
                 <label class="form-label required">State</label>
-                <input type="text" class="form-control" name="state" required>
+                <select class="form-control" name="state" id="stateSelect" required></select>
+                <input type="text" class="form-control" name="state" id="stateInput" required disabled style="display:none;margin-top:0;">
               </div>
               <div class="form-group">
                 <label class="form-label required">District</label>
-                <input type="text" class="form-control" name="district" required>
+                <select class="form-control" name="district" id="districtSelect" required></select>
+                <input type="text" class="form-control" name="district" id="districtInput" required disabled style="display:none;margin-top:0;">
               </div>
               <div class="form-group">
                 <label class="form-label required">Pin Code</label>
@@ -818,12 +1061,12 @@ function renderContent() {
 
           <div class="enroll-actions">
             <div class="enroll-actions-left">
-              <button type="button" class="btn btn-outline" id="btnPrevTab">Previous</button>
-              <button type="button" class="btn btn-primary-soft" id="btnNextTab">Next</button>
             </div>
             <div class="enroll-actions-right">
-              <!-- <button type="button" class="btn btn-primary-soft" id="btnSaveDraft">Save Draft</button> -->
-              <button type="submit" class="btn btn-primary" id="btnSubmit">Submit Enrollment</button>
+              <button type="button" class="btn btn-outline" id="btnPrevTab">Previous</button>
+              <button type="button" class="btn btn-primary-soft" id="btnNextTab">Next</button>
+              <button type="button" class="btn btn-primary-soft" id="btnSaveDraft" style="display:none;">Save Draft</button>
+              <button type="submit" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit Enrollment</button>
             </div>
           </div>
         </form>
@@ -997,6 +1240,44 @@ function renderContent() {
         const requestedPassLabel = <?= json_encode($selectedType['label']) ?>;
         const prefillAadhaar = <?= json_encode($prefillAadhaar) ?>;
         const currentContractorId = <?= $c_id ? (int)$c_id : 0 ?>;
+        const indianStateDistricts = {
+          'Andhra Pradesh': ['Anantapur', 'Chittoor', 'East Godavari', 'Guntur', 'Krishna', 'Kurnool', 'Prakasam', 'SPSR Nellore', 'Srikakulam', 'Visakhapatnam', 'Vizianagaram', 'West Godavari', 'YSR Kadapa'],
+          'Arunachal Pradesh': ['Anjaw', 'Changlang', 'East Kameng', 'East Siang', 'Itanagar Capital Complex', 'Lohit', 'Lower Dibang Valley', 'Lower Subansiri', 'Namsai', 'Papum Pare', 'Tawang', 'Tirap', 'Upper Siang', 'Upper Subansiri', 'West Kameng', 'West Siang'],
+          'Assam': ['Baksa', 'Barpeta', 'Bongaigaon', 'Cachar', 'Darrang', 'Dhemaji', 'Dhubri', 'Dibrugarh', 'Goalpara', 'Golaghat', 'Hailakandi', 'Jorhat', 'Kamrup', 'Kamrup Metropolitan', 'Karimganj', 'Lakhimpur', 'Nagaon', 'Nalbari', 'Sivasagar', 'Sonitpur', 'Tinsukia'],
+          'Bihar': ['Araria', 'Aurangabad', 'Begusarai', 'Bhagalpur', 'Bhojpur', 'Darbhanga', 'Gaya', 'Katihar', 'Madhubani', 'Muzaffarpur', 'Nalanda', 'Patna', 'Purnia', 'Samastipur', 'Saran', 'Siwan'],
+          'Chhattisgarh': ['Balod', 'Bastar', 'Bilaspur', 'Durg', 'Janjgir-Champa', 'Korba', 'Raipur', 'Rajnandgaon', 'Surguja'],
+          'Goa': ['North Goa', 'South Goa'],
+          'Gujarat': ['Ahmedabad', 'Amreli', 'Anand', 'Banaskantha', 'Bharuch', 'Bhavnagar', 'Gandhinagar', 'Jamnagar', 'Junagadh', 'Kutch', 'Mehsana', 'Rajkot', 'Surat', 'Vadodara', 'Valsad'],
+          'Haryana': ['Ambala', 'Bhiwani', 'Faridabad', 'Gurugram', 'Hisar', 'Karnal', 'Kurukshetra', 'Panipat', 'Rewari', 'Rohtak', 'Sonipat', 'Yamunanagar'],
+          'Himachal Pradesh': ['Bilaspur', 'Chamba', 'Hamirpur', 'Kangra', 'Kinnaur', 'Kullu', 'Mandi', 'Shimla', 'Sirmaur', 'Solan', 'Una'],
+          'Jharkhand': ['Bokaro', 'Dhanbad', 'East Singhbhum', 'Giridih', 'Hazaribagh', 'Ranchi', 'West Singhbhum'],
+          'Karnataka': ['Bagalkot', 'Ballari', 'Belagavi', 'Bengaluru Rural', 'Bengaluru Urban', 'Bidar', 'Chikkamagaluru', 'Dakshina Kannada', 'Davanagere', 'Dharwad', 'Hassan', 'Kalaburagi', 'Mysuru', 'Raichur', 'Shivamogga', 'Tumakuru', 'Udupi', 'Vijayapura'],
+          'Kerala': ['Alappuzha', 'Ernakulam', 'Idukki', 'Kannur', 'Kasaragod', 'Kollam', 'Kottayam', 'Kozhikode', 'Malappuram', 'Palakkad', 'Pathanamthitta', 'Thiruvananthapuram', 'Thrissur', 'Wayanad'],
+          'Madhya Pradesh': ['Bhopal', 'Chhindwara', 'Gwalior', 'Indore', 'Jabalpur', 'Rewa', 'Sagar', 'Satna', 'Ujjain'],
+          'Maharashtra': ['Ahmednagar', 'Akola', 'Amravati', 'Aurangabad', 'Jalgaon', 'Kolhapur', 'Mumbai City', 'Mumbai Suburban', 'Nagpur', 'Nashik', 'Pune', 'Raigad', 'Satara', 'Solapur', 'Thane'],
+          'Manipur': ['Bishnupur', 'Churachandpur', 'Imphal East', 'Imphal West', 'Thoubal', 'Ukhrul'],
+          'Meghalaya': ['East Khasi Hills', 'East Garo Hills', 'Jaintia Hills', 'Ri Bhoi', 'West Garo Hills', 'West Khasi Hills'],
+          'Mizoram': ['Aizawl', 'Champhai', 'Kolasib', 'Lunglei', 'Mamit', 'Serchhip'],
+          'Nagaland': ['Dimapur', 'Kohima', 'Mokokchung', 'Mon', 'Phek', 'Tuensang', 'Wokha', 'Zunheboto'],
+          'Odisha': ['Angul', 'Balasore', 'Bargarh', 'Bhadrak', 'Cuttack', 'Ganjam', 'Jagatsinghpur', 'Kendrapara', 'Khordha', 'Puri', 'Sambalpur', 'Sundargarh'],
+          'Punjab': ['Amritsar', 'Bathinda', 'Firozpur', 'Gurdaspur', 'Hoshiarpur', 'Jalandhar', 'Ludhiana', 'Patiala', 'SAS Nagar', 'Sangrur'],
+          'Rajasthan': ['Ajmer', 'Alwar', 'Bharatpur', 'Bikaner', 'Jaipur', 'Jodhpur', 'Kota', 'Udaipur'],
+          'Sikkim': ['East Sikkim', 'North Sikkim', 'South Sikkim', 'West Sikkim'],
+          'Tamil Nadu': ['Chengalpattu', 'Chennai', 'Coimbatore', 'Cuddalore', 'Erode', 'Kanchipuram', 'Kanyakumari', 'Madurai', 'Nilgiris', 'Salem', 'Thanjavur', 'Thiruvallur', 'Tiruchirappalli', 'Tirunelveli', 'Vellore'],
+          'Telangana': ['Adilabad', 'Hyderabad', 'Karimnagar', 'Khammam', 'Mahabubnagar', 'Medak', 'Nalgonda', 'Nizamabad', 'Rangareddy', 'Warangal'],
+          'Tripura': ['Dhalai', 'Gomati', 'North Tripura', 'South Tripura', 'West Tripura'],
+          'Uttar Pradesh': ['Agra', 'Aligarh', 'Bareilly', 'Ghaziabad', 'Gorakhpur', 'Kanpur Nagar', 'Lucknow', 'Meerut', 'Prayagraj', 'Varanasi'],
+          'Uttarakhand': ['Almora', 'Chamoli', 'Dehradun', 'Haridwar', 'Nainital', 'Pauri Garhwal', 'Tehri Garhwal', 'Udham Singh Nagar'],
+          'West Bengal': ['Bankura', 'Darjeeling', 'Hooghly', 'Howrah', 'Jalpaiguri', 'Kolkata', 'Malda', 'Murshidabad', 'Nadia', 'North 24 Parganas', 'Paschim Bardhaman', 'Purba Medinipur', 'South 24 Parganas'],
+          'Andaman and Nicobar Islands': ['Nicobar', 'North and Middle Andaman', 'South Andaman'],
+          'Chandigarh': ['Chandigarh'],
+          'Dadra and Nagar Haveli and Daman and Diu': ['Dadra and Nagar Haveli', 'Daman', 'Diu'],
+          'Delhi': ['Central Delhi', 'East Delhi', 'New Delhi', 'North Delhi', 'South Delhi', 'West Delhi'],
+          'Jammu and Kashmir': ['Anantnag', 'Baramulla', 'Jammu', 'Kathua', 'Srinagar', 'Udhampur'],
+          'Ladakh': ['Kargil', 'Leh'],
+          'Lakshadweep': ['Lakshadweep'],
+          'Puducherry': ['Karaikal', 'Mahe', 'Puducherry', 'Yanam']
+        };
 
         document.getElementById('btnOpenModal').onclick = () => {
           form.reset();
@@ -1028,6 +1309,7 @@ function renderContent() {
           formSection.style.display = 'block';
           formSection.classList.remove('hidden');
           activateTab('basic');
+          updateNationalityLocationMode();
           toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
           toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
           if (prefillAadhaar) {
@@ -1042,6 +1324,7 @@ function renderContent() {
           document.getElementById('workerEditId').value = '';
           document.getElementById('enrollFormTitle').textContent = ' New ' + requestedPassLabel;
           resetWorkFlow();
+          updateNationalityLocationMode();
         }
         
         function activateTab(tabId) {
@@ -1092,6 +1375,88 @@ function renderContent() {
           }
         });
 
+        document.getElementById('btnCopyPermanentAddress')?.addEventListener('click', () => {
+          const permanent = form.querySelector('[name="permanent_address"]');
+          const present = form.querySelector('[name="present_address"]');
+          if (permanent && present) {
+            present.value = permanent.value;
+            present.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        });
+
+        function isIndianNationality() {
+          return String(form.querySelector('[name="nationality"]')?.value || '').trim().toLowerCase() === 'indian';
+        }
+
+        function populateIndianStateOptions(selectedState = '') {
+          const stateSelect = document.getElementById('stateSelect');
+          if (!stateSelect) return;
+          const states = Object.keys(indianStateDistricts);
+          stateSelect.innerHTML = '<option value="">Select State</option>' + states.map(state => `<option value="${state}">${state}</option>`).join('');
+          if (selectedState && states.includes(selectedState)) {
+            stateSelect.value = selectedState;
+          }
+        }
+
+        function populateIndianDistrictOptions(state, selectedDistrict = '') {
+          const districtSelect = document.getElementById('districtSelect');
+          if (!districtSelect) return;
+          const districts = indianStateDistricts[state] || [];
+          districtSelect.innerHTML = '<option value="">Select District</option>' + districts.map(district => `<option value="${district}">${district}</option>`).join('');
+          if (selectedDistrict && districts.includes(selectedDistrict)) {
+            districtSelect.value = selectedDistrict;
+          }
+        }
+
+        function setStateDistrictValues(state = '', district = '') {
+          const stateSelect = document.getElementById('stateSelect');
+          const districtSelect = document.getElementById('districtSelect');
+          const stateInput = document.getElementById('stateInput');
+          const districtInput = document.getElementById('districtInput');
+          if (isIndianNationality()) {
+            populateIndianStateOptions(state);
+            populateIndianDistrictOptions(stateSelect?.value || state, district);
+          } else {
+            if (stateInput) stateInput.value = state || '';
+            if (districtInput) districtInput.value = district || '';
+          }
+        }
+
+        function updateNationalityLocationMode() {
+          const stateSelect = document.getElementById('stateSelect');
+          const districtSelect = document.getElementById('districtSelect');
+          const stateInput = document.getElementById('stateInput');
+          const districtInput = document.getElementById('districtInput');
+          const currentState = stateSelect && !stateSelect.disabled ? stateSelect.value : (stateInput?.value || '');
+          const currentDistrict = districtSelect && !districtSelect.disabled ? districtSelect.value : (districtInput?.value || '');
+          const indian = isIndianNationality();
+
+          if (stateSelect && stateInput && districtSelect && districtInput) {
+            stateSelect.disabled = !indian;
+            districtSelect.disabled = !indian;
+            stateInput.disabled = indian;
+            districtInput.disabled = indian;
+            stateSelect.style.display = indian ? '' : 'none';
+            districtSelect.style.display = indian ? '' : 'none';
+            stateInput.style.display = indian ? 'none' : '';
+            districtInput.style.display = indian ? 'none' : '';
+          }
+
+          if (indian) {
+            populateIndianStateOptions(currentState);
+            populateIndianDistrictOptions(stateSelect?.value || currentState, currentDistrict);
+          } else {
+            if (stateInput) stateInput.value = currentState;
+            if (districtInput) districtInput.value = currentDistrict;
+          }
+        }
+
+        form.querySelector('[name="nationality"]')?.addEventListener('input', updateNationalityLocationMode);
+        document.getElementById('stateSelect')?.addEventListener('change', (e) => populateIndianDistrictOptions(e.target.value, ''));
+        populateIndianStateOptions();
+        populateIndianDistrictOptions('', '');
+        updateNationalityLocationMode();
+
         function toggleConditionalRegistration(selectName, wrapId, inputId) {
           const value = form.querySelector(`[name="${selectName}"]`)?.value || '';
           const wrap = document.getElementById(wrapId);
@@ -1135,6 +1500,7 @@ function renderContent() {
                             'gender': data.gender,
                             'dob': data.dob,
                             'marital_status': data.marital_status,
+                            'nationality': data.nationality || 'Indian',
                             'mobile': data.mobile,
                             'present_address': data.present_address,
                             'permanent_address': data.permanent_address,
@@ -1164,6 +1530,8 @@ function renderContent() {
                                 }
                             }
                         }
+                        updateNationalityLocationMode();
+                        setStateDistrictValues(data.state || '', data.district || '');
                         syncWorkFlowFromFields();
                         
                         // Handle photo preview if we have one
@@ -1342,7 +1710,7 @@ function renderContent() {
 
         function resetAutoFilledFields() {
             const fieldsToReset = [
-                'name', 'gender', 'dob', 'marital_status', 'mobile', 'present_address', 
+                'name', 'gender', 'dob', 'marital_status', 'nationality', 'mobile', 'present_address', 
                 'permanent_address', 'state', 'district', 'nature_of_work', 
                 'skill_category', 'education', 'role_type', 'blood_group', 'pf_no', 'esi_no', 'uan_number', 'email', 'father_name'
             ];
@@ -1361,14 +1729,22 @@ function renderContent() {
                 }
             });
             resetWorkFlow();
+            updateNationalityLocationMode();
             const photoInput = form.querySelector('[name="photo"]');
             if(photoInput) photoInput.setAttribute('required', 'true');
         }
 
         function setFieldValue(name, value) {
+          if (name === 'state' || name === 'district') {
+            const stateValue = name === 'state' ? value : (form.querySelector('[name="state"]:not(:disabled)')?.value || '');
+            const districtValue = name === 'district' ? value : (form.querySelector('[name="district"]:not(:disabled)')?.value || '');
+            setStateDistrictValues(stateValue || '', districtValue || '');
+            return;
+          }
           const field = form.querySelector(`[name="${name}"]`);
           if (!field) return;
           field.value = value ?? '';
+          if (name === 'nationality') updateNationalityLocationMode();
         }
 
         function passTypeFromWorker(worker) {
@@ -1425,6 +1801,7 @@ function renderContent() {
           };
 
           Object.entries(values).forEach(([name, value]) => setFieldValue(name, value));
+          setStateDistrictValues(values.state || '', values.district || '');
           toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
           toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
           const deptField = form.querySelector('[name="department"]');

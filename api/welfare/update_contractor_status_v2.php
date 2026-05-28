@@ -216,6 +216,7 @@ try {
         action_by INT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
+    contractor_status_ensure_column($conn, 'contractor_status_history', 'created_at', 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP');
 
     db_execute(
         $conn,

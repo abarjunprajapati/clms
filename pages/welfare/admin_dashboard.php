@@ -100,14 +100,14 @@ $dp=wr($conn,"SELECT DATE(created_at)d,COUNT(*)c FROM gate_passes WHERE created_
 <div class="wa-kpi-grid">
   <?php
   $cards = [
-    ['Total Contractors',$tc,'fa-building','#3b82f6','approve_contractors.php'],
+    ['Total Contractors',$tc,'fa-building','#3b82f6','entity_directory.php'],
     ['Total Workers',$tw,'fa-users','#10b981','enrollment_monitor.php'],
     ['Active ACC Cards',$acc,'fa-fingerprint','#7c3aed','acc_tracking.php'],
     ['Temporary Passes',$tmp,'fa-clock','#f59e0b','temp_pass_control.php'],
-    ['Pending Approvals',$pa+$pp,'fa-hourglass-half','#6366f1','gatepass_monitor.php'],
+    ['Pending Approvals',$pa+$pp,'fa-hourglass-half','#6366f1','pending_requests.php'],
     ['Expired Documents',$ed,'fa-file-circle-xmark','#ef4444','verify_documents.php'],
     ['Blocked Workers',$bw,'fa-user-slash','#ef4444','worker_block.php'],
-    ['Suspended Contractors',$sc,'fa-building-circle-xmark','#dc2626','approve_contractors.php'],
+    ['Suspended Contractors',$sc,'fa-building-circle-xmark','#dc2626','blocking_control.php'],
     ['Compliance Pending',$cp,'fa-shield-halved','#f59e0b','compliance_monitor.php'],
     ['Safety Pending',$sp,'fa-graduation-cap','#ec4899','training_monitor.php'],
   ];
@@ -128,14 +128,14 @@ $dp=wr($conn,"SELECT DATE(created_at)d,COUNT(*)c FROM gate_passes WHERE created_
   <div class="card-header"><div class="card-title"><i class="fas fa-bolt"></i> Quick Actions</div></div>
   <div class="card-body">
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <a href="../../pages/admin/create_user.php" class="btn btn-primary"><i class="fas fa-user-plus"></i> Create User</a>
+      <a href="../admin/create_user.php" class="btn btn-primary"><i class="fas fa-user-plus"></i> Create User</a>
       <a href="pass_limits.php" class="btn btn-primary"><i class="fas fa-sliders-h"></i> Configure Pass Limits</a>
       <a href="approve_contractors.php" class="btn btn-outline"><i class="fas fa-check-circle"></i> Monitor Contractors</a>
       <a href="verify_documents.php#contractor-documents" class="btn btn-outline"><i class="fas fa-building-shield"></i> Contractor Docs <?= $cdp > 0 ? '(' . $cdp . ')' : '' ?></a>
-      <a href="sap_monitor.php" class="btn btn-outline"><i class="fas fa-sync"></i> SAP Integration</a>
+      <a href="sap_logs.php" class="btn btn-outline"><i class="fas fa-sync"></i> SAP Logs</a>
       <a href="compliance_monitor.php" class="btn btn-outline"><i class="fas fa-shield-check"></i> Compliance Review</a>
       <a href="worker_block.php" class="btn btn-danger"><i class="fas fa-user-slash"></i> Blocking Control</a>
-      <a href="../../pages/admin/audit_logs.php" class="btn btn-outline"><i class="fas fa-history"></i> Audit Logs</a>
+      <a href="../admin/audit_logs.php" class="btn btn-outline"><i class="fas fa-history"></i> Audit Logs</a>
       <a href="sap_monitor.php" class="btn btn-outline"><i class="fas fa-sync"></i> SAP Monitor</a>
     </div>
   </div>
@@ -147,7 +147,7 @@ $dp=wr($conn,"SELECT DATE(created_at)d,COUNT(*)c FROM gate_passes WHERE created_
   <!-- User Management -->
   <div class="card glass">
     <div class="card-header"><div class="card-title"><i class="fas fa-users-cog"></i> User Management</div>
-      <a href="../../pages/admin/users.php" class="btn btn-sm btn-outline">Manage</a></div>
+      <a href="../admin/users.php" class="btn btn-sm btn-outline">Manage</a></div>
     <div class="card-body">
       <div style="text-align:center;margin-bottom:12px">
         <div style="font-size:32px;font-weight:800;color:#6366f1"><?=$tu?></div>
@@ -160,9 +160,9 @@ $dp=wr($conn,"SELECT DATE(created_at)d,COUNT(*)c FROM gate_passes WHERE created_
       </div>
       <?php endforeach;?>
       <div style="margin-top:10px;display:flex;gap:6px">
-        <a href="../../pages/admin/create_user.php" class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> Add</a>
-        <a href="../../pages/admin/roles.php" class="btn btn-sm btn-outline"><i class="fas fa-shield"></i> Roles</a>
-        <a href="../../pages/admin/permissions.php" class="btn btn-sm btn-outline"><i class="fas fa-key"></i> Perms</a>
+        <a href="../admin/create_user.php" class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> Add</a>
+        <a href="../admin/users.php" class="btn btn-sm btn-outline"><i class="fas fa-users-cog"></i> Manage</a>
+        <a href="../admin/audit_logs.php" class="btn btn-sm btn-outline"><i class="fas fa-history"></i> Audit</a>
       </div>
     </div>
   </div>
@@ -197,20 +197,20 @@ $dp=wr($conn,"SELECT DATE(created_at)d,COUNT(*)c FROM gate_passes WHERE created_
     <div class="card-header"><div class="card-title"><i class="fas fa-sitemap"></i> Workflow Control</div></div>
     <div class="card-body">
       <?php $wf=[
-        ['Contractor Approval','Multi-level','#f59e0b','fa-building'],
-        ['Worker Enrollment','Auto-verify','#6366f1','fa-user-plus'],
-        ['Safety Training','Batch assign','#10b981','fa-graduation-cap'],
-        ['Gate Pass Flow','Checklist','#3b82f6','fa-id-card-clip'],
-        ['ACC Approval','SAP+Bio','#7c3aed','fa-fingerprint'],
-        ['Renewal Flow','Auto-notify','#ec4899','fa-redo'],
-        ['Blocking Rules','Escalation','#ef4444','fa-user-slash'],
+        ['Contractor Approval','Multi-level','#f59e0b','fa-building','approve_contractors.php'],
+        ['Worker Enrollment','Auto-verify','#6366f1','fa-user-plus','enrollment_monitor.php'],
+        ['Safety Training','Batch assign','#10b981','fa-graduation-cap','training_monitor.php'],
+        ['Gate Pass Flow','Checklist','#3b82f6','fa-id-card-clip','gatepass_monitor.php'],
+        ['ACC Approval','SAP+Bio','#7c3aed','fa-fingerprint','acc_tracking.php'],
+        ['Renewal Flow','Auto-notify','#ec4899','fa-redo','pass_validity.php'],
+        ['Blocking Rules','Escalation','#ef4444','fa-user-slash','worker_block.php'],
       ];
-      foreach($wf as list($l,$t,$c,$i)):?>
-      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f1f5f9">
+      foreach($wf as list($l,$t,$c,$i,$url)):?>
+      <a href="<?=$url?>" style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f1f5f9;text-decoration:none;color:inherit">
         <div style="width:26px;height:26px;border-radius:6px;background:<?=$c?>1a;color:<?=$c?>;display:flex;align-items:center;justify-content:center;font-size:10px"><i class="fas <?=$i?>"></i></div>
         <div style="flex:1;font-size:12px;font-weight:600"><?=$l?></div>
         <span style="font-size:10px;background:#f1f5f9;padding:2px 6px;border-radius:4px;font-weight:600"><?=$t?></span>
-      </div>
+      </a>
       <?php endforeach;?>
     </div>
   </div>
@@ -343,17 +343,17 @@ $dp=wr($conn,"SELECT DATE(created_at)d,COUNT(*)c FROM gate_passes WHERE created_
     <div class="card-header"><div class="card-title"><i class="fas fa-bell"></i> Notification Center</div></div>
     <div class="card-body">
       <?php $notifs=[
-        [$pa>0?"$pa new contractor registrations":'No new registrations',$pa>0?'#f59e0b':'#10b981','fa-building'],
-        [$cp>0?"$cp compliance items expired":'Compliance up to date',$cp>0?'#ef4444':'#10b981','fa-shield-halved'],
-        [$bw>0?"$bw workers blocked":'No blocked workers',$bw>0?'#ef4444':'#10b981','fa-user-slash'],
-        [$te>0?"$te passes expired":'All passes valid',$te>0?'#f59e0b':'#10b981','fa-clock'],
-        [$sp>0?"$sp safety trainings pending":'Safety queue clear',$sp>0?'#6366f1':'#10b981','fa-graduation-cap'],
+        [$pa>0?"$pa new contractor registrations":'No new registrations',$pa>0?'#f59e0b':'#10b981','fa-building','approve_contractors.php'],
+        [$cp>0?"$cp compliance items expired":'Compliance up to date',$cp>0?'#ef4444':'#10b981','fa-shield-halved','compliance_monitor.php'],
+        [$bw>0?"$bw workers blocked":'No blocked workers',$bw>0?'#ef4444':'#10b981','fa-user-slash','worker_block.php'],
+        [$te>0?"$te passes expired":'All passes valid',$te>0?'#f59e0b':'#10b981','fa-clock','temp_pass_control.php'],
+        [$sp>0?"$sp safety trainings pending":'Safety queue clear',$sp>0?'#6366f1':'#10b981','fa-graduation-cap','training_monitor.php'],
       ];
-      foreach($notifs as list($msg,$c,$i)):?>
-      <div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;margin-bottom:6px;border-left:3px solid <?=$c?>;background:<?=$c?>08">
+      foreach($notifs as list($msg,$c,$i,$url)):?>
+      <a href="<?=$url?>" style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;margin-bottom:6px;border-left:3px solid <?=$c?>;background:<?=$c?>08;text-decoration:none;color:inherit">
         <i class="fas <?=$i?>" style="color:<?=$c?>;font-size:12px"></i>
         <span style="font-size:12px;font-weight:500"><?=$msg?></span>
-      </div>
+      </a>
       <?php endforeach;?>
     </div>
   </div>
@@ -362,7 +362,7 @@ $dp=wr($conn,"SELECT DATE(created_at)d,COUNT(*)c FROM gate_passes WHERE created_
 <!-- ROW 6: Audit Trail -->
 <div class="card glass" style="margin-bottom:20px">
   <div class="card-header"><div class="card-title"><i class="fas fa-history"></i> System Audit Trail</div>
-    <a href="../../pages/admin/audit_logs.php" class="btn btn-sm btn-outline">Full Log</a></div>
+    <a href="../admin/audit_logs.php" class="btn btn-sm btn-outline">Full Log</a></div>
   <div class="card-body" style="padding:0">
     <table class="data-table">
       <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Module</th></tr></thead>

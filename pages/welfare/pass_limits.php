@@ -15,13 +15,29 @@ $name = $_SESSION['name'] ?? 'Welfare Admin';
 function renderContent() {
     global $conn;
     
-    $contractors = db_fetch_all($conn, "SELECT id, contractor_name, vendor_code FROM contractors WHERE status='approved' ORDER BY contractor_name");
+    $activeContractorUserSql = "
+        EXISTS (
+            SELECT 1
+            FROM users u
+            WHERE u.role = 'contractor'
+              AND u.status = 'active'
+              AND (u.id = c.user_id OR u.contractor_id = c.vendor_code)
+        )
+    ";
+
+    $contractors = db_fetch_all($conn, "
+        SELECT c.id, c.contractor_name, c.vendor_code
+        FROM contractors c
+        WHERE $activeContractorUserSql
+        ORDER BY c.contractor_name
+    ");
     
     // Get all configured limits with contractor info
     $limits = db_fetch_all($conn, 
         "SELECT pl.*, c.contractor_name, c.vendor_code 
          FROM pass_limits pl 
-         JOIN contractors c ON pl.contractor_id = c.id 
+         JOIN contractors c ON pl.contractor_id = c.id
+         WHERE $activeContractorUserSql
          ORDER BY c.contractor_name, pl.pass_type"
     );
     

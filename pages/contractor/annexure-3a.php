@@ -72,7 +72,7 @@ function renderContent() {
     $submit_disabled_attr = ($is_locked || $is_approved_view_only) ? 'disabled' : '';
     $worker_category_source = $existing_data['worker_category'] ?? '';
     $worker_cats = !empty($worker_category_source) ? array_map('trim', explode(',', $worker_category_source)) : [];
-    $selected_ecp_covered = $existing_data['ecp_covered'] ?? '';
+    $selected_ecp_covered = $existing_data['ecp_covered'] ?? 'YES';
 
     // Parse individual reasons from concatenated string (like Contractor Registration)
     $stored_reason = $existing_data['epf_esi_exemption_reason'] ?? '';
@@ -90,6 +90,20 @@ function renderContent() {
     if (empty($epf_reason) && empty($esi_reason) && empty($ecp_reason) && !empty($stored_reason)) {
         $ecp_reason = $stored_reason;
     }
+
+    $yes_selected_by_default = function($raw, $no_reason, $yes_detail = '') {
+        $value = strtoupper(trim((string)$raw));
+        if ($value === 'YES' || $value === '1' || $value === '') {
+            return true;
+        }
+        if (($value === 'NO' || $value === '0') && trim((string)$no_reason) !== '' && trim((string)$yes_detail) === '') {
+            return false;
+        }
+        return true;
+    };
+    $epf_selected_yes = $yes_selected_by_default($existing_data['is_epf_registered'] ?? 'YES', $epf_reason, $existing_data['epf_code'] ?? '');
+    $esi_selected_yes = $yes_selected_by_default($existing_data['is_esi_registered'] ?? 'YES', $esi_reason, $existing_data['esi_code'] ?? '');
+    $ecp_selected_yes = $yes_selected_by_default($selected_ecp_covered, $ecp_reason, $existing_data['ecp_details_json'] ?? '');
 
     $ecp_rows = [];
     if (!empty($existing_data['ecp_details_json'])) {
@@ -439,11 +453,26 @@ function renderContent() {
             <?php if ($existing_data): ?>
                 <span class="badge rounded-pill bg-<?= $statusClass ?> px-4 py-2 shadow-sm me-2" style="font-size:12px;"><?= strtoupper($a3_status) ?></span>
             <?php endif; ?>
+            <a href="welfare-actions.php" class="btn btn-outline-primary rounded-pill px-3 me-2">
+                <i class="fas fa-clock-rotate-left me-1"></i> Welfare Action History
+            </a>
             <button class="btn btn-outline-secondary rounded-pill px-3 me-2" onclick="window.print()">
                 <i class="fas fa-print me-1"></i> Print / PDF
             </button>
         </div>
     </div>
+
+    <?php if (in_array($a3_status, ['rejected', 'correction_required', 'hold'], true)): ?>
+        <div class="alert alert-warning border-0 shadow-sm mb-4" style="background:#fff7ed; color:#9a3412;">
+            <div class="d-flex justify-content-between gap-3 flex-wrap align-items-center">
+                <div>
+                    <i class="fas fa-circle-exclamation me-2"></i>
+                    Welfare action recorded. Please open history to view reason, rejection date and attachment.
+                </div>
+                <a href="welfare-actions.php" class="btn btn-sm btn-warning fw-bold">View History</a>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <?php if ($a3_status === 'rejected' && !empty($existing_data['rejection_reason'])): ?>
         <div class="alert alert-danger border-0 shadow-sm mb-4" style="background:#fee2e2; border-left: 4px solid #dc2626;">
@@ -606,37 +635,32 @@ function renderContent() {
 
                     <div class="registration-card">
                         <div class="registration-section-header">2. Whether Registered under EPF</div>
-                        <div class="gov-radio-group">
-                            <?php
-                            $epfRegisteredSource = $existing_data['is_epf_registered'] ?? '';
-                            $epfYes = ($epfRegisteredSource === 'YES' || (string)$epfRegisteredSource === '1');
-                            ?>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="epf_registered" id="epf_yes" value="YES" <?= $epfYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
-                                <label class="form-check-label" for="epf_yes">YES</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="epf_registered" id="epf_no" value="NO" <?= !$epfYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
-                                <label class="form-check-label" for="epf_no">NO</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="registration-card" id="epfDetailsCard">
-                        <div class="registration-section-header">3. EPF Establishment Code</div>
                         <div class="registration-grid">
                             <div>
+                                <div class="gov-radio-group">
+                                    <?php
+                                    $epfYes = $epf_selected_yes;
+                                    ?>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="epf_registered" id="epf_yes" value="YES" <?= $epfYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
+                                        <label class="form-check-label" for="epf_yes">YES</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="epf_registered" id="epf_no" value="NO" <?= !$epfYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
+                                        <label class="form-check-label" for="epf_no">NO</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="epfDetailsCard">
                                 <label class="form-label required">EPF Establishment Code</label>
                                 <input type="text" name="epf_code" id="epf_code" class="form-control" value="<?= htmlspecialchars($existing_data['epf_code'] ?? '') ?>" <?= $readonly_attr ?>>
+                                <input type="hidden" name="epf_account_no" id="epf_account_no" value="<?= htmlspecialchars($existing_data['epf_account_no'] ?? '') ?>">
+                            </div>
+                            <div class="span-2" id="epfReasonCard">
+                                <label class="form-label required">3. EPF Non-Registration Reason</label>
+                                <textarea class="form-control" name="epf_non_registration_reason" id="epf_non_registration_reason" rows="3" placeholder="Enter reason for not registered under EPF" <?= $readonly_attr ?>><?= htmlspecialchars($epf_reason) ?></textarea>
                             </div>
                         </div>
-                        <input type="hidden" name="epf_account_no" id="epf_account_no" value="<?= htmlspecialchars($existing_data['epf_account_no'] ?? '') ?>">
-                    </div>
-
-                    <div class="registration-card" id="epfReasonCard">
-                        <div class="registration-section-header">3. EPF Non-Registration Reason</div>
-                        <label class="form-label required">Reason</label>
-                        <textarea class="form-control" name="epf_non_registration_reason" id="epf_non_registration_reason" rows="3" placeholder="Enter reason for not registered under EPF" <?= $readonly_attr ?>><?= htmlspecialchars($epf_reason) ?></textarea>
                     </div>
 
                     <div class="registration-card">
@@ -645,8 +669,7 @@ function renderContent() {
                             <div>
                                 <div class="gov-radio-group">
                                     <?php
-                                    $esiRegisteredSource = $existing_data['is_esi_registered'] ?? '';
-                                    $esiYes = ($esiRegisteredSource === 'YES' || (string)$esiRegisteredSource === '1');
+                                    $esiYes = $esi_selected_yes;
                                     ?>
                                     <div class="form-check">
                                         <input class="form-check-input" type="radio" name="esi_registered" id="esi_yes" value="YES" <?= $esiYes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
@@ -667,7 +690,7 @@ function renderContent() {
                                 <textarea class="form-control" name="esi_non_registration_reason" id="esi_non_registration_reason" rows="3" placeholder="Enter reason for not registered under ESI" <?= $readonly_attr ?>><?= htmlspecialchars($esi_reason) ?></textarea>
                             </div>
                             <div class="span-2">
-                                <div class="alert alert-warning py-2 px-3 mb-0 d-none" id="esi-ec-warning">Employee Compensation Policy details are mandatory when ESI is No.</div>
+                                <div class="alert alert-warning py-2 px-3 mb-0 d-none" id="esi-ec-warning">Either ESI or EC Policy is mandatory</div>
                             </div>
                         </div>
                     </div>
@@ -687,11 +710,11 @@ function renderContent() {
                         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                             <div class="gov-radio-group">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_yes" value="YES" <?= $selected_ecp_covered === 'YES' ? 'checked' : '' ?> required <?= $limited_edit_disabled_attr ?>>
+                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_yes" value="YES" <?= $ecp_selected_yes ? 'checked' : '' ?> required <?= $limited_edit_disabled_attr ?>>
                                     <label class="form-check-label" for="ecp_yes">YES</label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_no" value="NO" <?= $selected_ecp_covered !== 'YES' ? 'checked' : '' ?> required <?= $limited_edit_disabled_attr ?>>
+                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_no" value="NO" <?= !$ecp_selected_yes ? 'checked' : '' ?> required <?= $limited_edit_disabled_attr ?>>
                                     <label class="form-check-label" for="ecp_no">NO</label>
                                 </div>
                             </div>
@@ -775,8 +798,19 @@ function renderContent() {
                         </div>
                     </div>
 
-                    <div class="registration-card"><div class="registration-section-header">10. Kerala Labour Welfare Fund Registration No</div><input type="text" class="form-control" name="labour_license_appl_no" value="<?= htmlspecialchars($existing_data['labour_license_appl_no'] ?? '') ?>" <?= $readonly_attr ?>></div>
-                    <div class="registration-card"><div class="registration-section-header">11. Labour Identification Number</div><input type="text" class="form-control" name="labour_identification_no" id="labour_identification_no" pattern="^[0-9]+$" value="<?= htmlspecialchars($existing_data['labour_identification_no'] ?? '') ?>" placeholder="Numeric digits only" <?= $readonly_attr ?>><div class="invalid-feedback">LIN number must be numeric only.</div></div>
+                    <div class="registration-card">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="registration-section-header">10. Kerala Labour Welfare Fund Registration No</div>
+                                <input type="text" class="form-control" name="labour_license_appl_no" value="<?= htmlspecialchars($existing_data['labour_license_appl_no'] ?? '') ?>" <?= $readonly_attr ?>>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="registration-section-header">11. Labour Identification Number</div>
+                                <input type="text" class="form-control" name="labour_identification_no" id="labour_identification_no" pattern="^[0-9]+$" value="<?= htmlspecialchars($existing_data['labour_identification_no'] ?? '') ?>" placeholder="Numeric digits only" <?= $readonly_attr ?>>
+                                <div class="invalid-feedback">LIN number must be numeric only.</div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="registration-card"><div class="registration-section-header">12. Name of Contact Person</div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($existing_data['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>></div>
                     <div class="registration-card">
                         <div class="registration-section-header">13. Mobile Number + Alternate Mobile Number</div>
@@ -1165,7 +1199,7 @@ function renderContent() {
         const warning = document.getElementById('esi-ec-warning');
         if (warning) warning.classList.toggle('d-none', !invalid);
         if (invalid && showPopup && typeof window.notifyUser === 'function') {
-            window.notifyUser('Employee Compensation Policy details are mandatory when ESI is No.', 'warning', 'EC Policy required');
+            window.notifyUser('Either ESI or EC Policy is mandatory', 'warning', 'Either ESI or EC Policy is mandatory');
         }
         return !invalid;
     }

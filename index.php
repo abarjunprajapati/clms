@@ -1,7 +1,11 @@
 <?php 
+$loginScope = $loginScope ?? 'external';
+$isInternalLogin = $loginScope === 'internal';
 require_once __DIR__ . '/include/session.php'; 
 
 if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSION['logged_in'])) {
+    require_once __DIR__ . '/include/config.php';
+    require_once __DIR__ . '/include/onboarding_status.php';
     $role = $_SESSION['role'];
     $redirect = "pages/contractor/dashboard.php";
     switch ($role) {
@@ -15,6 +19,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
       case 'execution_officer': $redirect = "pages/execution/dashboard.php"; break;
       case 'customer': $redirect = "pages/customer/dashboard.php"; break;
     }
+    $redirect = clms_onboarding_redirect_for_session($conn) ?: $redirect;
     header('Location: ' . BASE_URL . $redirect);
     exit;
 }
@@ -25,7 +30,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="csrf-token" content="<?= get_csrf_token() ?>">
-  <title>CLMS – Enterprise Governance Portal</title>
+  <title><?= $isInternalLogin ? 'Internal Staff Login' : 'External Portal Login' ?> - CLMS</title>
   
   <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
@@ -93,8 +98,8 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
           <div class="auth-card-logo-wrapper">
             <img src="uploads/logo/logo.png" alt="Logo" onerror="this.outerHTML='<i class=\'fas fa-building fa-2x\' style=\'color: var(--primary-color);\'></i>'">
           </div>
-          <h2 class="auth-card-title">Portal Sign In</h2>
-          <p class="auth-card-subtitle">Contract Labour Management System</p>
+          <h2 class="auth-card-title"><?= $isInternalLogin ? 'Internal Staff Sign In' : 'External Portal Sign In' ?></h2>
+          <p class="auth-card-subtitle"><?= $isInternalLogin ? 'Welfare, Safety, Pass, Execution and Admin users' : 'Contractor and Customer access' ?></p>
         </div>
 
         <!-- Inline Error Banner -->
@@ -106,9 +111,9 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
           <!-- User ID Input -->
           <div class="form-group">
             <div class="input-wrapper">
-              <input type="text" id="login-user" class="form-control" placeholder="USER ID" required autocomplete="username">
+              <input type="text" id="login-user" class="form-control" placeholder="<?= $isInternalLogin ? 'STAFF USER ID / EMAIL' : 'CONTRACTOR / CUSTOMER CODE' ?>" required autocomplete="username">
               <i class="fas fa-user-shield input-icon"></i>
-              <label class="form-label" for="login-user">USER ID</label>
+              <label class="form-label" for="login-user"><?= $isInternalLogin ? 'STAFF USER ID / EMAIL' : 'CONTRACTOR / CUSTOMER CODE' ?></label>
             </div>
           </div>
 
@@ -152,12 +157,17 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
             <span>SIGN IN TO CLMS</span>
           </button>
 
-          <!-- Divider & Activation link -->
           <div style="text-align: center; margin-top: 30px; padding-top: 25px; border-top: 1px solid var(--border-color);">
-            <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 15px; font-weight: 600;">First time user or activating account?</p>
-            <a href="activate.php" class="btn btn-outline">
-              <i class="fas fa-user-plus"></i> ACTIVATE ACCOUNT
-            </a>
+            <?php if ($isInternalLogin): ?>
+            <?php else: ?>
+              <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 15px; font-weight: 600;">“New User? Register here/Activate”</p>
+              <a href="activate.php" class="btn btn-outline">
+                <i class="fas fa-user-plus"></i> ACTIVATE ACCOUNT
+              </a>
+              <!-- <div style="margin-top: 14px;">
+                <a href="internal-login.php" style="color: var(--primary-color); font-size: 0.86rem; font-weight: 700; text-decoration: none;">Internal Staff Login</a>
+              </div> -->
+            <?php endif; ?>
           </div>
         </form>
 
@@ -219,6 +229,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
 <script src="js/auth_ui.js"></script>
 
 <script>
+const LOGIN_SCOPE = "<?= $isInternalLogin ? 'internal' : 'external' ?>";
 // Bind CAPS LOCK warn indicator
 AuthUI.bindCapsLockDetector(document.getElementById('login-pass'), 'caps-warning-login');
 
@@ -293,7 +304,8 @@ async function executeLogin(e) {
         const result = await AuthUI.sendAPIRequest('api/login.php', {
             contractor_id: username,
             password: password,
-            captcha: captcha
+            captcha: captcha,
+            login_scope: LOGIN_SCOPE
         });
 
         if (result.success && result.data) {
@@ -355,7 +367,7 @@ function handleLoginFail(form, errorMsg) {
         warningCard.innerHTML = `
             <i class="fas fa-circle-exclamation"></i>
             <div>
-               <strong>Account activation required.</strong><br>
+               <strong>${LOGIN_SCOPE === 'internal' ? 'Staff login failed.' : 'Account activation required.'}</strong><br>
                ${cleanError || 'Please click "Activate Account" below to initialize your credentials.'}
             </div>
         `;

@@ -5,6 +5,7 @@
 require_once 'api_helper.php';
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/session.php';
+require_once __DIR__ . '/../include/onboarding_status.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -51,7 +52,7 @@ try {
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
     logLoginAttempt($conn, $user_data['id'], $user_data['contractor_id'] ?? $user_data['customer_code'], $ip, 'success');
 
-    $redirect = getRoleDashboard($user_data['role']);
+    $redirect = clms_onboarding_redirect_for_session($conn) ?: getRoleDashboard($user_data['role']);
 
     // Explicitly release session lock to ensure immediate propagation on fast-redirecting clients
     session_write_close();

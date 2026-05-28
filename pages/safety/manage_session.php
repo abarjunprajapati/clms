@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
-checkAuth(['safety_user']);
+checkAuth(['safety_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
 

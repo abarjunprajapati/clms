@@ -24,7 +24,25 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['role']) || empty($_SESSION['
     }
     $currentUrl = $_SERVER['REQUEST_URI'] ?? '';
     $redirectParam = $currentUrl ? '?redirect=' . urlencode($currentUrl) : '';
-    header('Location: ' . (defined('BASE_URL') ? BASE_URL : '../index.php') . $redirectParam);
+    $scriptName = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+    $internalLoginPaths = [
+        '/pages/admin/',
+        '/pages/welfare/',
+        '/pages/safety/',
+        '/pages/frontline/',
+        '/pages/execution/',
+        '/pages/amc/',
+        '/pages/payments/',
+        '/pages/worker/'
+    ];
+    $loginPage = 'index.php';
+    foreach ($internalLoginPaths as $internalPath) {
+        if (strpos($scriptName, $internalPath) !== false) {
+            $loginPage = 'internal-login.php';
+            break;
+        }
+    }
+    header('Location: ' . (defined('BASE_URL') ? BASE_URL : '../') . $loginPage . $redirectParam);
     exit;
 }
 
@@ -39,6 +57,19 @@ if (is_session_timed_out()) {
     }
     header('Location: ' . (defined('BASE_URL') ? BASE_URL : '../index.php') . '?timeout=1');
     exit;
+}
+
+// ---- CHECK 3: Contractor/customer onboarding lock ----
+// First login should land on Annexure 2A/3A until welfare approval is complete.
+if (!$isApi && in_array($_SESSION['role'] ?? '', ['contractor', 'customer'], true)) {
+    require_once __DIR__ . '/config.php';
+    require_once __DIR__ . '/onboarding_status.php';
+
+    $onboardingRedirect = clms_onboarding_redirect_for_session($conn);
+    if ($onboardingRedirect && !clms_onboarding_current_page_allowed($_SESSION['role'], $_SERVER['SCRIPT_NAME'] ?? '')) {
+        header('Location: ' . BASE_URL . $onboardingRedirect);
+        exit;
+    }
 }
 
 // Full Enterprise RBAC Matrix
