@@ -23,7 +23,7 @@ $req = db_single($conn,
     "SELECT tr.*, w.name as worker_name, c.user_id as contractor_user_id
      FROM training_requests tr
      JOIN workmen w ON tr.workman_id = w.id
-     JOIN contractors c ON tr.contractor_id = c.id
+     LEFT JOIN contractors c ON tr.contractor_id = c.id
      WHERE tr.id = ?",
     'i', [$req_id]
 );

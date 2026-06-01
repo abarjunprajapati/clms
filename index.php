@@ -30,7 +30,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="csrf-token" content="<?= get_csrf_token() ?>">
-  <title><?= $isInternalLogin ? 'Internal Staff Login' : 'External Portal Login' ?> - CLMS</title>
+  <title>CLMS Web Login - CLMS</title>
   
   <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
@@ -98,8 +98,8 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
           <div class="auth-card-logo-wrapper">
             <img src="uploads/logo/logo.png" alt="Logo" onerror="this.outerHTML='<i class=\'fas fa-building fa-2x\' style=\'color: var(--primary-color);\'></i>'">
           </div>
-          <h2 class="auth-card-title"><?= $isInternalLogin ? 'Internal Staff Sign In' : 'External Portal Sign In' ?></h2>
-          <p class="auth-card-subtitle"><?= $isInternalLogin ? 'Welfare, Safety, Pass, Execution and Admin users' : 'Contractor and Customer access' ?></p>
+          <h2 class="auth-card-title">CLMS Web</h2>
+          <p class="auth-card-subtitle">Contract Labour Management System</p>
         </div>
 
         <!-- Inline Error Banner -->
@@ -111,9 +111,9 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
           <!-- User ID Input -->
           <div class="form-group">
             <div class="input-wrapper">
-              <input type="text" id="login-user" class="form-control" placeholder="<?= $isInternalLogin ? 'STAFF USER ID / EMAIL' : 'CONTRACTOR / CUSTOMER CODE' ?>" required autocomplete="username">
+              <input type="text" id="login-user" class="form-control" placeholder="<?= $isInternalLogin ? 'STAFF USER ID' : 'CONTRACTOR / CUSTOMER CODE' ?>" required autocomplete="username">
               <i class="fas fa-user-shield input-icon"></i>
-              <label class="form-label" for="login-user"><?= $isInternalLogin ? 'STAFF USER ID / EMAIL' : 'CONTRACTOR / CUSTOMER CODE' ?></label>
+              <label class="form-label" for="login-user"><?= $isInternalLogin ? 'STAFF USER ID' : 'CONTRACTOR / CUSTOMER CODE' ?></label>
             </div>
           </div>
 
@@ -164,9 +164,6 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
               <a href="activate.php" class="btn btn-outline">
                 <i class="fas fa-user-plus"></i> ACTIVATE ACCOUNT
               </a>
-              <!-- <div style="margin-top: 14px;">
-                <a href="internal-login.php" style="color: var(--primary-color); font-size: 0.86rem; font-weight: 700; text-decoration: none;">Internal Staff Login</a>
-              </div> -->
             <?php endif; ?>
           </div>
         </form>

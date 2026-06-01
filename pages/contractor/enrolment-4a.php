@@ -464,6 +464,9 @@ function renderContent() {
         $workerTypeExpr = enrolment_column_exists($conn, 'workmen', 'worker_type') ? 'worker_type' : "''";
         $orderExpr = enrolment_column_exists($conn, 'workmen', 'created_at') ? 'created_at DESC' : 'id DESC';
         $typeWhere = enrolment_worker_type_condition($conn, 'workmen', $requestedType);
+        $nonDraftWhere = enrolment_column_exists($conn, 'workmen', 'status')
+            ? "AND COALESCE(status, '') <> 'draft'"
+            : "";
         $workers = enrolment_fetch_all($conn, "
             SELECT
                 " . enrolment_expr($conn, 'workmen', 'id', 'id', '0') . ",
@@ -495,8 +498,8 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'department', 'department') . ",
                 " . enrolment_expr($conn, 'workmen', 'nature_of_work', 'nature_of_work') . ",
                 " . enrolment_expr($conn, 'workmen', 'skill', 'skill_category') . ",
+                " . enrolment_expr($conn, 'workmen', 'blood_group', 'blood_group') . ",
                 " . enrolment_expr($conn, 'workmen', 'experience', 'experience') . ",
-                '' AS blood_group,
                 " . enrolment_expr($conn, 'workmen', 'region', 'region') . ",
                 " . enrolment_expr($conn, 'workmen', 'pwd_status', 'pwd_status') . ",
                 " . enrolment_expr($conn, 'workmen', 'passport_no', 'passport_no') . ",
@@ -523,7 +526,7 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
                 " . enrolment_expr($conn, 'workmen', 'created_at', 'created_at') . "
             FROM workmen
-            WHERE $contractorWhere AND $typeWhere
+            WHERE $contractorWhere AND $typeWhere $nonDraftWhere
             ORDER BY $orderExpr
         ");
     }
@@ -589,7 +592,7 @@ function renderContent() {
     .doc-card .form-label { margin-bottom:8px; }
     @media (max-width: 900px) { .form-grid-3, .form-grid-4 { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 640px) { .form-grid-2, .form-grid-3, .form-grid-4 { grid-template-columns: 1fr; } .enroll-actions { flex-direction:column; align-items:stretch; } .enroll-actions-left, .enroll-actions-right { width:100%; } .enroll-actions .btn { flex:1; } }
-    .work-flow-panel { grid-column:1 / -1; border:1px solid var(--border-color); border-radius:10px; background:#f8fafc; padding:16px; margin-bottom:5px; }
+    .work-flow-panel { grid-column:1 / -1; border:1px solid var(--border-color); border-radius:8px; background:#f8fafc; padding:16px; margin-bottom:5px; }
     .work-flow-title { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700; color:#0f172a; margin-bottom:14px; }
     .work-flow-title i { color:#6366f1; }
     .work-flow-steps { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:18px; align-items:start; position:relative; }
@@ -597,13 +600,9 @@ function renderContent() {
     .work-flow-step:not(:last-child)::after { content:'\f061'; font-family:'Font Awesome 5 Free'; font-weight:900; position:absolute; top:42px; right:-14px; color:#94a3b8; font-size:13px; }
     .flow-step-head { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:.04em; margin-bottom:9px; }
     .flow-step-number { width:22px; height:22px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:#e0e7ff; color:#4338ca; font-size:11px; }
-    .flow-options { display:grid; gap:8px; }
-    .flow-option { width:100%; border:1.5px solid #cbd5e1; border-radius:8px; background:#fff; padding:11px 12px; display:flex; align-items:center; justify-content:space-between; gap:8px; color:#334155; font-size:13px; font-weight:700; cursor:pointer; text-align:left; transition:all .18s ease; min-height:44px; }
-    .flow-option:hover { border-color:#818cf8; background:#eef2ff; transform:translateY(-1px); }
-    .flow-option.active { border-color:#6366f1; background:#eef2ff; color:#312e81; box-shadow:0 0 0 3px rgba(99,102,241,.12); }
-    .flow-option.active::after { content:'\f00c'; font-family:'Font Awesome 5 Free'; font-weight:900; color:#16a34a; flex:0 0 auto; }
-    .flow-option.locked { cursor:default; background:#f1f5f9; border-color:#94a3b8; color:#475569; }
-    .flow-placeholder { border:1.5px dashed #cbd5e1; border-radius:8px; padding:13px; color:#64748b; background:#fff; font-size:13px; line-height:1.35; min-height:44px; display:flex; align-items:center; }
+    .flow-control { width:100%; border:1.5px solid #cbd5e1 !important; border-radius:8px; background:#fff !important; color:#0f172a !important; padding:10px 12px; min-height:44px; font-size:13px; font-weight:700; }
+    .flow-control:disabled { background:#f1f5f9 !important; color:#94a3b8 !important; cursor:not-allowed; }
+    .flow-control:focus { border-color:#6366f1 !important; box-shadow:0 0 0 3px rgba(99,102,241,.14); outline:none; }
     .flow-summary { margin-top:14px; display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
     .flow-summary-item { border:1px solid #dbe3ef; background:#fff; border-radius:8px; padding:9px 11px; }
     .flow-summary-item span { display:block; font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase; margin-bottom:3px; }
@@ -886,7 +885,10 @@ function renderContent() {
                 <label class="form-label">Blood Group</label>
                 <select class="form-control" name="blood_group">
                   <option value="">Select</option>
-                  <option>A+</option><option>B+</option><option>O+</option><option>AB+</option>
+                  <option>A+</option><option>A-</option>
+                  <option>B+</option><option>B-</option>
+                  <option>AB+</option><option>AB-</option>
+                  <option>O+</option><option>O-</option>
                 </select>
               </div>
               <div class="form-group">
@@ -975,19 +977,15 @@ function renderContent() {
                 <div class="work-flow-steps">
                   <div class="work-flow-step">
                     <div class="flow-step-head"><span class="flow-step-number">1</span> Category</div>
-                    <div class="flow-options" id="categoryOptions" aria-label="Category selection"></div>
+                    <select class="flow-control" id="categoryOptions" aria-label="Category selection" required></select>
                   </div>
                   <div class="work-flow-step">
                     <div class="flow-step-head"><span class="flow-step-number">2</span> Qualification</div>
-                    <div class="flow-options" id="qualificationOptions" aria-label="Qualification selection">
-                      <div class="flow-placeholder">Select category to open qualification options.</div>
-                    </div>
+                    <select class="flow-control" id="qualificationOptions" aria-label="Qualification selection" required disabled></select>
                   </div>
                   <div class="work-flow-step">
                     <div class="flow-step-head"><span class="flow-step-number">3</span> Job Profile</div>
-                    <div class="flow-options" id="jobProfileOptions" aria-label="Job profile selection">
-                      <div class="flow-placeholder">Select qualification to open job profile options.</div>
-                    </div>
+                    <select class="flow-control" id="jobProfileOptions" aria-label="Job profile selection" required disabled></select>
                   </div>
                 </div>
                 <div class="flow-summary">
@@ -1577,18 +1575,22 @@ function renderContent() {
             roleInput: form.querySelector('[name="role_type"]')
         };
 
-        function createFlowButton(label, active, onClick, locked = false) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = `flow-option${active ? ' active' : ''}${locked ? ' locked' : ''}`;
-            button.textContent = label;
-            button.setAttribute('aria-pressed', active ? 'true' : 'false');
-            button.onclick = onClick;
-            return button;
-        }
+        function setFlowSelectOptions(select, placeholder, values, selectedValue = '') {
+            select.innerHTML = '';
+            const placeholderOption = document.createElement('option');
+            placeholderOption.value = '';
+            placeholderOption.textContent = placeholder;
+            select.appendChild(placeholderOption);
 
-        function setFlowPlaceholder(target, text) {
-            target.innerHTML = `<div class="flow-placeholder">${text}</div>`;
+            values.forEach(value => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = value;
+                select.appendChild(option);
+            });
+
+            select.value = values.includes(selectedValue) ? selectedValue : '';
+            select.disabled = values.length === 0;
         }
 
         function setHiddenWorkFields() {
@@ -1602,55 +1604,31 @@ function renderContent() {
         }
 
         function renderCategoryOptions() {
-            flowEls.category.innerHTML = '';
-            Object.keys(ANNEXURE4A_FLOW).forEach(category => {
-                flowEls.category.appendChild(createFlowButton(category, flowState.category === category, () => {
-                    flowState.category = category;
-                    flowState.qualification = '';
-                    flowState.jobProfile = '';
-                    renderWorkFlow();
-                }));
-            });
+            setFlowSelectOptions(flowEls.category, 'Select category', Object.keys(ANNEXURE4A_FLOW), flowState.category);
+            flowEls.category.disabled = false;
         }
 
         function renderQualificationOptions() {
             if (!flowState.category) {
-                setFlowPlaceholder(flowEls.qualification, 'Select category to open qualification options.');
+                setFlowSelectOptions(flowEls.qualification, 'Select category first', [], '');
                 return;
             }
 
             const qualifications = Object.keys(ANNEXURE4A_FLOW[flowState.category].qualifications);
-            flowEls.qualification.innerHTML = '';
-            qualifications.forEach(qualification => {
-                flowEls.qualification.appendChild(createFlowButton(qualification, flowState.qualification === qualification, () => {
-                    flowState.qualification = qualification;
-                    flowState.jobProfile = '';
-                    renderWorkFlow();
-                }));
-            });
-
+            setFlowSelectOptions(flowEls.qualification, 'Select qualification', qualifications, flowState.qualification);
         }
 
         function renderJobProfileOptions() {
             if (!flowState.qualification) {
-                setFlowPlaceholder(flowEls.jobProfile, 'Select qualification to open job profile options.');
+                setFlowSelectOptions(flowEls.jobProfile, 'Select qualification first', [], '');
                 return;
             }
 
             const jobProfiles = ANNEXURE4A_FLOW[flowState.category].qualifications[flowState.qualification] || [];
-            flowEls.jobProfile.innerHTML = '';
-            jobProfiles.forEach(jobProfile => {
-                const autoLocked = jobProfiles.length === 1;
-                flowEls.jobProfile.appendChild(createFlowButton(jobProfile, flowState.jobProfile === jobProfile, () => {
-                    flowState.jobProfile = jobProfile;
-                    renderWorkFlow();
-                }, autoLocked));
-            });
-
             if (jobProfiles.length === 1 && flowState.jobProfile !== jobProfiles[0]) {
                 flowState.jobProfile = jobProfiles[0];
-                renderWorkFlow();
             }
+            setFlowSelectOptions(flowEls.jobProfile, 'Select job profile', jobProfiles, flowState.jobProfile);
         }
 
         function renderWorkFlow() {
@@ -1707,6 +1685,21 @@ function renderContent() {
         }
 
         renderWorkFlow();
+        flowEls.category?.addEventListener('change', () => {
+            flowState.category = flowEls.category.value;
+            flowState.qualification = '';
+            flowState.jobProfile = '';
+            renderWorkFlow();
+        });
+        flowEls.qualification?.addEventListener('change', () => {
+            flowState.qualification = flowEls.qualification.value;
+            flowState.jobProfile = '';
+            renderWorkFlow();
+        });
+        flowEls.jobProfile?.addEventListener('change', () => {
+            flowState.jobProfile = flowEls.jobProfile.value;
+            renderWorkFlow();
+        });
 
         function resetAutoFilledFields() {
             const fieldsToReset = [
@@ -1849,6 +1842,8 @@ function renderContent() {
         }
 
         async function submitEnrollment(action = 'submit') {
+          setHiddenWorkFields();
+
           if (action === 'draft') {
             const draftBtn = document.getElementById('btnSaveDraft');
             draftBtn.disabled = true;
@@ -1860,8 +1855,13 @@ function renderContent() {
               const responseText = await res.text();
               let result = {};
               try { result = responseText ? JSON.parse(responseText) : {}; } catch (parseErr) { result = { success: false, message: responseText || 'Invalid server response.' }; }
-              if (result.success) notify('Saved', result.message || 'Draft saved successfully.', 'success').then(() => location.reload());
-              else notify('Error', result.message || `Draft save failed. HTTP ${res.status}`, 'error');
+              if (result.success) {
+                const draftId = result.worker_id || result.workman_id || '';
+                if (draftId) document.getElementById('workerEditId').value = draftId;
+                notify('Saved', result.message || 'Draft saved successfully.', 'success');
+              } else {
+                notify('Error', result.message || `Draft save failed. HTTP ${res.status}`, 'error');
+              }
             } catch (err) {
               notify('Error', err.message || 'Server error.', 'error');
             } finally {
@@ -1933,7 +1933,13 @@ function renderContent() {
         }
 
         const saveDraftButton = document.getElementById('btnSaveDraft');
-        if (saveDraftButton) saveDraftButton.onclick = () => submitEnrollment('draft');
+        if (saveDraftButton) {
+          saveDraftButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            submitEnrollment('draft');
+          });
+        }
 
         if (prefillAadhaar) {
           document.getElementById('btnOpenModal')?.click();

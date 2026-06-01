@@ -44,10 +44,10 @@ try {
     $user_data = null;
     $auth_source = '';
 
-    // 1. PRIMARY CHECK: Internal User / Contractor / Activated Customer (USERS TABLE)
-    $stmt = $conn->prepare("SELECT * FROM users WHERE contractor_id = ? OR email = ?");
+    // 1. PRIMARY CHECK: All portal logins must use the assigned user/contractor/customer code, not email.
+    $stmt = $conn->prepare("SELECT * FROM users WHERE contractor_id = ?");
     if (!$stmt) apiError('Database error', 500);
-    $stmt->bind_param('ss', $username, $username);
+    $stmt->bind_param('s', $username);
     $stmt->execute();
     $user = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -130,7 +130,7 @@ try {
         apiError('Internal users must login from the Internal Staff Login page.', 403, null, 'internal-login.php');
     }
     if ($login_scope === 'internal' && $is_external_user) {
-        apiError('Contractor and Customer users must login from the External Login page.', 403, null, 'index.php');
+        apiError('External portal users must login from the CLMS Web page.', 403, null, 'index.php');
     }
 
     // 7. Two-Step Verification (OTP)

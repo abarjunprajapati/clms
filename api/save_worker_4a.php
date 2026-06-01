@@ -250,6 +250,7 @@ function worker4a_ensure_schema($conn) {
         'email' => 'VARCHAR(150) NULL',
         'contact_email' => 'VARCHAR(150) NULL',
         'dcate' => 'VARCHAR(100) NULL',
+        'blood_group' => 'VARCHAR(10) NULL',
         'education' => 'VARCHAR(150) NULL',
         'skill' => 'VARCHAR(150) NULL',
         'skill_category' => 'VARCHAR(150) NULL',
@@ -525,6 +526,7 @@ worker4a_ensure_schema($conn);
         'email' => $data['email'] ?? ($data['contact_email'] ?? ''),
         'contact_email' => $data['contact_email'] ?? '',
         'dcate' => $data['dcate'] ?? '',
+        'blood_group' => $data['blood_group'] ?? '',
         'education' => $data['education'] ?? '',
         'skill' => $skill,
         'skill_category' => $workmen_skill_category,
@@ -621,9 +623,15 @@ worker4a_ensure_schema($conn);
         $workman_id_new = insert_table_row($conn, 'workmen', $workman_row);
     }
 
-    $temp_id = "TEMP-" . str_pad($workman_id_new, 6, "0", STR_PAD_LEFT);
-    update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => $temp_id]);
+    $temp_id = '';
+    if ($action !== 'draft') {
+        $temp_id = "TEMP-" . str_pad($workman_id_new, 6, "0", STR_PAD_LEFT);
+        update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => $temp_id]);
+    } else {
+        update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => null]);
+    }
 
+    if ($action !== 'draft') {
         if (($contractor_row['status'] ?? '') === 'approved' && worker4a_table_exists($conn, 'annexure2a')) {
             $annexureUpdates = [];
             if (worker4a_column_exists($conn, 'annexure2a', 'workflow_status')) {
@@ -656,7 +664,8 @@ worker4a_ensure_schema($conn);
                 'training_approval_doc' => 'Training Attendance Approval'
             ];
 
-            foreach ($new_uploaded_files as $key => $file) {
+            $documentFiles = (($existing_workman['status'] ?? '') === 'draft') ? $uploaded_files : $new_uploaded_files;
+            foreach ($documentFiles as $key => $file) {
                 if ($file) {
                     $doc_type_name = $doc_type_map[$key] ?? $key;
                     $db_file_path = "../../uploads/workers/" . $file;
@@ -670,10 +679,11 @@ worker4a_ensure_schema($conn);
                 }
             }
         }
+    }
 
     worker4a_json([
         "success" => true,
-        "message" => "Worker enrolled successfully.",
+        "message" => $action === 'draft' ? "Draft saved successfully." : "Worker enrolled successfully.",
         "worker_id" => $workman_id_new,
         "workman_id" => $workman_id_new,
         "temp_id" => $temp_id

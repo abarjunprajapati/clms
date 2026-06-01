@@ -50,6 +50,8 @@ function safety_training_page_ensure_schema($conn) {
         'batch_number' => 'VARCHAR(100) NULL',
         'instructor' => 'VARCHAR(150) NULL',
         'conduct_remarks' => 'TEXT NULL',
+        'source' => 'VARCHAR(30) NULL',
+        'requested_by' => 'INT NULL',
         'contractor_confirmed' => 'TINYINT(1) DEFAULT 0',
         'scheduled_by' => 'INT NULL',
         'status' => "VARCHAR(50) DEFAULT 'pending'",
@@ -67,63 +69,154 @@ function safety_training_page_ensure_schema($conn) {
     }
 }
 
+function safety_training_page_seed_pending_requests($conn) {
+    if (!safety_training_page_table_exists($conn, 'workmen') || !safety_training_page_table_exists($conn, 'training_requests')) {
+        return;
+    }
+
+    $where = [
+        "w.contractor_id IS NOT NULL",
+        "COALESCE(w.status, '') <> 'draft'",
+        "(w.training_status IS NULL OR LOWER(TRIM(w.training_status)) IN ('', 'pending', 'training_pending', 'fail', 'failed', 'training_failed'))",
+        "(w.safety_training_status IS NULL OR UPPER(TRIM(w.safety_training_status)) IN ('', '0', 'PENDING_TRAINING', 'TRAINING_FAILED'))",
+        "NOT EXISTS (
+            SELECT 1
+            FROM training_requests tr
+            WHERE tr.workman_id = w.id
+              AND tr.status IN ('pending', 'scheduled', 'contractor_confirmed', 'passed')
+        )",
+    ];
+
+    if (safety_training_page_column_exists($conn, 'workmen', 'temp_id')) {
+        $where[] = "COALESCE(w.temp_id, '') <> ''";
+    }
+
+    $sql = "
+        INSERT INTO training_requests (workman_id, contractor_id, requested_date, preferred_date, preferred_shift, status, created_at, updated_at)
+        SELECT w.id, w.contractor_id, CURDATE(), NULL, 'morning', 'pending', NOW(), NOW()
+        FROM workmen w
+        WHERE " . implode(' AND ', $where);
+
+    @mysqli_query($conn, $sql);
+}
+
+function safety_training_page_sync_request_statuses($conn) {
+    if (!safety_training_page_table_exists($conn, 'workmen') || !safety_training_page_table_exists($conn, 'training_requests')) {
+        return;
+    }
+
+    @mysqli_query($conn, "
+        UPDATE training_requests tr
+        JOIN workmen w ON tr.workman_id = w.id
+        SET tr.status = 'passed', tr.updated_at = NOW()
+        WHERE tr.status NOT IN ('passed')
+          AND (
+              UPPER(TRIM(COALESCE(w.training_status, ''))) IN ('PASS', 'PASSED', 'QUALIFIED', 'COMPLETED', 'TRAINING_PASSED')
+              OR UPPER(TRIM(COALESCE(w.safety_training_status, ''))) = 'TRAINING_PASSED'
+          )
+    ");
+
+    @mysqli_query($conn, "
+        UPDATE training_requests tr
+        JOIN workmen w ON tr.workman_id = w.id
+        SET tr.status = 'failed', tr.updated_at = NOW()
+        WHERE tr.status NOT IN ('passed', 'failed')
+          AND (
+              UPPER(TRIM(COALESCE(w.training_status, ''))) IN ('FAIL', 'FAILED', 'TRAINING_FAILED')
+              OR UPPER(TRIM(COALESCE(w.safety_training_status, ''))) = 'TRAINING_FAILED'
+          )
+    ");
+
+    @mysqli_query($conn, "
+        UPDATE training_requests tr
+        JOIN workmen w ON tr.workman_id = w.id
+        SET tr.status = 'scheduled', tr.updated_at = NOW()
+        WHERE tr.status = 'pending'
+          AND tr.scheduled_date IS NOT NULL
+          AND (
+              UPPER(TRIM(COALESCE(w.training_status, ''))) IN ('SCHEDULED', 'TRAINING_SCHEDULED')
+              OR UPPER(TRIM(COALESCE(w.safety_training_status, ''))) IN ('TRAINING_SCHEDULED', 'TRAINING_CONFIRMED')
+          )
+    ");
+}
+
 function renderContent() {
     global $conn;
     safety_training_page_ensure_schema($conn);
+    safety_training_page_sync_request_statuses($conn);
+    $contractorNameParts = [];
+    foreach (['contractor_name', 'vendor_name', 'name'] as $column) {
+        if (safety_training_page_column_exists($conn, 'contractors', $column)) {
+            $safeColumn = str_replace('`', '``', $column);
+            $contractorNameParts[] = "c.`$safeColumn`";
+        }
+    }
+    $contractorNameParts[] = "CONCAT('Contractor #', tr.contractor_id)";
+    $contractorNameExpr = "COALESCE(" . implode(', ', $contractorNameParts) . ")";
+
+    $workOrderParts = [];
+    if (safety_training_page_column_exists($conn, 'contractors', 'work_order_no')) $workOrderParts[] = 'c.work_order_no';
+    if (safety_training_page_column_exists($conn, 'workmen', 'work_order_no')) $workOrderParts[] = 'w.work_order_no';
+    if (safety_training_page_column_exists($conn, 'workmen', 'application_no')) $workOrderParts[] = 'w.application_no';
+    $workOrderParts[] = "'N/A'";
+    $workOrderExpr = "COALESCE(" . implode(', ', $workOrderParts) . ")";
+    $contractorRequestWhere = "(COALESCE(tr.requested_by, 0) > 0 OR COALESCE(TRIM(tr.training_type), '') <> '')";
 
     // Fetch Stats
     $stats = [
-        'pending'    => db_single($conn, "SELECT COUNT(*) c FROM training_requests WHERE status = 'pending'")['c'],
-        'today'      => db_single($conn, "SELECT COUNT(*) c FROM training_requests WHERE status IN ('scheduled','contractor_confirmed') AND scheduled_date = CURDATE()")['c'],
-        'total_pass' => db_single($conn, "SELECT COUNT(*) c FROM training_requests WHERE status = 'passed'")['c'],
-        'total_fail' => db_single($conn, "SELECT COUNT(*) c FROM training_requests WHERE status = 'failed'")['c']
+        'pending'    => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'pending' AND $contractorRequestWhere")['c'],
+        'today'      => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status IN ('scheduled','contractor_confirmed') AND tr.scheduled_date = CURDATE() AND $contractorRequestWhere")['c'],
+        'total_pass' => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'passed' AND $contractorRequestWhere")['c'],
+        'total_fail' => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'failed' AND $contractorRequestWhere")['c']
     ];
 
     // 1. Pending Requests (Needs Scheduling)
     $pending = db_fetch_all($conn, "
         SELECT tr.id as request_id, tr.*, w.name as worker_name, w.temp_id as worker_code, w.trade, w.aadhaar,
-               c.contractor_name, c.work_order_no
+               $contractorNameExpr AS contractor_name, $workOrderExpr AS work_order_no
         FROM training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
-        JOIN contractors c ON tr.contractor_id = c.id
-        WHERE tr.status IN ('pending', 'failed') 
-        AND (w.safety_training_status IN ('PENDING_TRAINING', 'TRAINING_FAILED') OR w.safety_training_status IS NULL OR w.safety_training_status = '0' OR w.safety_training_status = '')
+        LEFT JOIN contractors c ON tr.contractor_id = c.id
+        WHERE tr.status IN ('pending', 'failed')
+          AND $contractorRequestWhere
         ORDER BY tr.created_at DESC
     ");
 
     // 2. Active Batch (Attendance & Conduct Result)
     $active_batch = db_fetch_all($conn, "
         SELECT tr.*, w.name as worker_name, w.temp_id as worker_code, w.trade, w.aadhaar,
-               c.contractor_name
+               $contractorNameExpr AS contractor_name
         FROM training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
-        JOIN contractors c ON tr.contractor_id = c.id
+        LEFT JOIN contractors c ON tr.contractor_id = c.id
         WHERE tr.status IN ('scheduled', 'contractor_confirmed')
+          AND $contractorRequestWhere
         ORDER BY tr.scheduled_date ASC, tr.scheduled_shift ASC
     ");
 
     // 3. Training History (Recent Results)
     $history = db_fetch_all($conn, "
         SELECT tr.*, w.name as worker_name, w.temp_id as worker_code, w.trade, w.aadhaar,
-               c.contractor_name
+               $contractorNameExpr AS contractor_name
         FROM training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
-        JOIN contractors c ON tr.contractor_id = c.id
+        LEFT JOIN contractors c ON tr.contractor_id = c.id
         WHERE tr.status IN ('passed', 'failed')
+          AND $contractorRequestWhere
         ORDER BY tr.updated_at DESC LIMIT 50
     ");
 
     // 4. Contractor-wise Summary Report
     $contractor_report = db_fetch_all($conn, "
-        SELECT c.contractor_name, 
+        SELECT $contractorNameExpr AS contractor_name,
                COUNT(tr.id) as total_requests,
                SUM(CASE WHEN tr.status = 'passed' THEN 1 ELSE 0 END) as passed_count,
                SUM(CASE WHEN tr.status = 'failed' THEN 1 ELSE 0 END) as failed_count,
                SUM(CASE WHEN tr.status IN ('pending', 'scheduled', 'contractor_confirmed') THEN 1 ELSE 0 END) as in_progress
-        FROM contractors c
-        LEFT JOIN training_requests tr ON c.id = tr.contractor_id
-        GROUP BY c.id, c.contractor_name
-        HAVING total_requests > 0
+        FROM training_requests tr
+        LEFT JOIN contractors c ON c.id = tr.contractor_id
+        WHERE $contractorRequestWhere
+        GROUP BY tr.contractor_id, contractor_name
         ORDER BY passed_count DESC
     ");
 
@@ -269,6 +362,12 @@ function renderContent() {
 
         <!-- 3. HISTORY TAB -->
         <div id="history-tab" class="tab-panel">
+           <?php if (empty($history)): ?>
+             <div class="empty-state">
+               <i class="fas fa-history"></i>
+               <p>No completed safety training records found yet.</p>
+             </div>
+           <?php else: ?>
            <table class="data-table">
              <thead>
                <tr>
@@ -303,6 +402,7 @@ function renderContent() {
                <?php endforeach; ?>
              </tbody>
            </table>
+           <?php endif; ?>
         </div>
 
         <!-- 4. REPORTS TAB -->
@@ -310,6 +410,12 @@ function renderContent() {
            <div class="card-header" style="padding: 0 0 20px 0; border-bottom: 1px solid rgba(0,0,0,0.05); margin-bottom: 20px;">
               <h3 style="margin:0; font-size:16px;"><i class="fas fa-chart-pie" style="color:var(--primary);"></i> Contractor-wise Training Summary</h3>
            </div>
+           <?php if (empty($contractor_report)): ?>
+             <div class="empty-state">
+               <i class="fas fa-chart-bar"></i>
+               <p>No training request summary available yet.</p>
+             </div>
+           <?php else: ?>
            <table class="data-table">
              <thead>
                <tr>
@@ -343,6 +449,7 @@ function renderContent() {
                <?php endforeach; ?>
              </tbody>
            </table>
+           <?php endif; ?>
         </div>
       </div>
     </div>

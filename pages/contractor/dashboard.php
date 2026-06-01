@@ -235,60 +235,6 @@ function renderContent() {
       </div>
     </div>
 
-    <div class="card glass" style="margin-bottom:20px;">
-        <div class="card-header">
-            <div class="card-title"><i class="fas fa-clipboard-check"></i> Contractor Registration History</div>
-        </div>
-        <div class="card-body p-0">
-            <?php if (empty($annexure2aHistory)): ?>
-                <div style="text-align:center;color:var(--gray-500);padding:24px 12px;">No Contractor Registration history found yet.</div>
-            <?php else: ?>
-                <div class="annexure-history-table-wrap">
-                    <table class="data-table annexure-history-table">
-                        <thead>
-                            <tr>
-                                <th>Annexure</th>
-                                <th>Status</th>
-                                <th>Reason / Remarks</th>
-                                <th>Date & Time</th>
-                                <th>Attachment</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($annexure2aHistory as $history): ?>
-                                <?php $file = $history['file'] ?? ''; ?>
-                                <tr>
-                                    <td>
-                                        <div style="font-weight:800;color:#1e293b;">Contractor Registration</div>
-                                        <?php if (!empty($history['annexure2a_id'])): ?>
-                                            <div style="font-size:11px;color:#64748b;">Ref: <?= htmlspecialchars((string)$history['annexure2a_id']) ?></div>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <span class="badge <?= $decisionBadge($history['status'] ?? '') ?>">
-                                            <?= htmlspecialchars(strtoupper((string)($history['status'] ?? 'pending'))) ?>
-                                        </span>
-                                    </td>
-                                    <td style="white-space:pre-wrap;min-width:240px;"><?= htmlspecialchars($history['reason'] ?: 'No remarks provided yet.') ?></td>
-                                    <td><?= !empty($history['updated_at']) ? htmlspecialchars(date('d M Y h:i A', strtotime($history['updated_at']))) : '-' ?></td>
-                                    <td>
-                                        <?php if (!empty($file)): ?>
-                                            <a class="btn btn-sm btn-outline" href="<?= htmlspecialchars($decisionFileUrl($file)) ?>" target="_blank">
-                                                <i class="fas fa-paperclip"></i> View
-                                            </a>
-                                        <?php else: ?>
-                                            <span style="color:var(--gray-500);">-</span>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php endif; ?>
-        </div>
-    </div>
-
                                                                                           <?php if ($contractor_status === 'approved'): ?>
                                                                                           <!-- <div class="card glass" style="background:linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color:white; padding:25px; margin-bottom:25px; border:none; box-shadow:0 15px 30px -10px rgba(79,70,229,0.5);">
                                                                                               <div style="display:flex; align-items:center; gap:25px;">
@@ -430,11 +376,6 @@ function renderContent() {
       .recent-list { display:flex;flex-direction:column;gap:10px; }
       .recent-item { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-200); }
       .recent-item:last-child { border-bottom:0; }
-      .annexure-history-table-wrap { width:100%; overflow-x:auto; }
-      .annexure-history-table { min-width:760px; }
-      .annexure-history-table th,
-      .annexure-history-table td { vertical-align:top; }
-      
       .timeline-container { display:flex; align-items:center; justify-content:space-between; max-width:600px; margin:0 auto; padding: 20px 0; }
       .timeline-step { display:flex; flex-direction:column; align-items:center; position:relative; z-index:2; opacity:0.4; }
       .timeline-step.active { opacity:1; }

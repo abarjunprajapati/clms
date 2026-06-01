@@ -144,7 +144,7 @@ try {
     }
 
     // 4. Notify contractor
-    $req = db_single($conn, "SELECT tr.*, w.name as worker_name, c.user_id as contractor_user_id FROM training_requests tr JOIN workmen w ON tr.workman_id = w.id JOIN contractors c ON tr.contractor_id = c.id WHERE tr.id=?", 'i', [$req_id]);
+    $req = db_single($conn, "SELECT tr.*, w.name as worker_name, c.user_id as contractor_user_id FROM training_requests tr JOIN workmen w ON tr.workman_id = w.id LEFT JOIN contractors c ON tr.contractor_id = c.id WHERE tr.id=?", 'i', [$req_id]);
     if ($req && $req['contractor_user_id'] && safety_schedule_table_exists($conn, 'notifications')) {
         $shift_label = $scheduled_shift === 'morning' ? 'Morning (8 AM – 12 PM)' : 'Evening (2 PM – 6 PM)';
         $msg = "Training for {$req['worker_name']} has been scheduled on " . date('d M Y', strtotime($scheduled_date)) . " ({$shift_label}) at {$scheduled_venue}. Please confirm your attendance.";
