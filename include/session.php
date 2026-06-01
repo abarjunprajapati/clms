@@ -6,11 +6,17 @@ if (php_sapi_name() !== 'cli' && !headers_sent()) {
     header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
     header("Cache-Control: post-check=0, pre-check=0", false);
     header("Pragma: no-cache");
+    header("X-Content-Type-Options: nosniff");
+    header("X-Frame-Options: SAMEORIGIN");
+    header("Referrer-Policy: strict-origin-when-cross-origin");
+    header("Permissions-Policy: camera=(), microphone=(), geolocation=()");
+    header("X-Permitted-Cross-Domain-Policies: none");
 }
 
 // Temporary Global Error Logger to diagnose live server 500 / Fatal Errors
 if (php_sapi_name() !== 'cli') {
     ini_set('log_errors', 1);
+    ini_set('display_errors', 0);
     ini_set('error_log', __DIR__ . '/../error_debug.log');
 
     set_error_handler(function ($severity, $message, $file, $line) {
@@ -65,7 +71,23 @@ if (!defined('BASE_URL')) {
 if (session_status() === PHP_SESSION_NONE) {
     $cookieParams = session_get_cookie_params();
     $path = BASE_URL;
-    session_set_cookie_params(0, $path, $cookieParams['domain'], false, true);
+    $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')
+        || (($_SERVER['SERVER_PORT'] ?? '') === '443');
+
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_only_cookies', '1');
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_secure', $isSecure ? '1' : '0');
+    ini_set('session.cookie_samesite', 'Lax');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => $path,
+        'domain' => $cookieParams['domain'],
+        'secure' => $isSecure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     session_start();
 }
 
@@ -118,10 +140,9 @@ function validate_csrf() {
  * Ensure all required session keys exist.
  */
 function initialize_session(array $user) {
-    // Prevent session propagation race conditions on fast AJAX redirects
-    // if (session_status() === PHP_SESSION_ACTIVE) {
-    //     session_regenerate_id(true);
-    // }
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_regenerate_id(true);
+    }
 
     $_SESSION['user_id']        = $user['id'];
     $_SESSION['username']       = $user['username'] ?? $user['email'] ?? $user['contractor_id'] ?? $user['customer_code'];

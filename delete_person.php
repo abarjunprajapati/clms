@@ -6,7 +6,10 @@ error_reporting(E_ALL);
 
 header('Content-Type: application/json');
 
-include 'include/config.php';
+require_once 'include/auth.php';
+require_once 'include/config.php';
+checkAuth(['contractor', 'customer', 'super_admin', 'welfare_admin', 'welfare_user']);
+require_csrf();
 
 
 if (!$conn) {
@@ -20,7 +23,7 @@ if (!$conn) {
 // ✅ read input (JSON or form-data दोनों support)
 $data = json_decode(file_get_contents("php://input"), true);
 
-$id = $data['id'] ?? $_POST['id'] ?? '';
+$id = (int)($data['id'] ?? $_POST['id'] ?? 0);
 $type = $data['type'] ?? $_POST['type'] ?? '';
 
 if (!$id || !$type) {

@@ -1,17 +1,16 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
-checkAuth(['execution_officer']);
+checkAuth(['execution_officer', 'execution', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
+include __DIR__ . '/../../include/execution_context.php';
 include __DIR__ . '/../../include/layout.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Execution Officer';
 $userId = $_SESSION['user_id'];
 
-// Fetch Execution Officer ID from execution_officers table mapping to users
-$officerQuery = "SELECT id FROM execution_officers WHERE employee_code = (SELECT contractor_id FROM users WHERE id = ?)";
-$officerRes = db_single($conn, $officerQuery, 'i', [$userId]);
-$officerId = $officerRes['id'] ?? 0;
+// Get or create execution officer context for this login
+$officerId = clms_execution_get_officer_id($conn, $userId);
 
 function renderContent() {
     global $conn, $officerId;
@@ -392,3 +391,4 @@ function renderContent() {
 
 renderLayout("Execution Officer Dashboard", 'renderContent', $role, $name);
 ?>
+

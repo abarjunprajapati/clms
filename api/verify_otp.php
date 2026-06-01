@@ -87,6 +87,7 @@ function getRoleDashboard($role) {
       case 'front_line_user': return "pages/frontline/dashboard.php";
       case 'pass_user': return "pages/welfare/pass_issuer_dashboard.php";
       case 'safety_user': return "pages/safety/dashboard.php";
+      case 'execution':
       case 'execution_officer': return "pages/execution/dashboard.php";
       case 'customer': return "pages/customer/dashboard.php";
       default: return "pages/contractor/dashboard.php";

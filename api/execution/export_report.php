@@ -1,8 +1,9 @@
 <?php
 require_once __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/execution_context.php';
 require_once __DIR__ . '/../auth_middleware.php';
 
-enforceRole(['execution_officer', 'super_admin']);
+enforceRole(['execution_officer', 'execution', 'super_admin']);
 
 $type = $_GET['type'] ?? 'attendance';
 $format = $_GET['format'] ?? 'csv';
@@ -26,3 +27,4 @@ if ($type === 'attendance') {
 fclose($output);
 exit;
 ?>
+

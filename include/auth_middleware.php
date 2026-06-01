@@ -59,6 +59,11 @@ if (is_session_timed_out()) {
     exit;
 }
 
+// ---- CHECK 2b: CSRF for authenticated mutating API requests ----
+if ($isApi && !in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET', 'HEAD', 'OPTIONS'], true)) {
+    require_csrf();
+}
+
 // ---- CHECK 3: Contractor/customer onboarding lock ----
 // First login should land on Annexure 2A/3A until welfare approval is complete.
 if (!$isApi && in_array($_SESSION['role'] ?? '', ['contractor', 'customer'], true)) {
@@ -94,6 +99,10 @@ $clms_rbac_matrix = [
         'attendance.view_assigned', 'pass.view_assigned', 'reports.view_assigned'
     ],
     'execution_officer' => [
+        'dashboard.view', 'contractor.monitor', 'workmen.monitor',
+        'attendance.view', 'observations.create', 'reports.view'
+    ],
+    'execution' => [
         'dashboard.view', 'contractor.monitor', 'workmen.monitor',
         'attendance.view', 'observations.create', 'reports.view'
     ],

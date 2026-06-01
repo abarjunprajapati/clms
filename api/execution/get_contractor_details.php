@@ -1,9 +1,10 @@
 <?php
 require_once __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/execution_context.php';
 require_once __DIR__ . '/../auth_middleware.php';
 
 header('Content-Type: application/json');
-enforceRole(['execution_officer', 'super_admin']);
+enforceRole(['execution_officer', 'execution', 'super_admin']);
 
 $contractorId = $_GET['id'] ?? 0;
 
@@ -31,3 +32,4 @@ try {
     echo json_encode(['status' => false, 'message' => $e->getMessage()]);
 }
 ?>
+

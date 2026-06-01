@@ -73,11 +73,11 @@ function enforcePermission($action) {
         'submit_application' => ['contractor'],
         'manage_training' => ['admin', 'safety_user'],
         'issue_gatepass' => ['admin', 'pass_issuer'],
-        'view_monitoring' => ['admin', 'super_admin', 'execution', 'welfare_admin', 'safety'],
-        'add_observation' => ['admin', 'execution'],
-        'add_escalation' => ['admin', 'execution'],
-        'view_productivity' => ['admin', 'execution'],
-        'view_attendance_exceptions' => ['admin', 'execution']
+        'view_monitoring' => ['admin', 'super_admin', 'execution', 'execution_officer', 'welfare_admin', 'safety'],
+        'add_observation' => ['admin', 'execution', 'execution_officer'],
+        'add_escalation' => ['admin', 'execution', 'execution_officer'],
+        'view_productivity' => ['admin', 'execution', 'execution_officer'],
+        'view_attendance_exceptions' => ['admin', 'execution', 'execution_officer']
     ];
 
     if (!isset($actionPermissions[$action])) {

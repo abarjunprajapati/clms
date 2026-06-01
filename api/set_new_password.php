@@ -61,6 +61,7 @@ try {
         'front_line_user'   => 'pages/frontline/dashboard.php',
         'pass_user'         => 'pages/welfare/pass_issuer_dashboard.php',
         'safety_user'       => 'pages/safety/dashboard.php',
+        'execution' => 'pages/execution/dashboard.php',
         'execution_officer' => 'pages/execution/dashboard.php'
     ];
     $redirect = $redirectMap[$_SESSION['role']] ?? 'pages/contractor/dashboard.php';

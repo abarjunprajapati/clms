@@ -1,15 +1,15 @@
 <?php
 require_once __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/execution_context.php';
 require_once __DIR__ . '/../auth_middleware.php';
 
 header('Content-Type: application/json');
-enforceRole(['execution_officer', 'super_admin']);
+enforceRole(['execution_officer', 'execution', 'super_admin']);
 
 $userId = $_SESSION['user_id'];
 
-// Get Officer ID
-$officerRes = db_single($conn, "SELECT id FROM execution_officers WHERE employee_code = (SELECT contractor_id FROM users WHERE id = ?)", 'i', [$userId]);
-$officerId = $officerRes['id'] ?? 0;
+// Get or create execution officer context for this login
+$officerId = clms_execution_get_officer_id($conn, $userId);
 
 if (!$officerId) {
     echo json_encode(['status' => false, 'message' => 'Officer record not found']);
@@ -39,3 +39,5 @@ try {
     echo json_encode(['status' => false, 'message' => $e->getMessage()]);
 }
 ?>
+
+

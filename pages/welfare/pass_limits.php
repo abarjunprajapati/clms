@@ -12,8 +12,123 @@ include __DIR__ . '/../../include/pass_limit_validator.php';
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Welfare Admin';
 
+function welfarePassLimitDefaultRules() {
+    return [
+        [
+            'id' => 0,
+            'contractor_id' => 0,
+            'pass_type' => 'Contractor',
+            'max_allowed' => 2,
+            'ratio_per_workmen' => null,
+            'rule' => 'Fixed - Max 2',
+            'description' => 'Maximum 2 contractor/self passes per firm',
+            'override_allowed' => 1,
+        ],
+        [
+            'id' => 0,
+            'contractor_id' => 0,
+            'pass_type' => 'Representative',
+            'max_allowed' => 1,
+            'ratio_per_workmen' => null,
+            'rule' => 'Fixed - Max 1',
+            'description' => 'Only 1 representative pass per firm',
+            'override_allowed' => 1,
+        ],
+        [
+            'id' => 0,
+            'contractor_id' => 0,
+            'pass_type' => 'Supervisor',
+            'max_allowed' => null,
+            'ratio_per_workmen' => 10,
+            'rule' => 'Ratio - 1 per 10 workmen + 1 additional',
+            'description' => 'Dynamic supervisor limit based on workmen count',
+            'override_allowed' => 1,
+        ],
+        [
+            'id' => 0,
+            'contractor_id' => 0,
+            'pass_type' => 'Workman',
+            'max_allowed' => null,
+            'ratio_per_workmen' => null,
+            'rule' => 'No fixed pass limit',
+            'description' => 'Controlled by work order/project rules',
+            'override_allowed' => 1,
+        ],
+    ];
+}
+
+function welfarePassLimitColumnExists($conn, $column) {
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `pass_limits` LIKE '$column'");
+    return $result && mysqli_num_rows($result) > 0;
+}
+
+function welfarePassLimitEnsureDefaults($conn) {
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS pass_limits (
+        id INT NOT NULL AUTO_INCREMENT,
+        contractor_id INT NOT NULL DEFAULT 0,
+        pass_type VARCHAR(50) NOT NULL,
+        max_allowed INT DEFAULT NULL,
+        rule VARCHAR(150) NOT NULL DEFAULT 'Fixed',
+        description TEXT DEFAULT NULL,
+        ratio_per_workmen INT DEFAULT NULL,
+        override_allowed TINYINT(1) NOT NULL DEFAULT 1,
+        current_count INT DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $idResult = mysqli_query($conn, "SHOW COLUMNS FROM `pass_limits` LIKE 'id'");
+    $idMeta = $idResult ? mysqli_fetch_assoc($idResult) : null;
+    if ($idMeta && stripos($idMeta['Extra'] ?? '', 'auto_increment') === false) {
+        mysqli_query($conn, "ALTER TABLE `pass_limits` MODIFY `id` INT(11) NOT NULL AUTO_INCREMENT");
+    }
+
+    $columns = [
+        'rule' => "ALTER TABLE `pass_limits` ADD COLUMN `rule` VARCHAR(150) NOT NULL DEFAULT 'Fixed' AFTER `max_allowed`",
+        'description' => "ALTER TABLE `pass_limits` ADD COLUMN `description` TEXT DEFAULT NULL AFTER `rule`",
+        'ratio_per_workmen' => "ALTER TABLE `pass_limits` ADD COLUMN `ratio_per_workmen` INT DEFAULT NULL AFTER `description`",
+        'override_allowed' => "ALTER TABLE `pass_limits` ADD COLUMN `override_allowed` TINYINT(1) NOT NULL DEFAULT 1 AFTER `ratio_per_workmen`",
+        'current_count' => "ALTER TABLE `pass_limits` ADD COLUMN `current_count` INT DEFAULT 0 AFTER `override_allowed`",
+        'updated_at' => "ALTER TABLE `pass_limits` ADD COLUMN `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+    ];
+    foreach ($columns as $column => $sql) {
+        if (!welfarePassLimitColumnExists($conn, $column)) {
+            mysqli_query($conn, $sql);
+        }
+    }
+
+    $existing = db_count($conn, "SELECT COUNT(*) c FROM pass_limits WHERE contractor_id = 0");
+    if ($existing > 0) {
+        return;
+    }
+
+    $stmt = mysqli_prepare($conn, "
+        INSERT INTO pass_limits
+            (contractor_id, pass_type, max_allowed, ratio_per_workmen, rule, description, override_allowed, current_count)
+        VALUES
+            (0, ?, ?, ?, ?, ?, ?, 0)
+    ");
+    if (!$stmt) {
+        return;
+    }
+
+    foreach (welfarePassLimitDefaultRules() as $rule) {
+        $passType = $rule['pass_type'];
+        $maxAllowed = $rule['max_allowed'];
+        $ratio = $rule['ratio_per_workmen'];
+        $ruleText = $rule['rule'];
+        $description = $rule['description'];
+        $override = (int)$rule['override_allowed'];
+        mysqli_stmt_bind_param($stmt, 'siissi', $passType, $maxAllowed, $ratio, $ruleText, $description, $override);
+        mysqli_stmt_execute($stmt);
+    }
+    mysqli_stmt_close($stmt);
+}
+
 function renderContent() {
     global $conn;
+    welfarePassLimitEnsureDefaults($conn);
     
     $activeContractorUserSql = "
         EXISTS (
@@ -43,6 +158,9 @@ function renderContent() {
     
     // Get global defaults
     $defaults = db_fetch_all($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0 ORDER BY id");
+    if (empty($defaults)) {
+        $defaults = welfarePassLimitDefaultRules();
+    }
     ?>
 
 <div class="content-header">
@@ -55,7 +173,7 @@ function renderContent() {
 <!-- Global Defaults Card -->
 <div class="card glass" style="margin-bottom:24px;">
   <div class="card-header">
-    <div class="card-title"><i class="fas fa-globe"></i> Global Default Rules (Annexure 5/A)</div>
+    <div class="card-title"><i class="fas fa-globe"></i> Global Default Rules</div>
   </div>
   <div class="card-body" style="padding:0;">
     <table class="data-table">
@@ -74,7 +192,12 @@ function renderContent() {
           <td><?= $sl++ ?></td>
           <td><span class="badge <?= getBadgeClass($d['pass_type']) ?>"><?= $d['pass_type'] ?></span></td>
           <td><strong><?= $d['max_allowed'] ?? '<em>Dynamic</em>' ?></strong></td>
-          <td><?= htmlspecialchars($d['rule']) ?></td>
+          <td>
+            <strong><?= htmlspecialchars($d['rule'] ?? '') ?></strong>
+            <?php if (!empty($d['description'])): ?>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><?= htmlspecialchars($d['description']) ?></div>
+            <?php endif; ?>
+          </td>
           <td>
             <?php if ($d['override_allowed']): ?>
               <span class="badge badge-success">Yes</span>

@@ -4,7 +4,9 @@ error_reporting(0);
 ini_set('display_errors', 0);
 header('Content-Type: application/json');
 
-include './include/config.php';
+require_once './include/auth.php';
+require_once './include/config.php';
+checkAuth(['contractor', 'customer', 'super_admin', 'welfare_admin', 'welfare_user']);
 
 error_log("API HIT: get_supervisors - " . json_encode($_REQUEST));
 
@@ -12,6 +14,9 @@ $response = ['success' => false, 'data' => [], 'counts' => []];
 
 try {
     $application_id = $_GET['application_id'] ?? null;
+    if (!$application_id && !in_array($_SESSION['role'] ?? '', ['super_admin', 'welfare_admin', 'welfare_user'], true)) {
+        throw new Exception('application_id is required');
+    }
 
     $sql = "SELECT * FROM supervisors WHERE 1=1";
     $params = [];

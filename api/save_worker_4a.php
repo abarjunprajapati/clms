@@ -337,6 +337,54 @@ function worker4a_ensure_upload_dir($dir) {
     }
 }
 
+function worker4a_validate_dob_age($dob) {
+    $dob = trim((string)$dob);
+    if ($dob === '') return;
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
+        throw new Exception("Date of Birth year must be 4 digits.");
+    }
+    $birth = DateTime::createFromFormat('Y-m-d', $dob);
+    $errors = DateTime::getLastErrors();
+    $warningCount = is_array($errors) ? (int)($errors['warning_count'] ?? 0) : 0;
+    $errorCount = is_array($errors) ? (int)($errors['error_count'] ?? 0) : 0;
+    if (!$birth || $warningCount > 0 || $errorCount > 0) {
+        throw new Exception("Invalid Date of Birth.");
+    }
+    $today = new DateTime('today');
+    $age = (int)$birth->diff($today)->y;
+    if ($age < 18) {
+        throw new Exception("Worker age is below 18 years. Registration is not allowed.");
+    }
+    if ($age > 60) {
+        throw new Exception("Worker age is above 60 years. Registration is not allowed.");
+    }
+}
+
+function worker4a_validate_upload_file($key, $file) {
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) return;
+    $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+    $size = (int)($file['size'] ?? 0);
+    $tmp = $file['tmp_name'] ?? '';
+    $mime = $tmp && is_file($tmp) ? (mime_content_type($tmp) ?: '') : '';
+
+    if ($key === 'photo') {
+        if (!in_array($ext, ['jpg', 'jpeg'], true) || ($mime !== '' && $mime !== 'image/jpeg')) {
+            throw new Exception("Photo must be JPG/JPEG only.");
+        }
+        if ($size > 2 * 1024 * 1024) {
+            throw new Exception("Photo size must be 2 MB or less.");
+        }
+        return;
+    }
+
+    if ($ext !== 'pdf' || ($mime !== '' && $mime !== 'application/pdf')) {
+        throw new Exception("Documents must be PDF only.");
+    }
+    if ($size > 5 * 1024 * 1024) {
+        throw new Exception("Document size must be 5 MB or less.");
+    }
+}
+
 function worker4a_upsert_workflow($conn, $application_no, $contractor_id) {
     if (!worker4a_table_exists($conn, 'application_workflow')) return;
 
@@ -392,6 +440,9 @@ worker4a_ensure_schema($conn);
 
     if ($action !== 'draft' && (empty($data['name']) || empty($data['aadhaar']))) {
         throw new Exception("Name and Aadhaar Number are mandatory.");
+    }
+    if ($action !== 'draft') {
+        worker4a_validate_dob_age($data['dob'] ?? '');
     }
 
     // ========== ANNEXURE 5/A: PASS LIMIT VALIDATION ==========
@@ -449,6 +500,7 @@ worker4a_ensure_schema($conn);
 
     foreach ($uploaded_files as $key => &$path) {
         if (isset($_FILES[$key]) && $_FILES[$key]['error'] === UPLOAD_ERR_OK) {
+            worker4a_validate_upload_file($key, $_FILES[$key]);
             $ext = pathinfo($_FILES[$key]['name'], PATHINFO_EXTENSION);
             $filename = $key . '_' . uniqid() . '.' . $ext;
             $target = $upload_dir . $filename;
@@ -470,7 +522,7 @@ worker4a_ensure_schema($conn);
     $contractor_id = (int)$contractor_row['id'];
     if ($action !== 'draft') {
         if (($data['epf_registered_worker'] ?? '') === 'YES' && trim($data['pf_no'] ?? '') === '') {
-            throw new Exception("EPF Number is mandatory when EPF Registered is Yes.");
+            throw new Exception("UAN Number is mandatory when EPF Registered is Yes.");
         }
         if (($data['esi_registered_worker'] ?? '') === 'YES' && trim($data['esi_no'] ?? '') === '') {
             throw new Exception("ESI Number is mandatory when ESI Registered is Yes.");

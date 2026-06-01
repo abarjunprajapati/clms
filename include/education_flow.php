@@ -8,18 +8,18 @@ function clms_default_education_flow_rows() {
         ['Skilled', 'B.Tech', 'IT Engineer'],
         ['Skilled', 'B.Tech', 'Civil Engineer'],
         ['Skilled', 'B.Tech', 'Electronics Engineer'],
-        ['Semi-Skilled', 'Diploma', 'Electrical Technician'],
-        ['Semi-Skilled', 'Diploma', 'Draftsman'],
-        ['Semi-Skilled', 'Diploma', 'Civil'],
-        ['Semi-Skilled', 'Diploma', 'Structural'],
-        ['Semi-Skilled', 'Diploma', 'IT'],
-        ['Semi-Skilled', 'Diploma', 'Electronics'],
-        ['Semi-Skilled', 'ITI Certification', 'Painter'],
-        ['Semi-Skilled', 'ITI Certification', 'Welder'],
-        ['Semi-Skilled', 'ITI Certification', 'Fitter'],
-        ['Semi-Skilled', 'ITI Certification', 'Carpenter'],
-        ['Semi-Skilled', 'ITI Certification', 'Fitter - Pipe'],
-        ['Semi-Skilled', 'ITI Certification', 'Plumber'],
+        ['Skilled', 'Diploma', 'Electrical Technician'],
+        ['Skilled', 'Diploma', 'Draftsman'],
+        ['Skilled', 'Diploma', 'Civil'],
+        ['Skilled', 'Diploma', 'Structural'],
+        ['Skilled', 'Diploma', 'IT'],
+        ['Skilled', 'Diploma', 'Electronics'],
+        ['Skilled', 'ITI Certification', 'Painter'],
+        ['Skilled', 'ITI Certification', 'Welder'],
+        ['Skilled', 'ITI Certification', 'Fitter'],
+        ['Skilled', 'ITI Certification', 'Carpenter'],
+        ['Skilled', 'ITI Certification', 'Fitter - Pipe'],
+        ['Skilled', 'ITI Certification', 'Plumber'],
         ['Semi-Skilled', 'Class 10th or equivalent', 'Rigger'],
         ['Semi-Skilled', 'Class 10th or equivalent', 'Blaster'],
         ['Unskilled', 'Below Class 10th', 'Helper'],
@@ -76,6 +76,10 @@ function clms_ensure_education_flow_table($conn) {
             $sort += 10;
         }
     }
+
+    db_execute($conn, "UPDATE education_job_profiles SET skill_category = 'Skilled' WHERE qualification IN ('B.Tech', 'B Tech', 'Diploma', 'ITI Certification')");
+    db_execute($conn, "UPDATE education_job_profiles SET skill_category = 'Semi-Skilled' WHERE qualification IN ('Class 10th or equivalent')");
+    db_execute($conn, "UPDATE education_job_profiles SET skill_category = 'Unskilled' WHERE qualification IN ('Below Class 10th')");
 
     $done = true;
 }

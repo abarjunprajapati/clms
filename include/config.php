@@ -60,7 +60,7 @@ if (!defined('SMS_DEV_MODE')) define('SMS_DEV_MODE', true); // set to false in p
 // Standardize PHP configuration for APIs
 if (php_sapi_name() !== 'cli') {
     error_reporting(E_ALL);
-    ini_set('display_errors', 1);
+    ini_set('display_errors', 0);
     ini_set('log_errors', 1);
 }
 

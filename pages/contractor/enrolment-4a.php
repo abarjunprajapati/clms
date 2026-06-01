@@ -9,6 +9,7 @@ include '../../include/layout.php';
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
 $user_id = $_SESSION['user_id'];
+$vendor_code = $_SESSION['contractor_id'] ?? $_SESSION['vendor_code'] ?? '';
 $enrolmentTypeMap = [
     'contractor' => ['pass' => 'Contractor', 'label' => 'Contractor Self Enrollment', 'plural' => 'Contractor'],
     'representative' => ['pass' => 'Representative', 'label' => 'Representative Enrollment', 'plural' => 'Representatives'],
@@ -22,9 +23,7 @@ if (!isset($enrolmentTypeMap[$requestedType])) {
 }
 $selectedType = $enrolmentTypeMap[$requestedType];
 $prefillAadhaar = preg_replace('/\D+/', '', (string)($_GET['aadhaar'] ?? ''));
-if ($role !== 'customer') {
-    clms_get_portal_contractor($conn);
-}
+clms_get_portal_contractor($conn);
 $educationFlow = clms_get_education_flow($conn);
 
 function enrolment_table_exists($conn, $table) {
@@ -97,6 +96,10 @@ function enrolment_insert_contractor_from_a3($conn, $a3) {
 
     $vendorCode = trim((string)($a3['vendor_code'] ?? ''));
     $workOrderNo = trim((string)($a3['work_order_no'] ?? ''));
+    $customerCode = trim((string)($a3['customer_code'] ?? ($_SESSION['customer_code'] ?? $_SESSION['contractor_id'] ?? '')));
+    if ($vendorCode === '' && $workOrderNo === '' && $customerCode !== '') {
+        $vendorCode = 'CUST-' . preg_replace('/[^A-Za-z0-9_-]/', '-', $customerCode);
+    }
     if ($vendorCode === '' && $workOrderNo === '') {
         return 0;
     }
@@ -185,7 +188,7 @@ function enrolment_worker_type_condition($conn, $table, $type) {
 }
 
 function enrolment_customer_contractor_ids($conn) {
-    $customerCode = $_SESSION['customer_code'] ?? '';
+    $customerCode = $_SESSION['customer_code'] ?? $_SESSION['contractor_id'] ?? '';
     if ($customerCode === '') {
         return [];
     }
@@ -223,6 +226,74 @@ function enrolment_customer_contractor_ids($conn) {
     return array_values(array_unique(array_filter(array_map('intval', $ids))));
 }
 
+function enrolment_contractor_select_expr($conn) {
+    return implode(', ', [
+        enrolment_expr($conn, 'contractors', 'id', 'id', '0'),
+        enrolment_expr($conn, 'contractors', 'contractor_name', 'contractor_name'),
+        enrolment_expr($conn, 'contractors', 'vendor_code', 'vendor_code'),
+        enrolment_expr($conn, 'contractors', 'vendor_name', 'vendor_name'),
+        enrolment_expr($conn, 'contractors', 'status', 'status'),
+        enrolment_expr($conn, 'contractors', 'work_order_no', 'work_order_no'),
+        enrolment_expr($conn, 'contractors', 'work_awarding_department', 'work_awarding_department'),
+    ]);
+}
+
+function enrolment_get_contractor_from_approved_a3($conn, $vendorCode) {
+    $vendorCode = trim((string)$vendorCode);
+    if ($vendorCode === '' || !enrolment_table_exists($conn, 'contractor_annexure3a')) {
+        return null;
+    }
+
+    $safeVendor = mysqli_real_escape_string($conn, $vendorCode);
+    $a3 = enrolment_fetch_one($conn, "
+        SELECT *
+        FROM contractor_annexure3a
+        WHERE vendor_code = '$safeVendor'
+          AND LOWER(COALESCE(status, '')) = 'approved'
+        ORDER BY " . (enrolment_column_exists($conn, 'contractor_annexure3a', 'updated_at') ? 'updated_at DESC,' : '') . " id DESC
+        LIMIT 1
+    ");
+    if (!$a3) {
+        return null;
+    }
+
+    $id = enrolment_insert_contractor_from_a3($conn, $a3);
+    if (!$id) {
+        return null;
+    }
+
+    $contractorSelect = enrolment_contractor_select_expr($conn);
+    return enrolment_fetch_one($conn, "SELECT $contractorSelect FROM contractors WHERE id = " . (int)$id . " LIMIT 1");
+}
+
+function enrolment_get_customer_portal_contractor($conn) {
+    if (($_SESSION['role'] ?? '') !== 'customer') {
+        return null;
+    }
+
+    $customerCode = $_SESSION['customer_code'] ?? $_SESSION['contractor_id'] ?? '';
+    if ($customerCode === '') {
+        return null;
+    }
+
+    $isApproved = clms_onboarding_is_complete($conn, 'customer', $customerCode, $_SESSION['user_id'] ?? 0);
+    if (!$isApproved) {
+        return null;
+    }
+
+    $portal = clms_get_portal_contractor($conn);
+    if (empty($portal['id'])) {
+        return null;
+    }
+
+    if (enrolment_column_exists($conn, 'contractors', 'status') && strtolower((string)($portal['status'] ?? '')) !== 'approved') {
+        mysqli_query($conn, "UPDATE contractors SET status = 'approved' WHERE id = " . (int)$portal['id'] . " LIMIT 1");
+    }
+
+    $contractorSelect = enrolment_contractor_select_expr($conn);
+    return enrolment_fetch_one($conn, "SELECT $contractorSelect FROM contractors WHERE id = " . (int)$portal['id'] . " LIMIT 1");
+}
+
 function renderContent() {
     global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar;
     $nationalityOptions = [
@@ -235,42 +306,23 @@ function renderContent() {
         'South African', 'South Korean', 'Spanish', 'Sri Lankan', 'Sudanese', 'Swedish', 'Swiss', 'Syrian', 'Thai',
         'Turkish', 'Ugandan', 'Ukrainian', 'Vietnamese', 'Yemeni', 'Zimbabwean'
     ];
+    $dobMax = date('Y-m-d', strtotime('-18 years'));
+    $dobMin = date('Y-m-d', strtotime('-60 years'));
 
     // Get contractor record
     $contractor = null;
     if ($role === 'customer') {
-        $customerContractorIds = enrolment_customer_contractor_ids($conn);
-        if ($customerContractorIds) {
-            $idList = implode(',', $customerContractorIds);
-            $vendorSelect = enrolment_column_exists($conn, 'contractors', 'vendor_code') ? 'MIN(vendor_code)' : "''";
-            $workOrderSelect = enrolment_column_exists($conn, 'contractors', 'work_order_no') ? 'MIN(work_order_no)' : "''";
-            $deptSelect = enrolment_column_exists($conn, 'contractors', 'work_awarding_department') ? 'MIN(work_awarding_department)' : "''";
-            $contractor = enrolment_fetch_one($conn, "
-                SELECT
-                    MIN(id) AS id,
-                    'Mapped Contractors' AS contractor_name,
-                    'approved' AS status,
-                    $vendorSelect AS vendor_code,
-                    $workOrderSelect AS work_order_no,
-                    $deptSelect AS work_awarding_department
-                FROM contractors
-                WHERE id IN ($idList)
-            ");
-        }
+        $contractor = enrolment_get_customer_portal_contractor($conn);
+        $customerContractorIds = !empty($contractor['id']) ? [(int)$contractor['id']] : [];
     } elseif (enrolment_table_exists($conn, 'contractors')) {
-        $contractorSelect = implode(', ', [
-            enrolment_expr($conn, 'contractors', 'id', 'id', '0'),
-            enrolment_expr($conn, 'contractors', 'contractor_name', 'contractor_name'),
-            enrolment_expr($conn, 'contractors', 'vendor_code', 'vendor_code'),
-            enrolment_expr($conn, 'contractors', 'vendor_name', 'vendor_name'),
-            enrolment_expr($conn, 'contractors', 'status', 'status'),
-            enrolment_expr($conn, 'contractors', 'work_order_no', 'work_order_no'),
-            enrolment_expr($conn, 'contractors', 'work_awarding_department', 'work_awarding_department'),
-        ]);
+        $contractorSelect = enrolment_contractor_select_expr($conn);
         $where = enrolment_column_exists($conn, 'contractors', 'user_id')
             ? "user_id = " . (int)$user_id
             : "vendor_code = '" . mysqli_real_escape_string($conn, $vendor_code) . "'";
         $contractor = enrolment_fetch_one($conn, "SELECT $contractorSelect FROM contractors WHERE $where LIMIT 1");
+        if (!$contractor) {
+            $contractor = enrolment_get_contractor_from_approved_a3($conn, $vendor_code);
+        }
     }
     $c_id = $contractor['id'] ?? null;
     $contractorWhere = $c_id ? "contractor_id = " . (int)$c_id : '1=0';
@@ -831,7 +883,7 @@ function renderContent() {
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label required">Registration Date</label>
+                <label class="form-label required">Date of Joining</label>
                 <input type="date" class="form-control" name="registration_date" value="<?= date('Y-m-d') ?>" required>
               </div>
               <div class="form-group">
@@ -860,7 +912,8 @@ function renderContent() {
               </div>
               <div class="form-group">
                 <label class="form-label required">Date of Birth</label>
-                <input type="date" class="form-control" name="dob" required>
+                <input type="date" class="form-control" name="dob" id="dobInput" min="<?= $dobMin ?>" max="<?= $dobMax ?>" required>
+                <small class="form-hint" id="dobHint">Age must be between 18 and 60 years.</small>
               </div>
               <div class="form-group">
                 <label class="form-label required">Marital Status</label>
@@ -896,7 +949,7 @@ function renderContent() {
                 <input type="text" class="form-control" name="region">
               </div>
               <div class="form-group">
-                <label class="form-label required">PWD Status</label>
+                <label class="form-label required">Person with Disability</label>
                 <select class="form-control" name="pwd_status" required>
                   <option value="">Select</option>
                   <option value="YES">Yes</option>
@@ -1007,7 +1060,7 @@ function renderContent() {
                 </select>
               </div>
               <div class="form-group conditional-field hidden" id="epfNumberWrap">
-                <label class="form-label required">EPF Number</label>
+                <label class="form-label required">UAN Number</label>
                 <input type="text" class="form-control" name="pf_no" id="epfNumberInput">
               </div>
               <div class="form-group">
@@ -1042,17 +1095,20 @@ function renderContent() {
           <!-- Tab 5: Documents -->
           <div class="modal-tab-content hidden" id="tab-docs">
             <div class="form-grid-3">
-              <div class="doc-card">
+                <div class="doc-card">
                 <label class="form-label required">Photo</label>
-                <input type="file" class="form-control" name="photo" required>
+                <input type="file" class="form-control" name="photo" accept=".jpg,.jpeg,image/jpeg" data-max-size="2097152" required>
+                <small class="form-hint">JPG/JPEG only, max 2 MB.</small>
               </div>
               <div class="doc-card">
                 <label class="form-label required">Aadhaar Copy</label>
-                <input type="file" class="form-control" name="aadhaar_doc" required>
+                <input type="file" class="form-control" name="aadhaar_doc" accept=".pdf,application/pdf" data-max-size="5242880" required>
+                <small class="form-hint">PDF only, max 5 MB.</small>
               </div>
               <div class="doc-card">
                 <label class="form-label required">Training Attendance Approval by Executing Officer / Mentor</label>
-                <input type="file" class="form-control" name="training_approval_doc" required>
+                <input type="file" class="form-control" name="training_approval_doc" accept=".pdf,application/pdf" data-max-size="5242880" required>
+                <small class="form-hint">PDF only, max 5 MB.</small>
               </div>
             </div>
           </div>
@@ -1064,7 +1120,7 @@ function renderContent() {
               <button type="button" class="btn btn-outline" id="btnPrevTab">Previous</button>
               <button type="button" class="btn btn-primary-soft" id="btnNextTab">Next</button>
               <button type="button" class="btn btn-primary-soft" id="btnSaveDraft" style="display:none;">Save Draft</button>
-              <button type="submit" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit Enrollment</button>
+              <button type="button" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit Enrollment</button>
             </div>
           </div>
         </form>
@@ -1238,6 +1294,11 @@ function renderContent() {
         const requestedPassLabel = <?= json_encode($selectedType['label']) ?>;
         const prefillAadhaar = <?= json_encode($prefillAadhaar) ?>;
         const currentContractorId = <?= $c_id ? (int)$c_id : 0 ?>;
+        const dobInput = document.getElementById('dobInput');
+        const minDob = dobInput ? new Date(dobInput.min + 'T00:00:00') : null;
+        const maxDob = dobInput ? new Date(dobInput.max + 'T00:00:00') : null;
+        const photoMaxSize = 2 * 1024 * 1024;
+        const pdfMaxSize = 5 * 1024 * 1024;
         const indianStateDistricts = {
           'Andhra Pradesh': ['Anantapur', 'Chittoor', 'East Godavari', 'Guntur', 'Krishna', 'Kurnool', 'Prakasam', 'SPSR Nellore', 'Srikakulam', 'Visakhapatnam', 'Vizianagaram', 'West Godavari', 'YSR Kadapa'],
           'Arunachal Pradesh': ['Anjaw', 'Changlang', 'East Kameng', 'East Siang', 'Itanagar Capital Complex', 'Lohit', 'Lower Dibang Valley', 'Lower Subansiri', 'Namsai', 'Papum Pare', 'Tawang', 'Tirap', 'Upper Siang', 'Upper Subansiri', 'West Kameng', 'West Siang'],
@@ -1276,6 +1337,88 @@ function renderContent() {
           'Lakshadweep': ['Lakshadweep'],
           'Puducherry': ['Karaikal', 'Mahe', 'Puducherry', 'Yanam']
         };
+
+        function validateDobAge(showMessage = true) {
+          if (!dobInput || !dobInput.value) return true;
+          const year = String(dobInput.value).split('-')[0] || '';
+          if (year.length !== 4) {
+            dobInput.setCustomValidity('Date of Birth year must be 4 digits.');
+          } else {
+            const dob = new Date(dobInput.value + 'T00:00:00');
+            if (maxDob && dob > maxDob) {
+              dobInput.setCustomValidity('Worker age is below 18 years. Registration is not allowed.');
+            } else if (minDob && dob < minDob) {
+              dobInput.setCustomValidity('Worker age is above 60 years. Registration is not allowed.');
+            } else {
+              dobInput.setCustomValidity('');
+            }
+          }
+          if (showMessage && !dobInput.checkValidity()) {
+            dobInput.reportValidity();
+          }
+          return dobInput.checkValidity();
+        }
+
+        function validateWorkerFile(input, showMessage = true) {
+          if (!input || !input.files || !input.files[0]) return true;
+          const file = input.files[0];
+          const ext = file.name.split('.').pop().toLowerCase();
+          let message = '';
+          if (input.name === 'photo') {
+            if (!['jpg', 'jpeg'].includes(ext) || (file.type && file.type !== 'image/jpeg')) {
+              message = 'Photo must be JPG/JPEG only.';
+            } else if (file.size > photoMaxSize) {
+              message = 'Photo size must be 2 MB or less.';
+            }
+          } else {
+            if (ext !== 'pdf' || (file.type && file.type !== 'application/pdf')) {
+              message = 'Document must be PDF only.';
+            } else if (file.size > pdfMaxSize) {
+              message = 'Document size must be 5 MB or less.';
+            }
+          }
+          input.setCustomValidity(message);
+          if (message && showMessage) input.reportValidity();
+          return message === '';
+        }
+
+        function getFieldLabel(field) {
+          if (!field) return 'Required field';
+          const group = field.closest('.form-group, .doc-card, .work-flow-step');
+          const label = group?.querySelector('.form-label, .flow-step-head');
+          if (label) {
+            return label.textContent.replace('*', '').replace(/\s+/g, ' ').trim();
+          }
+          return field.getAttribute('aria-label') || field.name || 'Required field';
+        }
+
+        function showInvalidFieldMessage(field) {
+          if (!field) return;
+          const label = getFieldLabel(field);
+          const message = field.validity.valueMissing
+            ? `${label} is required. Please fill this field before submitting.`
+            : (field.validationMessage || `${label} is invalid.`);
+          notify('Required Field Missing', message, 'warning');
+        }
+
+        function focusInvalidField(field) {
+          if (!field) return;
+          const tabPane = field.closest('.modal-tab-content');
+          if (tabPane) {
+            activateTab(tabPane.id.replace('tab-', ''));
+          }
+          setTimeout(() => {
+            if (field.type !== 'hidden' && !field.disabled) {
+              field.focus();
+              field.reportValidity();
+            }
+          }, 120);
+        }
+
+        dobInput?.addEventListener('change', () => validateDobAge(false));
+        document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => {
+          input.addEventListener('change', () => validateWorkerFile(input, true));
+        });
 
         document.getElementById('btnOpenModal').onclick = () => {
           form.reset();
@@ -1876,17 +2019,26 @@ function renderContent() {
             notify('Selection Required', 'Please complete Category, Qualification, and Job Profile in the Work / Compliance flow.', 'warning');
             return;
           }
+
+          if (!validateDobAge(false)) {
+            focusInvalidField(dobInput);
+            showInvalidFieldMessage(dobInput);
+            return;
+          }
+
+          const invalidFile = Array.from(document.querySelectorAll('#tab-docs input[type="file"]')).find(input => !validateWorkerFile(input, false));
+          if (invalidFile) {
+            focusInvalidField(invalidFile);
+            showInvalidFieldMessage(invalidFile);
+            return;
+          }
           
           // Custom Validation: Find first invalid field and switch to its tab
           if (!form.checkValidity()) {
             const firstInvalid = form.querySelector(':invalid');
             if (firstInvalid) {
-              const tabPane = firstInvalid.closest('.modal-tab-content');
-              if (tabPane) {
-                const tabId = tabPane.id.replace('tab-', '');
-                activateTab(tabId);
-                setTimeout(() => firstInvalid.focus(), 100);
-              }
+              focusInvalidField(firstInvalid);
+              showInvalidFieldMessage(firstInvalid);
             }
             form.reportValidity();
             return;
@@ -1938,6 +2090,15 @@ function renderContent() {
             e.preventDefault();
             e.stopPropagation();
             submitEnrollment('draft');
+          });
+        }
+
+        const submitButton = document.getElementById('btnSubmit');
+        if (submitButton) {
+          submitButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            submitEnrollment('submit');
           });
         }
 

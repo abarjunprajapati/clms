@@ -1,6 +1,6 @@
 <?php
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 require_once __DIR__ . '/onboarding_status.php';
 /**
  * Unified Layout for CLMS
@@ -22,7 +22,28 @@ function renderLayout($page_title, $content_callback, $role, $name) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="csrf-token" content="<?= get_csrf_token() ?>">
-  <script>window.CLMS_BASE_URL = "<?= BASE_URL ?>";</script>
+  <script>
+    window.CLMS_BASE_URL = "<?= BASE_URL ?>";
+    window.CLMS_CSRF_TOKEN = "<?= get_csrf_token() ?>";
+    (function() {
+      if (!window.fetch || window.__clmsFetchSecured) return;
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = function(input, init) {
+        init = init || {};
+        const method = String(init.method || 'GET').toUpperCase();
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        const sameOrigin = !/^https?:\/\//i.test(url) || url.indexOf(window.location.origin) === 0;
+        if (sameOrigin && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+          const headers = new Headers(init.headers || {});
+          if (!headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', window.CLMS_CSRF_TOKEN || '');
+          init.headers = headers;
+          init.credentials = init.credentials || 'same-origin';
+        }
+        return nativeFetch(input, init);
+      };
+      window.__clmsFetchSecured = true;
+    })();
+  </script>
   <title><?= $page_title ?> – CLMS</title>
   <link rel="stylesheet" href="../../css/style.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
