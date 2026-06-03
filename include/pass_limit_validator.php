@@ -9,25 +9,18 @@
  */
 
 /**
- * Get the effective limit for a contractor + pass_type.
- * Falls back to global default (contractor_id=0) if no specific limit is set.
+ * Get the effective limit for a pass type.
+ *
+ * Welfare now manages a single global default rule set. Older contractor-specific
+ * rows may still exist in pass_limits, but they are ignored so stale overrides do
+ * not block updates from appearing on contractor enrolment screens.
  */
 function getPassLimit($conn, $contractor_id, $pass_type) {
-    // First check contractor-specific limit
-    $limit = db_single($conn, 
-        "SELECT * FROM pass_limits WHERE contractor_id = ? AND pass_type = ?", 
-        'is', [$contractor_id, $pass_type]
+    return db_single($conn,
+        "SELECT * FROM pass_limits WHERE contractor_id = 0 AND pass_type = ? ORDER BY id DESC LIMIT 1",
+        's',
+        [$pass_type]
     );
-    
-    // Fallback to global default
-    if (!$limit) {
-        $limit = db_single($conn, 
-            "SELECT * FROM pass_limits WHERE contractor_id = 0 AND pass_type = ?", 
-            's', [$pass_type]
-        );
-    }
-    
-    return $limit;
 }
 
 /**

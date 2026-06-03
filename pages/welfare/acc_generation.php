@@ -20,11 +20,14 @@ function renderContent() {
                    ORDER BY w.updated_at ASC";
     $ready_for_acc = db_fetch_all($conn, $queryReady);
 
-    // Fetch workmen whose ACC is generated but not yet active
+    // Fetch workmen whose ACC is generated but not yet active.
+    // Some workers can still have status "verified" after ACC creation, so use the ACC number as the source of truth.
     $query = "SELECT w.*, c.contractor_name 
               FROM workmen w 
               JOIN contractors c ON w.contractor_id = c.id 
-              WHERE w.status = 'acc_generated'
+              WHERE COALESCE(w.acc_number, '') != ''
+                AND w.status <> 'permanent_active'
+                AND COALESCE(w.biometric_status, 'pending') <> 'completed'
               ORDER BY w.updated_at DESC";
     $pending_biometric = db_fetch_all($conn, $query);
     
@@ -32,7 +35,7 @@ function renderContent() {
     $recent_acc = db_fetch_all($conn, "SELECT w.*, c.contractor_name 
                                        FROM workmen w 
                                        JOIN contractors c ON w.contractor_id = c.id 
-                                       WHERE w.acc_number IS NOT NULL 
+                                       WHERE COALESCE(w.acc_number, '') != ''
                                        ORDER BY w.updated_at DESC LIMIT 10");
     ?>
     <div class="content-header">
@@ -98,8 +101,8 @@ function renderContent() {
                   <td><code><?= htmlspecialchars($pb['acc_number']) ?></code></td>
                   <td><?= htmlspecialchars($pb['contractor_name']) ?></td>
                   <td>
-                    <button onclick="completeBiometric(<?= $pb['id'] ?>)" class="btn btn-sm btn-success">
-                      <i class="fas fa-check-double"></i> Complete Enrollment
+                    <button onclick="issuePermanentPass(<?= $pb['id'] ?>)" class="btn btn-sm btn-success">
+                      <i class="fas fa-id-card-clip"></i> Issue Permanent Pass
                     </button>
                   </td>
                 </tr>
@@ -122,6 +125,7 @@ function renderContent() {
                   <th>ACC Number</th>
                   <th>Date Generated</th>
                   <th>Status</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -130,7 +134,22 @@ function renderContent() {
                   <td><?= htmlspecialchars($ra['name']) ?></td>
                   <td><code><?= htmlspecialchars($ra['acc_number']) ?></code></td>
                   <td><?= date('d M Y', strtotime($ra['updated_at'])) ?></td>
-                  <td><span class="badge badge-<?= $ra['status'] == 'permanent_active' ? 'success' : 'warning' ?>"><?= strtoupper(str_replace('_', ' ', $ra['status'])) ?></span></td>
+                  <?php
+                    $isActive = $ra['status'] == 'permanent_active';
+                    $statusLabel = $isActive ? 'PERMANENT ACTIVE' : strtoupper(str_replace('_', ' ', $ra['status']));
+                  ?>
+                  <td><span class="badge badge-<?= $isActive ? 'success' : 'warning' ?>"><?= htmlspecialchars($statusLabel) ?></span></td>
+                  <td>
+                    <?php if ($isActive): ?>
+                      <a href="../../api/welfare/download_pass.php?id=<?= (int)$ra['id'] ?>&type=perm&action=download" target="_blank" class="btn btn-sm btn-outline-info">
+                        <i class="fas fa-file-download"></i> Download
+                      </a>
+                    <?php else: ?>
+                      <button onclick="issuePermanentPass(<?= (int)$ra['id'] ?>)" class="btn btn-sm btn-success">
+                        <i class="fas fa-id-card-clip"></i> Issue Permanent
+                      </button>
+                    <?php endif; ?>
+                  </td>
                 </tr>
                 <?php endforeach; ?>
               </tbody>
@@ -166,18 +185,33 @@ function renderContent() {
     </div>
 
     <script>
-      async function completeBiometric(id) {
-        if (!confirm('Confirm biometric enrollment completion for this workman?')) return;
+      async function parsePassApiResponse(res, fallbackMessage) {
+        const raw = await res.text();
+        let result = {};
+        try {
+          result = raw ? JSON.parse(raw) : {};
+        } catch (parseError) {
+          result = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+        }
+        if (!res.ok && !result.message) result.message = fallbackMessage;
+        return result;
+      }
+
+      async function issuePermanentPass(id) {
+        if (!confirm('Issue permanent pass and activate ACC for this workman?')) return;
         
         try {
           const res = await fetch('../../api/welfare/complete_biometric.php', {
             method: 'POST',
             body: JSON.stringify({ workman_id: id }),
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+            }
           });
-          const result = await res.json();
+          const result = await parsePassApiResponse(res, 'Permanent pass issue failed on the server. Please check api_errors.log.');
           if (result.success) {
-            alert(result.message || 'Biometric enrollment completed!');
+            alert(result.message || 'Permanent pass issued successfully.');
             location.reload();
           } else {
             alert('Error: ' + (result.message || result.error || 'Unknown error'));
@@ -194,9 +228,12 @@ function renderContent() {
           const res = await fetch('../../api/welfare/generate_worker_acc.php', {
             method: 'POST',
             body: JSON.stringify({ workman_id: id }),
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+            }
           });
-          const result = await res.json();
+          const result = await parsePassApiResponse(res, 'ACC generation failed on the server. Please check api_errors.log.');
           if (result.success) {
             alert(result.message || 'ACC Generated successfully!');
             location.reload();

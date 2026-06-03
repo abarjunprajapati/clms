@@ -25,13 +25,17 @@ try {
     
     // Present today
     $presentToday = db_count($conn, "SELECT COUNT(DISTINCT workman_id) FROM attendance WHERE workman_id IN (SELECT workman_id FROM execution_worker_deployments WHERE execution_officer_id = ? AND status = 'active') AND DATE(check_in) = CURDATE()", 'i', [$officerId]);
+    $absentPlanned = max(0, $activeWorkers - $presentToday);
     
     // Observations
     $totalObservations = db_count($conn, "SELECT COUNT(*) FROM execution_observations WHERE execution_officer_id = ?", 'i', [$officerId]);
     $highSeverityObs = db_count($conn, "SELECT COUNT(*) FROM execution_observations WHERE execution_officer_id = ? AND severity = 'high'", 'i', [$officerId]);
     
     // Escalations
-    $pendingEscalations = db_count($conn, "SELECT COUNT(*) FROM execution_actions WHERE execution_officer_id = ? AND action_type = 'escalation'", 'i', [$officerId]);
+    $pendingEscalations = db_count($conn, "SELECT COUNT(*) FROM execution_escalations WHERE execution_officer_id = ? AND COALESCE(status, 'open') != 'closed'", 'i', [$officerId]);
+    $openActions = db_count($conn, "SELECT COUNT(*) FROM execution_actions WHERE execution_officer_id = ? AND COALESCE(status, 'open') != 'closed'", 'i', [$officerId]);
+    $trainingPending = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.training_approval_doc, '') <> '' AND COALESCE(w.execution_training_status, 'pending') = 'pending' AND w.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
+    $trainingApproved = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.execution_training_status, 'pending') = 'approved' AND w.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
 
     // Idle Workers (Present today but NOT deployed)
     $idleWorkers = db_count($conn, "SELECT COUNT(DISTINCT a.workman_id) FROM attendance a 
@@ -41,7 +45,7 @@ try {
                                 AND a.workman_id NOT IN (SELECT workman_id FROM execution_worker_deployments WHERE status = 'active')", 'i', [$officerId]);
 
     // Attendance Exceptions (Ghost attendance, etc.)
-    $exceptions = db_count($conn, "SELECT COUNT(*) FROM attendance_exceptions WHERE DATE(created_at) = CURDATE()");
+    $exceptions = db_count($conn, "SELECT COUNT(*) FROM attendance_exceptions ae WHERE DATE(ae.created_at) = CURDATE() AND ae.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
 
     // Observation Trends
     $obsTrends = db_fetch_all($conn, "SELECT observation_type, COUNT(*) as count FROM execution_observations WHERE execution_officer_id = ? GROUP BY observation_type", 'i', [$officerId]);
@@ -64,13 +68,17 @@ try {
             'total_observations' => $totalObservations,
             'high_severity_obs' => $highSeverityObs,
             'pending_escalations' => $pendingEscalations,
-            'attendance_exceptions' => $exceptions
+            'attendance_exceptions' => $exceptions,
+            'training_pending' => $trainingPending,
+            'training_approved' => $trainingApproved,
+            'open_actions' => $openActions
         ],
         'charts' => [
             'utilization' => [
                 'deployed' => $activeWorkers,
                 'present' => $presentToday,
-                'idle' => $idleWorkers
+                'idle' => $idleWorkers,
+                'absent' => $absentPlanned
             ],
             'observations' => $obsTrends,
             'productivity' => $contractorProductivity

@@ -27,12 +27,39 @@ function renderContent() {
     // Existing gate pass requests (Annexure 5A / 6A)
     $existing_passes = $c_id ? db_fetch_all($conn,
         "SELECT tr.request_no as pass_no, tr.pass_type, tr.from_date as valid_from, tr.to_date as valid_to, 
-                tr.status, tr.created_at, w.name as worker_name, w.trade, w.temp_id, gpw.gatepass_no
+                tr.status, tr.created_at, w.name as worker_name, w.trade, w.temp_id, gpw.gatepass_no,
+                (
+                    SELECT COUNT(*)
+                    FROM documents d
+                    WHERE d.workman_id = w.id
+                      AND COALESCE(d.status, 'pending') IN ('rejected', 'reupload_required')
+                ) AS rejected_doc_count
          FROM gate_pass_requests tr
          JOIN gate_pass_request_workers gpw ON tr.id = gpw.request_id
          JOIN workmen w ON gpw.workman_id = w.id
          WHERE tr.contractor_id = ?
          ORDER BY tr.created_at DESC",
+        'i', [$c_id]) : [];
+
+    $reupload_docs = $c_id ? db_fetch_all($conn,
+        "SELECT
+            d.id,
+            d.document_type,
+            d.file_path,
+            COALESCE(d.status, 'pending') AS status,
+            COALESCE(d.remarks, '') AS remarks,
+            d.uploaded_at,
+            w.name AS worker_name,
+            w.temp_id,
+            gpr.request_no
+         FROM documents d
+         JOIN workmen w ON w.id = d.workman_id
+         JOIN gate_pass_request_workers gprw ON gprw.workman_id = w.id
+         JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
+         WHERE w.contractor_id = ?
+           AND COALESCE(d.status, 'pending') IN ('rejected', 'reupload_required')
+           AND COALESCE(gpr.status, 'pending') IN ('pending', 'reupload_required')
+         ORDER BY d.uploaded_at DESC, d.id DESC",
         'i', [$c_id]) : [];
     ?>
 
@@ -54,6 +81,16 @@ function renderContent() {
         <strong>No Safety-Cleared Workers Found.</strong> Training must be completed and approved by the Safety Department.
         <a href="training_request.php" style="color:white;text-decoration:underline;margin-left:8px;">Request Training →</a>
       </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!empty($reupload_docs)): ?>
+    <div class="alert alert-danger" style="justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <i class="fas fa-file-circle-exclamation"></i>
+        <div><strong><?= count($reupload_docs) ?> rejected document(s)</strong> need correction before this gate pass can proceed.</div>
+      </div>
+      <a href="gatepass-reupload.php" class="btn btn-sm btn-danger"><i class="fas fa-upload"></i> Re-upload Documents</a>
     </div>
     <?php endif; ?>
 
@@ -116,113 +153,38 @@ function renderContent() {
               </div>
             </div>
 
-            <div class="form-section-label" style="margin-top:16px;">📎 Mandatory Documents</div>
+            <div class="annexure-doc-title">ANNEXURE-6A</div>
+            <div class="annexure-doc-subtitle">LIST OF DOCUMENTS TO BE SUBMITTED BY CONTRACTOR FOR GATE PASS</div>
 
+            <?php
+            $annexure6aDocs = [
+                ['key' => 'medical_certificate', 'id' => 'medical', 'icon' => 'fa-file-medical', 'color' => '#ef4444', 'label' => 'Medical Fitness Certificate', 'hint' => 'Issued by Authorised Medical Attendant (AMA)', 'required' => true],
+                ['key' => 'police_clearance_certificate', 'id' => 'pcc', 'icon' => 'fa-shield-alt', 'color' => '#f59e0b', 'label' => 'Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass (Template Upload)', 'hint' => 'Issued by Local Police Station / Executing Officer', 'required' => true],
+                ['key' => 'pcc_forwarded_police', 'id' => 'pcc-police', 'icon' => 'fa-envelope-open-text', 'color' => '#6366f1', 'label' => 'Proof of forwarding PCC to Thane Police Station', 'hint' => 'Copy of mail / letter sent', 'required' => false],
+                ['key' => 'pcc_forwarded_cisf', 'id' => 'pcc-cisf', 'icon' => 'fa-envelope-circle-check', 'color' => '#14b8a6', 'label' => 'Proof of forwarding PCC to CISF', 'hint' => 'Sealed accepted copy from CISF', 'required' => false],
+                ['key' => 'pcc_police_station_name', 'id' => 'police-station', 'icon' => 'fa-building-shield', 'color' => '#8b5cf6', 'label' => 'Name of Police Station from where PCC has been obtained', 'hint' => 'Upload supporting document if available', 'required' => false],
+                ['key' => 'employee_compensation_policy', 'id' => 'ec-policy', 'icon' => 'fa-umbrella', 'color' => '#3b82f6', 'label' => 'Employee Compensation Policy if not covered under ESI', 'hint' => 'Issued by licensed insurance companies', 'required' => true],
+                ['key' => 'esi_epf_undertaking', 'id' => 'esi-epf', 'icon' => 'fa-file-signature', 'color' => '#10b981', 'label' => 'ESI / EPF Undertaking if not covered under ESI / EPF', 'hint' => 'Issued by contractor', 'required' => false],
+            ];
+            ?>
+            <?php foreach ($annexure6aDocs as $index => $doc): ?>
             <div class="doc-upload-item">
               <div class="doc-upload-info">
-                <i class="fas fa-file-medical" style="color:#ef4444;"></i>
+                <i class="fas <?= $doc['icon'] ?>" style="color:<?= $doc['color'] ?>;"></i>
                 <div>
-                  <div class="doc-name">Medical Certificate <span class="badge badge-danger" style="font-size:10px;">Required</span></div>
-                  <div class="doc-hint">Current fitness certificate from authorized doctor</div>
+                  <div class="doc-name">
+                    <span class="doc-serial"><?= $index + 1 ?>.</span>
+                    <?= htmlspecialchars($doc['label']) ?>
+                    <span class="badge <?= $doc['required'] ? 'badge-danger' : 'badge-gray' ?> doc-status"><?= $doc['required'] ? 'Mandatory' : 'Optional' ?></span>
+                  </div>
+                  <div class="doc-hint"><?= htmlspecialchars($doc['hint']) ?></div>
                 </div>
               </div>
-              <input type="file" name="medical_certificate" accept=".pdf,.jpg,.jpeg,.png" required class="doc-file-input" id="doc-medical">
-              <label for="doc-medical" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
-              <span class="doc-filename" id="fn-medical">No file</span>
+              <input type="file" name="<?= htmlspecialchars($doc['key']) ?>" accept=".pdf,.jpg,.jpeg,.png" <?= $doc['required'] ? 'required' : '' ?> class="doc-file-input" id="doc-<?= htmlspecialchars($doc['id']) ?>">
+              <label for="doc-<?= htmlspecialchars($doc['id']) ?>" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
+              <span class="doc-filename" id="fn-<?= htmlspecialchars($doc['id']) ?>">No file</span>
             </div>
-
-            <div class="doc-upload-item">
-              <div class="doc-upload-info">
-                <i class="fas fa-shield-alt" style="color:#f59e0b;"></i>
-                <div>
-                  <div class="doc-name">Police Verification <span class="badge badge-danger" style="font-size:10px;">Required</span></div>
-                  <div class="doc-hint">Character verification from local police station</div>
-                </div>
-              </div>
-              <input type="file" name="police_verification" accept=".pdf,.jpg,.jpeg,.png" required class="doc-file-input" id="doc-police">
-              <label for="doc-police" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
-              <span class="doc-filename" id="fn-police">No file</span>
-            </div>
-
-            <div class="doc-upload-item">
-              <div class="doc-upload-info">
-                <i class="fas fa-umbrella" style="color:#3b82f6;"></i>
-                <div>
-                  <div class="doc-name">Insurance Certificate <span class="badge badge-danger" style="font-size:10px;">Required</span></div>
-                  <div class="doc-hint">Valid workmen compensation insurance</div>
-                </div>
-              </div>
-              <input type="file" name="insurance" accept=".pdf,.jpg,.jpeg,.png" required class="doc-file-input" id="doc-insurance">
-              <label for="doc-insurance" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
-              <span class="doc-filename" id="fn-insurance">No file</span>
-            </div>
-
-            <div class="doc-upload-item">
-              <div class="doc-upload-info">
-                <i class="fas fa-id-card" style="color:#6366f1;"></i>
-                <div>
-                  <div class="doc-name">Age Proof <span class="badge badge-danger" style="font-size:10px;">Required</span></div>
-                  <div class="doc-hint">Aadhaar, Passport or Birth Certificate</div>
-                </div>
-              </div>
-              <input type="file" name="age_proof" accept=".pdf,.jpg,.jpeg,.png" required class="doc-file-input" id="doc-age">
-              <label for="doc-age" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
-              <span class="doc-filename" id="fn-age">No file</span>
-            </div>
-
-            <div class="doc-upload-item">
-              <div class="doc-upload-info">
-                <i class="fas fa-map-marker-alt" style="color:#ec4899;"></i>
-                <div>
-                  <div class="doc-name">Address Proof <span class="badge badge-danger" style="font-size:10px;">Required</span></div>
-                  <div class="doc-hint">Aadhaar, Voter ID or Electric Bill</div>
-                </div>
-              </div>
-              <input type="file" name="address_proof" accept=".pdf,.jpg,.jpeg,.png" required class="doc-file-input" id="doc-address">
-              <label for="doc-address" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
-              <span class="doc-filename" id="fn-address">No file</span>
-            </div>
-
-            <div class="doc-upload-item">
-              <div class="doc-upload-info">
-                <i class="fas fa-university" style="color:#06b6d4;"></i>
-                <div>
-                  <div class="doc-name">Bank Account Proof <span class="badge badge-danger" style="font-size:10px;">Required</span></div>
-                  <div class="doc-hint">Passbook front page or Cancelled Cheque</div>
-                </div>
-              </div>
-              <input type="file" name="bank_proof" accept=".pdf,.jpg,.jpeg,.png" required class="doc-file-input" id="doc-bank">
-              <label for="doc-bank" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
-              <span class="doc-filename" id="fn-bank">No file</span>
-            </div>
-
-            <div class="doc-upload-item">
-              <div class="doc-upload-info">
-                <i class="fas fa-graduation-cap" style="color:#10b981;"></i>
-                <div>
-                  <div class="doc-name">Training Certificate <span class="badge badge-danger" style="font-size:10px;">Required</span></div>
-                  <div class="doc-hint">Safety training completion certificate</div>
-                </div>
-              </div>
-              <input type="file" name="training_certificate" accept=".pdf,.jpg,.jpeg,.png" required class="doc-file-input" id="doc-training">
-              <label for="doc-training" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
-              <span class="doc-filename" id="fn-training">No file</span>
-            </div>
-
-            <div class="form-section-label" style="margin-top:16px;">📎 Optional Documents</div>
-
-            <div class="doc-upload-item">
-              <div class="doc-upload-info">
-                <i class="fas fa-syringe" style="color:#8b5cf6;"></i>
-                <div>
-                  <div class="doc-name">COVID Certificate <span class="badge badge-gray" style="font-size:10px;">Optional</span></div>
-                  <div class="doc-hint">Vaccination certificate (if required)</div>
-                </div>
-              </div>
-              <input type="file" name="covid_certificate" accept=".pdf,.jpg,.jpeg,.png" class="doc-file-input" id="doc-covid">
-              <label for="doc-covid" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
-              <span class="doc-filename" id="fn-covid">No file</span>
-            </div>
+            <?php endforeach; ?>
 
             <div class="form-group" style="margin-top:12px;">
               <label class="form-label">Additional Remarks</label>
@@ -273,9 +235,12 @@ function renderContent() {
               <td>
                 <?php
                   $st = $gp['status'] ?? 'pending';
-                  $sc = ['active'=>'badge-success','pending'=>'badge-warning','rejected'=>'badge-danger','expired'=>'badge-gray','approved'=>'badge-success'];
+                  if ((int)($gp['rejected_doc_count'] ?? 0) > 0 && !in_array($st, ['approved', 'active', 'issued'], true)) {
+                    $st = 'reupload_required';
+                  }
+                  $sc = ['active'=>'badge-success','pending'=>'badge-warning','reupload_required'=>'badge-danger','rejected'=>'badge-danger','expired'=>'badge-gray','approved'=>'badge-success'];
                 ?>
-                <span class="badge <?= $sc[$st] ?? 'badge-gray' ?>"><?= strtoupper($st) ?></span>
+                <span class="badge <?= $sc[$st] ?? 'badge-gray' ?>"><?= strtoupper(str_replace('_', ' ', $st)) ?></span>
               </td>
               <td>
                 <a href="pass_status.php" class="btn btn-sm btn-outline"><i class="fas fa-eye"></i></a>
@@ -304,14 +269,18 @@ function renderContent() {
     .ptc-inner small { font-size:11px;color:var(--text-muted);font-weight:400; }
     .pass-type-card input:checked ~ .ptc-inner { border-color:#6366f1;background:rgba(99,102,241,.08);color:#6366f1; }
     .pass-type-card input:checked ~ .ptc-inner i { color:#6366f1; }
+    .annexure-doc-title { text-align:center;font-size:14px;font-weight:800;letter-spacing:.4px;margin-top:16px;color:var(--text-primary); }
+    .annexure-doc-subtitle { text-align:center;font-size:11px;font-weight:700;margin:4px 0 10px;color:var(--text-muted); }
     .doc-upload-item { display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border-color);border-radius:10px;margin-bottom:8px;flex-wrap:wrap; }
-    .doc-upload-info { display:flex;align-items:center;gap:10px;flex:1; }
-    .doc-upload-info i { font-size:20px; }
-    .doc-name { font-size:13px;font-weight:600; }
-    .doc-hint { font-size:11px;color:var(--text-muted); }
+    .doc-upload-info { display:flex;align-items:center;gap:10px;flex:1;min-width:0; }
+    .doc-upload-info i { font-size:20px;flex:0 0 auto; }
+    .doc-name { font-size:13px;font-weight:600;line-height:1.35; }
+    .doc-serial { color:var(--text-muted);margin-right:3px; }
+    .doc-hint { font-size:11px;color:var(--text-muted);margin-top:2px; }
     .doc-file-input { width:0.1px; height:0.1px; opacity:0; overflow:hidden; position:absolute; z-index:-1; }
     .doc-upload-btn { white-space:nowrap; }
     .doc-filename { font-size:11px;color:var(--text-muted);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .doc-status { font-size:10px;margin-left:4px; }
     .empty-state { text-align:center;color:var(--text-muted); }
     </style>
 

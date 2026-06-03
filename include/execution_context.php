@@ -314,6 +314,12 @@ function clms_execution_ensure_schema($conn) {
             'is_read' => 'TINYINT(1) DEFAULT 0',
             'created_at' => 'DATETIME NULL',
         ],
+        'workmen' => [
+            'execution_training_status' => "VARCHAR(30) DEFAULT 'pending'",
+            'execution_training_remarks' => 'TEXT NULL',
+            'execution_training_reviewed_by' => 'BIGINT NULL',
+            'execution_training_reviewed_at' => 'DATETIME NULL',
+        ],
     ] as $table => $columns) {
         foreach ($columns as $column => $definition) {
             clms_execution_ensure_column($conn, $table, $column, $definition);

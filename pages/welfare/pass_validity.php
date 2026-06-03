@@ -189,9 +189,16 @@ function renderContent() {
           const res = await fetch('../../api/welfare/extend_pass.php', {
             method: 'POST',
             body: JSON.stringify(data),
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.CLMS_CSRF_TOKEN || '' }
           });
-          const result = await res.json();
+          const raw = await res.text();
+          let result = {};
+          try {
+            result = raw ? JSON.parse(raw) : {};
+          } catch (parseError) {
+            result = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+          }
+          if (!res.ok && !result.message) result.message = 'Pass extension failed on the server.';
           if (result.success) {
             alert(result.message || 'Pass extended successfully!');
             location.reload();

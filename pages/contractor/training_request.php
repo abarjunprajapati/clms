@@ -19,13 +19,15 @@ function renderContent() {
     // Eligible workers (pending training)
     $eligible_workers = $c_id ? db_fetch_all($conn,
         "SELECT id, name, trade, skill, temp_id FROM workmen
-         WHERE contractor_id = ? AND training_status IN ('pending','training_pending','training_failed','fail')
+         WHERE contractor_id = ?
+           AND COALESCE(execution_training_status, 'pending') = 'approved'
+           AND training_status IN ('pending','training_pending','training_failed','fail')
          ORDER BY name",
         'i', [$c_id]) : [];
 
     // All training requests for this contractor with full details
     $my_requests = $c_id ? db_fetch_all($conn,
-        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade
+        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade, COALESCE(w.execution_training_status, 'pending') AS execution_training_status
          FROM training_requests tr
          JOIN workmen w ON tr.workman_id = w.id
          WHERE tr.contractor_id = ?
@@ -90,7 +92,7 @@ function renderContent() {
           <div class="empty-state" style="padding:30px 0; text-align:center; color:var(--text-muted);">
             <i class="fas fa-graduation-cap" style="font-size:40px;opacity:.2;display:block;margin-bottom:12px;"></i>
             <p style="font-weight:600;">No eligible workers</p>
-            <p style="font-size:13px;">All workers are trained or <a href="enrolment-4a.php">enrol workers</a> first.</p>
+            <p style="font-size:13px;">Worker training request ke liye Executive Officer training attendance approval required hai.</p>
           </div>
           <?php else: ?>
           <form id="trainingForm">
@@ -190,7 +192,10 @@ function renderContent() {
             <?php foreach ($my_requests as $r): ?>
             <?php
               $st = $r['status'] ?? 'pending';
+              $executionApproved = strtolower((string)($r['execution_training_status'] ?? 'pending')) === 'approved';
+              $displayStatus = (!$executionApproved && in_array($st, ['pending','failed','correction_required'], true)) ? 'exec_pending' : $st;
               $sc = [
+                'exec_pending'          => 'badge-gray',
                 'pending'              => 'badge-warning',
                 'scheduled'            => 'badge-info',
                 'contractor_confirmed' => 'badge-primary',
@@ -226,7 +231,11 @@ function renderContent() {
                   <span style="color:var(--text-muted); font-size:12px;">Awaiting schedule…</span>
                 <?php endif; ?>
               </td>
-              <td><span class="badge <?= $sc[$st] ?? 'badge-gray' ?>"><?= strtoupper(str_replace('_', ' ', $st)) ?></span></td>
+              <td>
+                <span class="badge <?= $sc[$displayStatus] ?? 'badge-gray' ?>">
+                  <?= $displayStatus === 'exec_pending' ? 'EXEC APPROVAL PENDING' : strtoupper(str_replace('_', ' ', $st)) ?>
+                </span>
+              </td>
               <td>
                 <?php if ($st === 'scheduled'): ?>
                 <button class="btn btn-sm btn-primary" onclick='openConfirmModal(<?= json_encode([

@@ -279,7 +279,14 @@ function renderContent() {
             body: JSON.stringify(data),
             headers: { 'Content-Type': 'application/json' }
           });
-          const result = await res.json();
+          const raw = await res.text();
+          let result = {};
+          try {
+            result = raw ? JSON.parse(raw) : {};
+          } catch (parseError) {
+            result = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+          }
+          if (!res.ok && !result.message) result.message = 'Temporary pass issue failed on the server.';
           if (result.success) {
             alert(result.message || 'Temporary pass issued successfully!');
             window.location.href = 'acc_generation.php';

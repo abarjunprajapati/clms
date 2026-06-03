@@ -279,10 +279,19 @@ function renderContent() {
         try {
             const res = await fetch('../../api/welfare/block_contractor.php', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+                },
                 body: JSON.stringify(data)
             });
-            const result = await res.json();
+            const raw = await res.text();
+            let result = {};
+            try {
+                result = raw ? JSON.parse(raw) : {};
+            } catch (err) {
+                result = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+            }
             if (result.success) {
                 location.reload();
             } else {
@@ -299,10 +308,19 @@ function renderContent() {
         try {
             const res = await fetch('../../api/welfare/block_contractor.php', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+                },
                 body: JSON.stringify({ contractor_id: id, action: 'unblock' })
             });
-            const result = await res.json();
+            const raw = await res.text();
+            let result = {};
+            try {
+                result = raw ? JSON.parse(raw) : {};
+            } catch (err) {
+                result = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+            }
             if (result.success) {
                 location.reload();
             } else {

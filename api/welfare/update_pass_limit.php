@@ -66,7 +66,8 @@ function passLimitEnsureSchema($conn) {
 
     $requiredColumns = [
         'rule' => "ALTER TABLE `pass_limits` ADD COLUMN `rule` VARCHAR(100) NOT NULL DEFAULT 'Fixed' AFTER `max_allowed`",
-        'ratio_per_workmen' => "ALTER TABLE `pass_limits` ADD COLUMN `ratio_per_workmen` INT DEFAULT NULL AFTER `rule`",
+        'description' => "ALTER TABLE `pass_limits` ADD COLUMN `description` TEXT DEFAULT NULL AFTER `rule`",
+        'ratio_per_workmen' => "ALTER TABLE `pass_limits` ADD COLUMN `ratio_per_workmen` INT DEFAULT NULL AFTER `description`",
         'override_allowed' => "ALTER TABLE `pass_limits` ADD COLUMN `override_allowed` TINYINT(1) NOT NULL DEFAULT 1 AFTER `ratio_per_workmen`",
         'current_count' => "ALTER TABLE `pass_limits` ADD COLUMN `current_count` INT DEFAULT 0 AFTER `override_allowed`"
     ];
@@ -130,34 +131,39 @@ if (!is_array($data)) {
     passLimitJson(['success' => false, 'error' => 'Invalid JSON payload.'], 400);
 }
 
-$contractor_id = (int)($data['contractor_id'] ?? 0);
+$contractor_id = isset($data['contractor_id']) ? (int)$data['contractor_id'] : -1;
 $pass_type = trim((string)($data['pass_type'] ?? ''));
 $max_input = $data['max_allowed'] ?? null;
 $max_allowed = ($max_input === '' || $max_input === null) ? null : (int)$max_input;
 $override = ((string)($data['override_allowed'] ?? '1') === '0') ? 0 : 1;
+$custom_rule = trim((string)($data['rule'] ?? ''));
+$description = trim((string)($data['description'] ?? ''));
+$description = $description === '' ? null : $description;
 
-if (!$contractor_id || !$pass_type) {
+if ($contractor_id < 0 || !$pass_type) {
     passLimitJson(['success' => false, 'error' => 'Contractor and Pass Type are required.'], 400);
 }
 
-$activeContractor = db_single(
-    $conn,
-    "SELECT c.id
-     FROM contractors c
-     WHERE c.id = ?
-       AND EXISTS (
-           SELECT 1
-           FROM users u
-           WHERE u.role = 'contractor'
-             AND u.status = 'active'
-             AND (u.id = c.user_id OR u.contractor_id = c.vendor_code)
-       )
-     LIMIT 1",
-    'i',
-    [$contractor_id]
-);
-if (!$activeContractor) {
-    passLimitJson(['success' => false, 'error' => 'Only active contractor users can be assigned pass limits.'], 400);
+if ($contractor_id > 0) {
+    $activeContractor = db_single(
+        $conn,
+        "SELECT c.id
+         FROM contractors c
+         WHERE c.id = ?
+           AND EXISTS (
+               SELECT 1
+               FROM users u
+               WHERE u.role = 'contractor'
+                 AND u.status = 'active'
+                 AND (u.id = c.user_id OR u.contractor_id = c.vendor_code)
+           )
+         LIMIT 1",
+        'i',
+        [$contractor_id]
+    );
+    if (!$activeContractor) {
+        passLimitJson(['success' => false, 'error' => 'Only active contractor users can be assigned pass limits.'], 400);
+    }
 }
 
 $valid_types = ['Contractor', 'Representative', 'Supervisor', 'Workman'];
@@ -181,6 +187,9 @@ if ($pass_type === 'Supervisor') {
 } elseif ($pass_type === 'Workman') {
     $rule = 'No limit';
 }
+if ($custom_rule !== '') {
+    $rule = $custom_rule;
+}
 
 $schema = passLimitEnsureSchema($conn);
 if (!$schema['ok']) {
@@ -195,23 +204,23 @@ if (!$existing['ok']) {
 if ($existing['id']) {
     $stmt = mysqli_prepare(
         $conn,
-        "UPDATE pass_limits SET max_allowed=?, rule=?, ratio_per_workmen=?, override_allowed=? WHERE id=?"
+        "UPDATE pass_limits SET max_allowed=?, rule=?, description=?, ratio_per_workmen=?, override_allowed=? WHERE id=?"
     );
     if (!$stmt) {
         passLimitJson(['success' => false, 'error' => 'Update prepare failed: ' . mysqli_error($conn)], 500);
     }
 
-    mysqli_stmt_bind_param($stmt, 'isiii', $max_allowed, $rule, $ratio, $override, $existing['id']);
+    mysqli_stmt_bind_param($stmt, 'issiii', $max_allowed, $rule, $description, $ratio, $override, $existing['id']);
 } else {
     $stmt = mysqli_prepare(
         $conn,
-        "INSERT INTO pass_limits (contractor_id, pass_type, max_allowed, rule, ratio_per_workmen, override_allowed, current_count) VALUES (?,?,?,?,?,?,0)"
+        "INSERT INTO pass_limits (contractor_id, pass_type, max_allowed, rule, description, ratio_per_workmen, override_allowed, current_count) VALUES (?,?,?,?,?,?,?,0)"
     );
     if (!$stmt) {
         passLimitJson(['success' => false, 'error' => 'Insert prepare failed: ' . mysqli_error($conn)], 500);
     }
 
-    mysqli_stmt_bind_param($stmt, 'isisii', $contractor_id, $pass_type, $max_allowed, $rule, $ratio, $override);
+    mysqli_stmt_bind_param($stmt, 'isissii', $contractor_id, $pass_type, $max_allowed, $rule, $description, $ratio, $override);
 }
 
 if (!mysqli_stmt_execute($stmt)) {

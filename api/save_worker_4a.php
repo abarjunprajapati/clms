@@ -38,6 +38,7 @@ register_shutdown_function(function() {
 try {
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customer_portal_context.php';
+require_once __DIR__ . '/../include/wage_settings.php';
 require_once __DIR__ . '/api_helper.php';
 
 // include/session.php installs diagnostic handlers; restore JSON handlers for this API.
@@ -268,6 +269,10 @@ function worker4a_ensure_schema($conn) {
         'certified_wage_rate' => 'VARCHAR(100) NULL',
         'safety_language' => 'VARCHAR(50) NULL',
         'training_approval_doc' => 'VARCHAR(255) NULL',
+        'execution_training_status' => "VARCHAR(30) DEFAULT 'pending'",
+        'execution_training_remarks' => 'TEXT NULL',
+        'execution_training_reviewed_by' => 'BIGINT NULL',
+        'execution_training_reviewed_at' => 'DATETIME NULL',
         'photo' => 'VARCHAR(255) NULL',
         'education_doc' => 'VARCHAR(255) NULL',
         'educational_doc' => 'VARCHAR(255) NULL',
@@ -530,6 +535,14 @@ worker4a_ensure_schema($conn);
         if (trim($data['certified_wage_rate'] ?? '') === '') {
             throw new Exception("Certified Wage Rate is mandatory.");
         }
+        $minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
+        $submittedWage = clms_parse_wage_amount($data['certified_wage_rate'] ?? '');
+        if ($submittedWage === null) {
+            throw new Exception("Please enter a valid Certified Wage Rate.");
+        }
+        if ($minimumCertifiedWage > 0 && $submittedWage < $minimumCertifiedWage) {
+            throw new Exception("Certified Wage Rate cannot be less than " . number_format($minimumCertifiedWage, 2) . ".");
+        }
         if (trim($data['safety_language'] ?? '') === '') {
             throw new Exception("Language Preferred for Safety Induction is mandatory.");
         }
@@ -667,6 +680,12 @@ worker4a_ensure_schema($conn);
     $workman_row['aadhaar_doc'] = $uploaded_files['aadhaar_doc'];
     $workman_row['signature_doc'] = $uploaded_files['signature'];
     $workman_row['training_approval_doc'] = $uploaded_files['training_approval_doc'];
+    if (!empty($new_uploaded_files['training_approval_doc'])) {
+        $workman_row['execution_training_status'] = 'pending';
+        $workman_row['execution_training_remarks'] = null;
+        $workman_row['execution_training_reviewed_by'] = null;
+        $workman_row['execution_training_reviewed_at'] = null;
+    }
 
     if ($existing_workman) {
         $workman_id_new = (int)$existing_workman['id'];

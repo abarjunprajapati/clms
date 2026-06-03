@@ -3,6 +3,8 @@ require_once __DIR__ . '/../../include/auth.php';
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/workflow_engine.php';
 
+checkAuth(['safety_user', 'super_admin']);
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     die("Invalid request");
 }
@@ -16,13 +18,32 @@ if (!$session_id) {
 
 mysqli_begin_transaction($conn);
 try {
+    $pendingCount = db_count(
+        $conn,
+        "SELECT COUNT(*) c
+         FROM training_session_workers
+         WHERE session_id = ?
+           AND (
+               LOWER(COALESCE(attendance_status, 'pending')) = 'pending'
+               OR LOWER(COALESCE(result, 'pending')) NOT IN ('pass', 'fail', 'passed', 'failed')
+           )",
+        'i',
+        [$session_id]
+    );
+
+    if ($pendingCount > 0) {
+        throw new Exception("Please save attendance and marks/results for all workers before finalizing. Pending: $pendingCount");
+    }
+
     // 1. Mark session as completed
     db_execute($conn, "UPDATE training_schedule SET session_status='completed' WHERE id=?", 'i', [$session_id]);
     
     // 2. Mark corresponding training requests as completed
-    $workers = db_fetch_all($conn, "SELECT workman_id FROM training_session_workers WHERE session_id=?", 'i', [$session_id]);
+    $workers = db_fetch_all($conn, "SELECT workman_id, result FROM training_session_workers WHERE session_id=?", 'i', [$session_id]);
     foreach ($workers as $w) {
-        db_execute($conn, "UPDATE training_requests SET status='completed' WHERE workman_id=? AND status='scheduled'", 'i', [$w['workman_id']]);
+        $result = strtolower((string)($w['result'] ?? 'fail'));
+        $requestStatus = in_array($result, ['pass', 'passed'], true) ? 'passed' : 'failed';
+        db_execute($conn, "UPDATE training_requests SET status=?, updated_at=NOW() WHERE workman_id=? AND status IN ('scheduled', 'contractor_confirmed', 'pending')", 'si', [$requestStatus, $w['workman_id']]);
         
         // Notify contractor of completion
         // triggerNotification($conn, ...);

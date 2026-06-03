@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
-checkAuth(['welfare_user']);
+checkAuth(['welfare_user', 'welfare_admin', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
 $role=$_SESSION['role'];

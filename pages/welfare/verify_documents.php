@@ -57,9 +57,66 @@ function welfareDocUrl($path) {
     return '../../' . ltrim(str_replace('\\', '/', $path), '/');
 }
 
+function welfareGatePassDocTypesSql($conn) {
+    $types = [
+        'Medical Fitness Certificate',
+        'Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass (Template Upload)',
+        'Proof of forwarding PCC to Thane Police Station',
+        'Proof of forwarding PCC to CISF',
+        'Name of Police Station from where PCC has been obtained',
+        'Employee Compensation Policy if not covered under ESI',
+        'ESI / EPF Undertaking if not covered under ESI / EPF',
+    ];
+
+    return "'" . implode("','", array_map([$conn, 'real_escape_string'], $types)) . "'";
+}
+
+function welfareGatePassDocsApprovedForWorker($conn, $workmanId, $gatePassDocTypesSql) {
+    $workmanId = (int)$workmanId;
+    $docs = [];
+    $res = $conn->query("
+        SELECT d.document_type, COALESCE(d.status, 'pending') AS status
+        FROM documents d
+        JOIN (
+            SELECT document_type, MAX(id) AS latest_id
+            FROM documents
+            WHERE workman_id = $workmanId
+              AND document_type IN ($gatePassDocTypesSql)
+            GROUP BY document_type
+        ) latest_docs ON latest_docs.latest_id = d.id
+    ");
+    while ($res && ($row = $res->fetch_assoc())) {
+        $docs[] = $row;
+    }
+
+    $hasMedical = false;
+    $hasPcc = false;
+    $hasCoverage = false;
+
+    foreach ($docs as $doc) {
+        $type = strtolower((string)($doc['document_type'] ?? ''));
+        $status = strtolower((string)($doc['status'] ?? 'pending'));
+        if ($status !== 'approved') {
+            return false;
+        }
+        if (strpos($type, 'medical fitness') !== false) {
+            $hasMedical = true;
+        }
+        if (strpos($type, 'pcc') !== false || strpos($type, 'police clearance') !== false || strpos($type, 'police station') !== false) {
+            $hasPcc = true;
+        }
+        if (strpos($type, 'employee compensation') !== false || strpos($type, 'esi') !== false || strpos($type, 'epf') !== false) {
+            $hasCoverage = true;
+        }
+    }
+
+    return $hasMedical && $hasPcc && $hasCoverage;
+}
+
 function renderContent() {
     global $conn;
     welfareEnsureContractorDocumentsSchema($conn);
+    $gatePassDocTypesSql = welfareGatePassDocTypesSql($conn);
 
     $workmanFilter = isset($_GET['id']) ? (int)$_GET['id'] : 0;
     $workmanFilterSql = $workmanFilter > 0 ? " AND w.id = $workmanFilter" : "";
@@ -78,7 +135,13 @@ function renderContent() {
             w.contractor_id,
             w.name AS worker_name,
             w.worker_type,
-            c.contractor_name
+            c.contractor_name,
+            (
+                SELECT COUNT(*)
+                FROM documents rd
+                WHERE rd.workman_id = w.id
+                  AND COALESCE(rd.status, 'pending') IN ('rejected', 'reupload_required')
+            ) AS rejected_doc_count
         FROM gate_pass_request_workers gprw
         JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
         JOIN workmen w ON w.id = gprw.workman_id
@@ -96,6 +159,18 @@ function renderContent() {
             $pendingApps[] = $row;
         }
     }
+
+    foreach ($pendingApps as $idx => $app) {
+        $workmanId = (int)$app['workman_id'];
+        $requestId = (int)$app['request_id'];
+        if (welfareGatePassDocsApprovedForWorker($conn, $workmanId, $gatePassDocTypesSql)) {
+            @mysqli_query($conn, "UPDATE workmen SET status = 'verified', pass_issuer_verified = 1, updated_at = NOW() WHERE id = $workmanId");
+            @mysqli_query($conn, "UPDATE gate_pass_request_workers SET status = 'approved', updated_at = NOW() WHERE request_id = $requestId AND workman_id = $workmanId");
+            @mysqli_query($conn, "UPDATE gate_pass_requests SET status = 'approved', updated_at = NOW() WHERE id = $requestId");
+            unset($pendingApps[$idx]);
+        }
+    }
+    $pendingApps = array_values($pendingApps);
 
     $approvedSql = "
         SELECT
@@ -176,7 +251,7 @@ function renderContent() {
                 <div class="table-responsive">
                     <table class="custom-data-table" style="width: 100%; border-collapse: collapse;">
                         <thead>
-                            <tr>
+                            <tr id="master-row-<?= $safeId ?>">
                                 <th>Contractor</th>
                                 <th>Role</th>
                                 <th>Worker Name</th>
@@ -201,7 +276,13 @@ function renderContent() {
                                         <div style="font-size:10px;color:#64748b;margin-top:2px;"><?= htmlspecialchars($app['application_id']) ?></div>
                                     <?php endif; ?>
                                 </td>
-                                <td><span class="badge badge-warning">Action Required</span></td>
+                                <td>
+                                    <?php if (($app['request_status'] ?? '') === 'reupload_required' || ($app['worker_request_status'] ?? '') === 'reupload_required' || (int)($app['rejected_doc_count'] ?? 0) > 0): ?>
+                                        <span class="badge badge-info">Re-upload Required</span>
+                                    <?php else: ?>
+                                        <span class="badge badge-warning">Action Required</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <button class="btn btn-sm btn-primary" onclick="toggleAppDocs('<?= $safeId ?>')">
                                         <i class="fas fa-eye"></i> View Docs
@@ -210,7 +291,7 @@ function renderContent() {
                             </tr>
                             
                             <!-- Detail Row (Accordion / Horizontal Cards) -->
-                            <tr id="docs-row-<?= $safeId ?>" class="docs-detail-row" style="display:none;">
+                            <tr id="docs-row-<?= $safeId ?>" class="docs-detail-row" style="display:none;" data-master-row="master-row-<?= $safeId ?>">
                                 <td colspan="6">
                                     <div class="docs-detail-panel">
                                         <h6 class="docs-detail-title">
@@ -232,15 +313,7 @@ function renderContent() {
                                                     d.uploaded_at
                                                 FROM documents d
                                                 WHERE d.workman_id = $workmanId
-                                                  AND d.document_type IN (
-                                                    'Medical Fitness Certificate',
-                                                    'Police Clearance Certificate',
-                                                    'Proof for Age',
-                                                    'Proof for Address',
-                                                    'Bank Account Proof',
-                                                    'Insurance (ESI/WC)',
-                                                    'Training Certificate'
-                                                  )
+                                                  AND d.document_type IN ($gatePassDocTypesSql)
                                                   AND d.uploaded_at >= DATE_SUB('$requestCreatedAt', INTERVAL 10 MINUTE)
                                             ";
                                             $docs = $conn->query("$sql1 ORDER BY uploaded_at DESC, id DESC");
@@ -363,15 +436,7 @@ function renderContent() {
                                             SELECT id, document_type, COALESCE(status, 'pending') AS status, COALESCE(remarks, '') AS remarks, file_path, uploaded_at
                                             FROM documents
                                             WHERE workman_id = $workmanId
-                                              AND document_type IN (
-                                                'Medical Fitness Certificate',
-                                                'Police Clearance Certificate',
-                                                'Proof for Age',
-                                                'Proof for Address',
-                                                'Bank Account Proof',
-                                                'Insurance (ESI/WC)',
-                                                'Training Certificate'
-                                              )
+                                              AND document_type IN ($gatePassDocTypesSql)
                                               AND uploaded_at >= DATE_SUB('$requestCreatedAt', INTERVAL 10 MINUTE)
                                             ORDER BY uploaded_at DESC, id DESC
                                         ");
@@ -503,7 +568,7 @@ function renderContent() {
     async function updateDoc(id, status, sourceTable, requestId = 0) {
         const remarks = document.getElementById('remarks-' + id).value;
         if (status === 'reupload_required' && !remarks) {
-            alert('Mandatory Remark: Please provide a reason for rejection (PDF Page 24).');
+            showToast('Please enter a clear rejection reason before requesting re-upload.', 'error');
             return;
         }
 
@@ -535,27 +600,22 @@ function renderContent() {
                     }
                 }
 
-                // If ALL documents approved → update master row status badge
+                // If all documents are approved, remove this request from the pending queue.
                 if (data.all_approved) {
                     const detailRow = card ? card.closest('tr[id^="docs-row-"]') : null;
                     if (detailRow) {
-                        const masterRow = detailRow.previousElementSibling;
-                        if (masterRow) {
-                            const masterBadge = masterRow.querySelector('.badge');
-                            if (masterBadge) {
-                                masterBadge.className = 'badge badge-success';
-                                masterBadge.innerHTML = '<i class="fas fa-check-double"></i> DOCUMENTS VERIFIED';
-                            }
-                        }
+                        const masterRowId = detailRow.dataset.masterRow;
+                        document.getElementById(masterRowId)?.remove();
+                        detailRow.remove();
                     }
-                    showToast('✅ All documents verified! Worker moved to Pending Pass Requests.', 'success');
+                    showToast('All documents are verified. The worker has moved to pending pass requests.', 'success');
                 }
             } else {
-                alert(data.message || 'Action failed.');
+                showToast(data.message || 'Unable to update the document status. Please try again.', 'error');
             }
         } catch (error) {
             console.error(error);
-            alert('Network error while updating document.');
+            showToast('Unable to update the document right now. Please check your connection and try again.', 'error');
         }
     }
 
@@ -563,7 +623,7 @@ function renderContent() {
         const remarksInput = document.getElementById('contractor-remarks-' + id);
         const remarks = remarksInput ? remarksInput.value.trim() : '';
         if (status === 'reupload_required' && !remarks) {
-            alert('Please provide a reason for rejection/re-upload.');
+            showToast('Please enter a clear rejection reason before requesting re-upload.', 'error');
             return;
         }
 
@@ -584,18 +644,18 @@ function renderContent() {
                 if (row) row.remove();
                 showToast(status === 'approved' ? 'Contractor document verified.' : 'Re-upload requested from contractor.', 'success');
             } else {
-                alert(data.message || 'Action failed.');
+                showToast(data.message || 'Unable to update the contractor document. Please try again.', 'error');
             }
         } catch (error) {
             console.error(error);
-            alert('Network error while updating contractor document.');
+            showToast('Unable to update the contractor document right now. Please check your connection and try again.', 'error');
         }
     }
 
     function showToast(message, type) {
         const toast = document.createElement('div');
-        toast.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;padding:16px 24px;border-radius:10px;color:#fff;font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.15);animation:slideIn 0.4s ease;max-width:420px;';
-        toast.style.background = type === 'success' ? 'linear-gradient(135deg, #10b981, #059669)' : '#ef4444';
+        toast.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;padding:14px 18px;border-radius:10px;color:#fff;font-size:13px;font-weight:600;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,0.15);animation:slideIn 0.4s ease;max-width:430px;';
+        toast.style.background = type === 'success' ? '#059669' : '#dc2626';
         toast.textContent = message;
         document.body.appendChild(toast);
         setTimeout(function() { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.5s'; }, 4000);

@@ -450,6 +450,7 @@ function renderSidebar($role) {
                 echo '<a href="enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Worker Management</a>';
                 echo '<a href="training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
                 echo '<a href="gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Gate Pass</a>';
+                echo '<a href="gatepass-reupload.php" class="sidebar-item"><i class="fas fa-file-circle-exclamation"></i> Re-upload Gate Pass Docs</a>';
                 echo '<a href="pass_status.php" class="sidebar-item"><i class="fas fa-id-card"></i> ACC Card</a>';
                 
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Operations & Compliance</div>';
@@ -521,6 +522,7 @@ function renderSidebar($role) {
             echo '<a href="'.$cp.'enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Worker Management</a>';
             echo '<a href="'.$cp.'training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
             echo '<a href="'.$cp.'gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Gate Pass</a>';
+            echo '<a href="'.$cp.'gatepass-reupload.php" class="sidebar-item"><i class="fas fa-file-circle-exclamation"></i> Re-upload Gate Pass Docs</a>';
             echo '<a href="'.$cp.'pass_status.php" class="sidebar-item"><i class="fas fa-fingerprint"></i> ACC Card</a>';
             
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Operations & Compliance</div>';

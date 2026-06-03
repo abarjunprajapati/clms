@@ -97,9 +97,15 @@ try {
         foreach ($workers as $w) {
             $workman_id = (int)$w['workman_id'];
             
-            // Validate documents exist
-            $docCount = db_count($conn, "SELECT count(*) FROM documents WHERE workman_id = ?", 'i', [$workman_id]);
-            if ($docCount < 6) {
+            // Validate required Annexure 6A documents exist.
+            $requiredDocTypes = [
+                'Medical Fitness Certificate',
+                'Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass (Template Upload)',
+                'Employee Compensation Policy if not covered under ESI',
+            ];
+            $requiredDocTypesSql = "'" . implode("','", array_map([$conn, 'real_escape_string'], $requiredDocTypes)) . "'";
+            $docCount = db_count($conn, "SELECT COUNT(DISTINCT document_type) FROM documents WHERE workman_id = ? AND document_type IN ($requiredDocTypesSql)", 'i', [$workman_id]);
+            if ($docCount < 3) {
                 throw new Exception("Worker ID $workman_id does not have all required Annexure 6A documents.");
             }
             

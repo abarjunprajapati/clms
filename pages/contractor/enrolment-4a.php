@@ -5,6 +5,7 @@ include '../../include/config.php';
 include '../../include/customer_portal_context.php';
 include '../../include/education_flow.php';
 include '../../include/layout.php';
+require_once '../../include/wage_settings.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -25,6 +26,7 @@ $selectedType = $enrolmentTypeMap[$requestedType];
 $prefillAadhaar = preg_replace('/\D+/', '', (string)($_GET['aadhaar'] ?? ''));
 clms_get_portal_contractor($conn);
 $educationFlow = clms_get_education_flow($conn);
+$minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
 
 function enrolment_table_exists($conn, $table) {
     $table = mysqli_real_escape_string($conn, $table);
@@ -1077,7 +1079,8 @@ function renderContent() {
               </div>
               <div class="form-group">
                 <label class="form-label required">Certified Wage Rate</label>
-                <input type="text" class="form-control" name="certified_wage_rate" required>
+                <input type="number" class="form-control" name="certified_wage_rate" id="certifiedWageRate" min="<?= htmlspecialchars((string)$minimumCertifiedWage) ?>" step="0.01" required>
+                <small class="form-hint">Minimum allowed: <?= number_format((float)$minimumCertifiedWage, 2) ?></small>
               </div>
               <div class="form-group">
                 <label class="form-label required">Language Preferred for Safety Induction</label>
@@ -1106,8 +1109,8 @@ function renderContent() {
                 <small class="form-hint">PDF only, max 5 MB.</small>
               </div>
               <div class="doc-card">
-                <label class="form-label required">Training Attendance Approval by Executing Officer / Mentor</label>
-                <input type="file" class="form-control" name="training_approval_doc" accept=".pdf,application/pdf" data-max-size="5242880" required>
+                <label class="form-label">Training Attendance Approval by Executing Officer / Mentor</label>
+                <input type="file" class="form-control" name="training_approval_doc" accept=".pdf,application/pdf" data-max-size="5242880">
                 <small class="form-hint">PDF only, max 5 MB.</small>
               </div>
             </div>
@@ -1299,6 +1302,8 @@ function renderContent() {
         const maxDob = dobInput ? new Date(dobInput.max + 'T00:00:00') : null;
         const photoMaxSize = 2 * 1024 * 1024;
         const pdfMaxSize = 5 * 1024 * 1024;
+        const minimumCertifiedWage = <?= json_encode((float)$minimumCertifiedWage) ?>;
+        const certifiedWageInput = document.getElementById('certifiedWageRate');
         const indianStateDistricts = {
           'Andhra Pradesh': ['Anantapur', 'Chittoor', 'East Godavari', 'Guntur', 'Krishna', 'Kurnool', 'Prakasam', 'SPSR Nellore', 'Srikakulam', 'Visakhapatnam', 'Vizianagaram', 'West Godavari', 'YSR Kadapa'],
           'Arunachal Pradesh': ['Anjaw', 'Changlang', 'East Kameng', 'East Siang', 'Itanagar Capital Complex', 'Lohit', 'Lower Dibang Valley', 'Lower Subansiri', 'Namsai', 'Papum Pare', 'Tawang', 'Tirap', 'Upper Siang', 'Upper Subansiri', 'West Kameng', 'West Siang'],
@@ -1984,6 +1989,31 @@ function renderContent() {
           return Promise.resolve();
         }
 
+        function parseWageValue(value) {
+          const normalized = String(value || '').replace(/[^0-9.]/g, '');
+          if (!normalized) return NaN;
+          return Number(normalized);
+        }
+
+        function validateCertifiedWage(showMessage = true) {
+          if (!certifiedWageInput || minimumCertifiedWage <= 0) return true;
+          const wage = parseWageValue(certifiedWageInput.value);
+          if (!Number.isFinite(wage) || wage >= minimumCertifiedWage) return true;
+
+          if (showMessage) {
+            activateTab('work');
+            notify(
+              'Certified Wage Rate Too Low',
+              `Certified Wage Rate cannot be less than ${minimumCertifiedWage.toFixed(2)}. Please enter an approved wage rate.`,
+              'warning'
+            );
+            certifiedWageInput.focus();
+          }
+          return false;
+        }
+
+        certifiedWageInput?.addEventListener('blur', () => validateCertifiedWage(true));
+
         async function submitEnrollment(action = 'submit') {
           setHiddenWorkFields();
 
@@ -2023,6 +2053,10 @@ function renderContent() {
           if (!validateDobAge(false)) {
             focusInvalidField(dobInput);
             showInvalidFieldMessage(dobInput);
+            return;
+          }
+
+          if (!validateCertifiedWage(true)) {
             return;
           }
 

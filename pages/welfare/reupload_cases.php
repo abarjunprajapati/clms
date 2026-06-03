@@ -8,18 +8,70 @@ include __DIR__ . '/../../include/layout.php';
 $role = get_normalized_role();
 $name = $_SESSION['name'] ?? 'Pass Issuing Officer';
 
+function reuploadCasesEnsureColumn($conn, $table, $column, $definition) {
+    try {
+        $safeTable = str_replace('`', '``', $table);
+        $safeColumn = mysqli_real_escape_string($conn, $column);
+        $exists = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+        if ($exists && mysqli_num_rows($exists) === 0) {
+            @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$column` $definition");
+        }
+    } catch (Throwable $e) {
+        error_log("reupload cases schema check failed: " . $e->getMessage());
+    }
+}
+
 function renderContent() {
     global $conn;
+    reuploadCasesEnsureColumn($conn, 'documents', 'remarks', 'TEXT NULL');
+    reuploadCasesEnsureColumn($conn, 'documents', 'uploaded_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP');
     
-    $query = "SELECT w.*, c.contractor_name 
-              FROM workmen w 
-              JOIN contractors c ON w.contractor_id = c.id 
-              WHERE w.status IN ('rejected', 'reupload_pending')
-              ORDER BY w.updated_at DESC";
+    $query = "
+        SELECT
+            d.id AS document_id,
+            d.document_type,
+            d.file_path,
+            COALESCE(d.status, 'pending') AS doc_status,
+            COALESCE(d.remarks, '') AS remarks,
+            d.uploaded_at,
+            w.id AS workman_id,
+            w.name AS worker_name,
+            w.temp_id,
+            c.contractor_name,
+            (
+                SELECT gpr2.id
+                FROM gate_pass_request_workers gprw2
+                JOIN gate_pass_requests gpr2 ON gpr2.id = gprw2.request_id
+                WHERE gprw2.workman_id = w.id
+                ORDER BY gpr2.created_at DESC, gpr2.id DESC
+                LIMIT 1
+            ) AS request_id,
+            (
+                SELECT gpr2.request_no
+                FROM gate_pass_request_workers gprw2
+                JOIN gate_pass_requests gpr2 ON gpr2.id = gprw2.request_id
+                WHERE gprw2.workman_id = w.id
+                ORDER BY gpr2.created_at DESC, gpr2.id DESC
+                LIMIT 1
+            ) AS request_no,
+            (
+                SELECT COALESCE(gpr2.status, 'pending')
+                FROM gate_pass_request_workers gprw2
+                JOIN gate_pass_requests gpr2 ON gpr2.id = gprw2.request_id
+                WHERE gprw2.workman_id = w.id
+                ORDER BY gpr2.created_at DESC, gpr2.id DESC
+                LIMIT 1
+            ) AS request_status
+        FROM documents d
+        JOIN workmen w ON w.id = d.workman_id
+        LEFT JOIN contractors c ON w.contractor_id = c.id
+        WHERE COALESCE(d.status, 'pending') IN ('rejected', 'reupload_required')
+        ORDER BY d.uploaded_at DESC, d.id DESC
+    ";
     $rejected = db_fetch_all($conn, $query);
     ?>
     <div class="content-header">
-      <h2 class="page-title">Rejected / Re-upload Cases</h2>
+      <h2 class="page-title">Rejected / Re-upload Document Records</h2>
       <!-- <p class="page-subtitle">Track workmen whose documents were rejected and are awaiting correction by the contractor.</p> -->
     </div>
 
@@ -30,41 +82,53 @@ function renderContent() {
             <tr>
               <th>Workman</th>
               <th>Contractor</th>
-              <th>Rejection Date</th>
+              <th>Request No</th>
+              <th>Document</th>
+              <th>Rejected On</th>
               <th>Remarks / Reason</th>
-              <th>New Uploads</th>
+              <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            <?php foreach($rejected as $r): 
-                // Check if any documents were updated after the last workman update
-                $new_docs = db_count($conn, "SELECT COUNT(*) FROM workman_documents WHERE workman_id = ? AND updated_at > ?", "is", [$r['id'], $r['updated_at']]);
-            ?>
+            <?php foreach($rejected as $r): ?>
             <tr>
               <td>
-                <div style="font-weight:600"><?= htmlspecialchars($r['name']) ?></div>
-                <div style="font-size:11px; opacity:0.6">ID: <?= $r['id'] ?></div>
+                <div style="font-weight:600"><?= htmlspecialchars($r['worker_name']) ?></div>
+                <div style="font-size:11px; opacity:0.6">
+                  ID: <?= (int)$r['workman_id'] ?>
+                  <?= !empty($r['temp_id']) ? ' | ' . htmlspecialchars($r['temp_id']) : '' ?>
+                </div>
               </td>
               <td><?= htmlspecialchars($r['contractor_name']) ?></td>
-              <td><?= date('d M Y', strtotime($r['updated_at'])) ?></td>
-              <td><div style="max-width:300px; font-size:13px; color:var(--danger)"><?= htmlspecialchars($r['document_remarks'] ?? 'Documents rejected by Pass Issuer') ?></div></td>
+              <td><code><?= htmlspecialchars($r['request_no'] ?? '-') ?></code></td>
               <td>
-                <?php if($new_docs > 0): ?>
-                  <span class="badge badge-success"><i class="fas fa-file-circle-check"></i> <?= $new_docs ?> New Upload(s)</span>
-                <?php else: ?>
-                  <span class="badge badge-pending">Waiting for Upload</span>
+                <div style="max-width:320px;white-space:normal;font-weight:600;"><?= htmlspecialchars($r['document_type']) ?></div>
+                <?php
+                  $docPath = !empty($r['file_path'])
+                    ? (strpos($r['file_path'], '/') === false && strpos($r['file_path'], '\\') === false
+                        ? '../../uploads/documents/' . $r['file_path']
+                        : '../../' . ltrim($r['file_path'], '/\\'))
+                    : '';
+                ?>
+                <?php if ($docPath): ?>
+                  <a href="<?= htmlspecialchars($docPath) ?>" target="_blank" class="btn btn-sm btn-outline" style="margin-top:6px;"><i class="fas fa-eye"></i> View File</a>
                 <?php endif; ?>
               </td>
+              <td><?= !empty($r['uploaded_at']) ? date('d M Y, H:i', strtotime($r['uploaded_at'])) : '-' ?></td>
+              <td><div style="max-width:300px; font-size:13px; color:var(--danger)"><?= htmlspecialchars($r['remarks'] ?: 'Document rejected by Pass User') ?></div></td>
               <td>
-                <a href="verify_documents.php?id=<?= $r['id'] ?>" class="btn btn-sm <?= $new_docs > 0 ? 'btn-primary' : 'btn-outline-secondary' ?>">
+                <span class="badge badge-danger"><?= strtoupper(str_replace('_', ' ', $r['doc_status'])) ?></span>
+              </td>
+              <td>
+                <a href="verify_documents.php?id=<?= (int)$r['workman_id'] ?>" class="btn btn-sm btn-primary">
                   <i class="fas fa-sync"></i> Re-verify
                 </a>
               </td>
             </tr>
             <?php endforeach; ?>
             <?php if(empty($rejected)): ?>
-            <tr><td colspan="6" class="text-center" style="padding:40px;">No rejected cases currently active.</td></tr>
+            <tr><td colspan="8" class="text-center" style="padding:40px;">No rejected document records currently active.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>
@@ -74,4 +138,3 @@ function renderContent() {
 }
 
 renderLayout("Re-upload Cases", 'renderContent', $role, $name);
-

@@ -32,7 +32,13 @@ function renderContent() {
             w.aadhaar,
             w.temp_id,
             COALESCE(gprw.gatepass_no, '') as pass_number,
-            gpr.rejection_reason
+            gpr.rejection_reason,
+            (
+                SELECT COUNT(*)
+                FROM documents d
+                WHERE d.workman_id = w.id
+                  AND COALESCE(d.status, 'pending') IN ('rejected', 'reupload_required')
+            ) AS rejected_doc_count
          FROM gate_pass_request_workers gprw
          JOIN gate_pass_requests gpr ON gprw.request_id = gpr.id
          JOIN workmen w ON gprw.workman_id = w.id
@@ -71,6 +77,14 @@ function renderContent() {
         });
     }
 
+    foreach ($passes as &$pass) {
+        $rawStatus = $pass['status'] ?? 'pending';
+        if ((int)($pass['rejected_doc_count'] ?? 0) > 0 && !in_array($rawStatus, ['approved', 'active', 'issued'], true)) {
+            $pass['status'] = 'reupload_required';
+        }
+    }
+    unset($pass);
+
     $status_filter = $_GET['status'] ?? 'all';
     if ($status_filter !== 'all') {
         $passes = array_filter($passes, function($p) use ($status_filter) { return ($p['status'] ?? '') === $status_filter; });
@@ -87,7 +101,7 @@ function renderContent() {
     <!-- Status Filter Tabs -->
     <div class="filter-tabs">
       <?php
-      $filters = ['all'=>'All Requests','pending'=>'Pending','approved'=>'Approved','active'=>'Active','rejected'=>'Rejected','expired'=>'Expired'];
+      $filters = ['all'=>'All Requests','pending'=>'Pending','reupload_required'=>'Re-upload','approved'=>'Approved','active'=>'Active','rejected'=>'Rejected','expired'=>'Expired'];
       foreach ($filters as $val => $label):
         $count = $val === 'all' ? count($passes) : count(array_filter($passes, function($p) use ($val) { return ($p['status']??'') === $val; }));
       ?>
@@ -111,8 +125,11 @@ function renderContent() {
     <div class="pass-cards">
     <?php foreach ($passes as $gp):
       $st = $gp['status'] ?? 'pending';
-      $colors = ['active'=>'#10b981','pending'=>'#f59e0b','rejected'=>'#ef4444','expired'=>'#6b7280','approved'=>'#3b82f6'];
-      $icons  = ['active'=>'fa-check-circle','pending'=>'fa-clock','rejected'=>'fa-times-circle','expired'=>'fa-calendar-times','approved'=>'fa-thumbs-up'];
+      if ((int)($gp['rejected_doc_count'] ?? 0) > 0 && !in_array($st, ['approved', 'active', 'issued'], true)) {
+        $st = 'reupload_required';
+      }
+      $colors = ['active'=>'#10b981','pending'=>'#f59e0b','reupload_required'=>'#ef4444','rejected'=>'#ef4444','expired'=>'#6b7280','approved'=>'#3b82f6'];
+      $icons  = ['active'=>'fa-check-circle','pending'=>'fa-clock','reupload_required'=>'fa-file-circle-exclamation','rejected'=>'fa-times-circle','expired'=>'fa-calendar-times','approved'=>'fa-thumbs-up'];
       $color = $colors[$st] ?? '#6b7280';
       $icon  = $icons[$st]  ?? 'fa-question-circle';
     ?>
@@ -143,6 +160,7 @@ function renderContent() {
         $order = array_keys($timeline_steps);
         $current_idx = 0;
         if ($st === 'pending') $current_idx = 1;
+        if ($st === 'reupload_required') $current_idx = 1;
         if ($st === 'approved') $current_idx = 3;
         if ($st === 'active') $current_idx = 4;
         
@@ -153,7 +171,7 @@ function renderContent() {
           $idx = array_search($key, $order);
           $cls = $idx <= $current_idx ? 'done' : 'future';
           if ($idx === $current_idx) $cls = 'current';
-          if ($st === 'rejected' && $idx === 0) $cls = 'rejected';
+          if (($st === 'rejected' || $st === 'reupload_required') && $idx === 1) $cls = 'rejected';
         ?>
         <div class="tl-step <?= $cls ?>">
           <div class="tl-dot"><i class="fas <?= $ts['icon'] ?>"></i></div>
@@ -179,11 +197,11 @@ function renderContent() {
           </a>
         </div>
         <?php endif; ?>
-        <?php if ($st === 'rejected'): ?>
+        <?php if ($st === 'rejected' || $st === 'reupload_required'): ?>
         <div class="rejection-note">
           <i class="fas fa-info-circle"></i>
-          <?= htmlspecialchars($gp['rejection_reason'] ?? 'Application was rejected. Please re-apply with corrected documents.') ?>
-          <a href="gatepass-6a.php" class="btn btn-sm btn-danger" style="margin-left:8px;">Re-apply</a>
+          <?= htmlspecialchars($gp['rejection_reason'] ?? 'Some documents were rejected. Please re-upload corrected documents.') ?>
+          <a href="gatepass-reupload.php" class="btn btn-sm btn-danger" style="margin-left:8px;">Re-upload Documents</a>
         </div>
         <?php endif; ?>
       </div>

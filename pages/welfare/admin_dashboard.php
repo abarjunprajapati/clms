@@ -1,9 +1,9 @@
 <?php
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 require_once __DIR__ . '/../../include/auth.php';
-checkAuth(['welfare_admin']);
+checkAuth(['welfare_admin', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
 $role = $_SESSION['role'];
@@ -174,13 +174,21 @@ $dp=wr($conn,"SELECT DATE(created_at)d,COUNT(*)c FROM gate_passes WHERE created_
     <div class="card-body">
       <?php $cats=[
         ['Contractor Pass',2,'#3b82f6','fa-hard-hat'],
-        ['Representative',2,'#6366f1','fa-user-tie'],
-        ['Supervisor (1:50)',1,'#10b981','fa-user-shield'],
+        ['Representative',1,'#6366f1','fa-user-tie'],
+        ['Supervisor (1:10 + 1)','Dynamic','#10b981','fa-user-shield'],
         ['Workman Pass','∞','#f59e0b','fa-users'],
         ['Temporary (30d)','30d','#ec4899','fa-clock'],
         ['Permanent ACC','∞','#7c3aed','fa-fingerprint'],
         ['Visitor Pass',5,'#ef4444','fa-id-badge'],
       ];
+      foreach ($cats as &$cat) {
+        if ($cat[0] === 'Workman Pass') {
+          $cat[1] = 'No fixed limit';
+        } elseif ($cat[0] === 'Permanent ACC') {
+          $cat[1] = 'Contract based';
+        }
+      }
+      unset($cat);
       foreach($cats as list($l,$v,$c,$i)):?>
       <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f1f5f9">
         <div style="width:26px;height:26px;border-radius:6px;background:<?=$c?>1a;color:<?=$c?>;display:flex;align-items:center;justify-content:center;font-size:10px"><i class="fas <?=$i?>"></i></div>

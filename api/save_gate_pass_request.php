@@ -88,12 +88,15 @@ try {
 
     $requiredDocs = [
         'medical_certificate' => 'Medical Fitness Certificate',
-        'police_verification' => 'Police Clearance Certificate',
-        'age_proof' => 'Proof for Age',
-        'address_proof' => 'Proof for Address',
-        'bank_proof' => 'Bank Account Proof',
-        'insurance' => 'Insurance (ESI/WC)',
-        'training_certificate' => 'Training Certificate'
+        'police_clearance_certificate' => 'Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass (Template Upload)',
+        'employee_compensation_policy' => 'Employee Compensation Policy if not covered under ESI'
+    ];
+
+    $optionalDocs = [
+        'pcc_forwarded_police' => 'Proof of forwarding PCC to Thane Police Station',
+        'pcc_forwarded_cisf' => 'Proof of forwarding PCC to CISF',
+        'pcc_police_station_name' => 'Name of Police Station from where PCC has been obtained',
+        'esi_epf_undertaking' => 'ESI / EPF Undertaking if not covered under ESI / EPF'
     ];
 
     foreach ($requiredDocs as $key => $name) {
@@ -107,6 +110,10 @@ try {
 
     // Upload and insert documents
     foreach ($requiredDocs as $key => $docType) {
+        uploadAnnexure6ADoc($conn, $workmanId, $docType, $key);
+    }
+
+    foreach ($optionalDocs as $key => $docType) {
         uploadAnnexure6ADoc($conn, $workmanId, $docType, $key);
     }
 

@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
-checkAuth(['welfare_user', 'welfare_admin', 'super_admin']);
+checkAuth(['pass_user', 'welfare_user', 'welfare_admin', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
 
@@ -8,13 +8,13 @@ function renderContent() {
     global $conn;
 
     // 1. Queue for ACC Generation (Point 9)
-    $accQueue = $conn->query("SELECT id, name, application_no, status FROM workmen WHERE status = 'temporary_issued' LIMIT 10");
+    $accQueue = $conn->query("SELECT id, name, application_no, status FROM workmen WHERE (status = 'temporary_issued' OR COALESCE(temp_pass_status, 0) = 1 OR COALESCE(temp_pass_no, '') != '') AND COALESCE(acc_number, '') = '' LIMIT 10");
 
     // 2. Queue for Biometric Enrollment (Point 10)
-    $bioQueue = $conn->query("SELECT id, name, acc_number, biometric_status FROM workmen WHERE status = 'acc_generated' AND biometric_status = 'pending' LIMIT 10");
+    $bioQueue = $conn->query("SELECT id, name, acc_number, biometric_status FROM workmen WHERE COALESCE(acc_number, '') != '' AND status <> 'permanent_active' AND COALESCE(biometric_status, 'pending') <> 'completed' LIMIT 10");
 
     // 3. Queue for Permanent Pass (Point 11)
-    $permQueue = $conn->query("SELECT id, name, acc_number, application_no FROM workmen WHERE status IN ('acc_generated', 'biometric_completed') AND biometric_status = 'completed' LIMIT 10");
+    $permQueue = $conn->query("SELECT id, name, acc_number, application_no FROM workmen WHERE COALESCE(acc_number, '') != '' AND status <> 'permanent_active' AND biometric_status = 'completed' LIMIT 10");
 
     ?>
     <div class="content-header">
@@ -82,7 +82,7 @@ function renderContent() {
                             <tr>
                                 <td><?= htmlspecialchars($w['name']) ?></td>
                                 <td><code><?= $w['acc_number'] ?></code></td>
-                                <td><button class="btn btn-xs btn-success" onclick="issuePermPass('<?= $w['application_no'] ?>')">Issue</button></td>
+                                <td><button class="btn btn-xs btn-success" onclick="issuePermPass(<?= (int)$w['id'] ?>)">Issue</button></td>
                             </tr>
                             <?php endwhile; ?>
                         </tbody>
@@ -93,14 +93,26 @@ function renderContent() {
     </div>
 
     <script>
+    async function parsePassApiResponse(res, fallbackMessage) {
+        const raw = await res.text();
+        let data = {};
+        try {
+            data = raw ? JSON.parse(raw) : {};
+        } catch (parseError) {
+            data = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+        }
+        if (!res.ok && !data.message) data.message = fallbackMessage;
+        return data;
+    }
+
     async function generateAcc(appId) {
         if (!confirm('Generate unique ACC and Sync with SAP for Application ' + appId + '?')) return;
         const res = await fetch('../../api/welfare/issue_acc.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.CLMS_CSRF_TOKEN || '' },
             body: JSON.stringify({ application_id: appId })
         });
-        const data = await res.json();
+        const data = await parsePassApiResponse(res, 'ACC generation failed on the server.');
         if (data.success) location.reload();
         else alert(data.message);
     }
@@ -112,31 +124,26 @@ function renderContent() {
         // Mock capture process
         const res = await fetch('../../api/welfare/capture_biometric.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.CLMS_CSRF_TOKEN || '' },
             body: JSON.stringify({ worker_id: workerId })
         });
-        const data = await res.json();
+        const data = await parsePassApiResponse(res, 'Biometric capture failed on the server.');
         if (data.success) {
             alert('Fingerprint captured and verified as unique (1 Fingerprint = 1 ACC).');
             location.reload();
         } else alert(data.message);
     }
 
-    async function issuePermPass(appId) {
-        if (!confirm('Issue Permanent Pass and activate ACC for all verified workers in Application ' + appId + '?')) return;
-        const res = await fetch('../../api/WorkflowEngine.php', {
+    async function issuePermPass(workerId) {
+        if (!confirm('Issue permanent pass and activate ACC for this worker?')) return;
+        const res = await fetch('../../api/welfare/complete_biometric.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                action: 'issue_permanent_pass', 
-                application_id: appId,
-                additional_data: { perm_validity: 'contract' }
-            })
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.CLMS_CSRF_TOKEN || '' },
+            body: JSON.stringify({ workman_id: workerId })
         });
-        // Note: I need to make sure WorkflowEngine can be called directly or via a wrapper API
-        const data = await res.json();
+        const data = await parsePassApiResponse(res, 'Permanent pass issue failed on the server. Please check api_errors.log.');
         if (data.success) {
-            alert('Permanent Pass Issued. Worker status synced to SAP.');
+            alert(data.message || 'Permanent Pass Issued. Worker status synced to SAP.');
             location.reload();
         } else alert(data.message);
     }

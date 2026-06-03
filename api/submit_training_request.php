@@ -91,11 +91,15 @@ try {
     foreach ($workerIds as $workerId) {
         $worker = db_single(
             $conn,
-            "SELECT id, training_status FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
+            "SELECT id, training_status, execution_training_status FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
             'ii',
             [$workerId, $contractorId]
         );
         if (!$worker) {
+            continue;
+        }
+
+        if (strtolower((string)($worker['execution_training_status'] ?? 'pending')) !== 'approved') {
             continue;
         }
 

@@ -17,9 +17,13 @@ function renderContent() {
 
     // KPI Queries (PDF Correct)
     $totalContractors = db_count($conn, "SELECT COUNT(*) FROM execution_officer_contractors WHERE execution_officer_id = ?", 'i', [$officerId]);
-    $totalWorkOrders = db_count($conn, "SELECT COUNT(DISTINCT work_order_id) FROM execution_officer_contractors WHERE execution_officer_id = ?", 'i', [$officerId]);
+    $totalWorkOrders = db_count($conn, "SELECT COUNT(DISTINCT work_order_id) FROM execution_officer_workorders WHERE execution_officer_id = ? AND COALESCE(status, 'active') = 'active'", 'i', [$officerId]);
+    if ($totalWorkOrders === 0) {
+        $totalWorkOrders = db_count($conn, "SELECT COUNT(DISTINCT work_order_id) FROM execution_officer_contractors WHERE execution_officer_id = ? AND work_order_id IS NOT NULL", 'i', [$officerId]);
+    }
     $activeWorkers = db_count($conn, "SELECT COUNT(*) FROM execution_worker_deployments WHERE execution_officer_id = ? AND status = 'active'", 'i', [$officerId]);
     $presentToday = db_count($conn, "SELECT COUNT(DISTINCT workman_id) FROM attendance WHERE workman_id IN (SELECT workman_id FROM execution_worker_deployments WHERE execution_officer_id = ? AND status = 'active') AND DATE(check_in) = CURDATE()", 'i', [$officerId]);
+    $absentPlanned = max(0, $activeWorkers - $presentToday);
     
     // Idle Workers (Present today but NOT deployed)
     $idleWorkers = db_count($conn, "SELECT COUNT(DISTINCT a.workman_id) FROM attendance a 
@@ -28,9 +32,12 @@ function renderContent() {
                                 AND w.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)
                                 AND a.workman_id NOT IN (SELECT workman_id FROM execution_worker_deployments WHERE status = 'active')", 'i', [$officerId]);
 
-    $attendanceExceptions = db_count($conn, "SELECT COUNT(*) FROM attendance_exceptions WHERE DATE(created_at) = CURDATE()");
+    $attendanceExceptions = db_count($conn, "SELECT COUNT(*) FROM attendance_exceptions ae WHERE DATE(ae.created_at) = CURDATE() AND ae.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
     $totalObservations = db_count($conn, "SELECT COUNT(*) FROM execution_observations WHERE execution_officer_id = ?", 'i', [$officerId]);
-    $pendingEscalations = db_count($conn, "SELECT COUNT(*) FROM execution_escalations WHERE execution_officer_id = ? AND status != 'closed'", 'i', [$officerId]);
+    $pendingEscalations = db_count($conn, "SELECT COUNT(*) FROM execution_escalations WHERE execution_officer_id = ? AND COALESCE(status, 'open') != 'closed'", 'i', [$officerId]);
+    $trainingPending = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.training_approval_doc, '') <> '' AND COALESCE(w.execution_training_status, 'pending') = 'pending' AND w.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
+    $trainingApproved = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.execution_training_status, 'pending') = 'approved' AND w.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
+    $openActions = db_count($conn, "SELECT COUNT(*) FROM execution_actions WHERE execution_officer_id = ? AND COALESCE(status, 'open') != 'closed'", 'i', [$officerId]);
 
     // Recent Observations
     $observations = db_fetch_all($conn, "SELECT o.*, w.name as workman_name, c.contractor_name 
@@ -48,6 +55,21 @@ function renderContent() {
                                        LEFT JOIN master_departments dept ON d.department_id = dept.id 
                                        WHERE d.execution_officer_id = ? 
                                        ORDER BY d.deployed_date DESC LIMIT 5", 'i', [$officerId]);
+
+    $trainingQueue = db_fetch_all($conn, "SELECT w.id, w.name, w.aadhaar, w.training_approval_doc, w.execution_training_status, c.contractor_name
+                                         FROM workmen w
+                                         LEFT JOIN contractors c ON c.id = w.contractor_id
+                                         WHERE COALESCE(w.training_approval_doc, '') <> ''
+                                           AND COALESCE(w.execution_training_status, 'pending') = 'pending'
+                                           AND w.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)
+                                         ORDER BY w.created_at DESC LIMIT 6", 'i', [$officerId]);
+
+    $exceptionList = db_fetch_all($conn, "SELECT ae.*, w.name AS workman_name, c.contractor_name
+                                         FROM attendance_exceptions ae
+                                         LEFT JOIN workmen w ON w.id = ae.workman_id
+                                         LEFT JOIN contractors c ON c.id = ae.contractor_id
+                                         WHERE ae.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)
+                                         ORDER BY ae.created_at DESC LIMIT 5", 'i', [$officerId]);
 
     ?>
     <div class="content-header">
@@ -115,6 +137,40 @@ function renderContent() {
             </div>
             <div class="stat-progress"><div class="progress-bar" style="width: 100%; background: #ef4444"></div></div>
         </div>
+
+        <div class="stat-card green">
+            <div class="stat-icon"><i class="fas fa-user-check"></i></div>
+            <div class="stat-content">
+                <span class="stat-label">Training Approvals</span>
+                <h3 class="stat-value"><?= $trainingApproved ?></h3>
+            </div>
+            <div class="stat-progress"><div class="progress-bar" style="width:100%"></div></div>
+        </div>
+
+        <div class="stat-card amber">
+            <div class="stat-icon"><i class="fas fa-file-signature"></i></div>
+            <div class="stat-content">
+                <span class="stat-label">Training Review Pending</span>
+                <h3 class="stat-value"><?= $trainingPending ?></h3>
+            </div>
+            <div class="stat-progress"><div class="progress-bar" style="width:100%"></div></div>
+        </div>
+
+        <div class="stat-card blue">
+            <div class="stat-icon"><i class="fas fa-list-check"></i></div>
+            <div class="stat-content">
+                <span class="stat-label">Open Field Actions</span>
+                <h3 class="stat-value"><?= $openActions ?></h3>
+            </div>
+            <div class="stat-progress"><div class="progress-bar" style="width:100%"></div></div>
+        </div>
+    </div>
+
+    <div class="ops-strip">
+        <div><span>Planned Deployment</span><strong><?= $activeWorkers ?></strong></div>
+        <div><span>Present vs Planned</span><strong><?= $presentToday ?> / <?= $activeWorkers ?></strong></div>
+        <div><span>Absent Planned</span><strong><?= $absentPlanned ?></strong></div>
+        <div><span>Utilization</span><strong><?= $activeWorkers > 0 ? round(($presentToday / $activeWorkers) * 100) : 0 ?>%</strong></div>
     </div>
 
     <!-- Real-Time Charts Section (PDF Correct) -->
@@ -138,6 +194,70 @@ function renderContent() {
         <div class="card-header"><div class="card-title"><i class="fas fa-gauge-high"></i> Contractor Productivity Monitoring</div></div>
         <div class="card-body">
             <canvas id="productivityChart" height="100"></canvas>
+        </div>
+    </div>
+
+    <div class="review-grid">
+        <div class="card glass">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-file-signature"></i> Training Attendance Approval Desk</div>
+            </div>
+            <div class="card-body" style="padding:0">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Worker</th>
+                            <th>Contractor</th>
+                            <th>Document</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if(empty($trainingQueue)): ?>
+                            <tr><td colspan="4" style="text-align:center;padding:22px;color:#64748b">No training attendance approvals pending.</td></tr>
+                        <?php else: foreach($trainingQueue as $t): ?>
+                            <tr id="training-row-<?= (int)$t['id'] ?>">
+                                <td>
+                                    <strong><?= htmlspecialchars($t['name'] ?? '') ?></strong><br>
+                                    <small><?= htmlspecialchars($t['aadhaar'] ?? '') ?></small>
+                                </td>
+                                <td><?= htmlspecialchars($t['contractor_name'] ?? 'N/A') ?></td>
+                                <td>
+                                    <a class="btn btn-sm btn-outline" target="_blank" href="../../uploads/workers/<?= htmlspecialchars($t['training_approval_doc']) ?>">
+                                        <i class="fas fa-file-pdf"></i> View
+                                    </a>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-success" onclick="reviewTraining(<?= (int)$t['id'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>
+                                    <button class="btn btn-sm btn-danger" onclick="reviewTraining(<?= (int)$t['id'] ?>, 'rejected')"><i class="fas fa-times"></i> Reject</button>
+                                </td>
+                            </tr>
+                        <?php endforeach; endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card glass">
+            <div class="card-header">
+                <div class="card-title"><i class="fas fa-triangle-exclamation"></i> Recent Attendance Exceptions</div>
+                <a href="attendance_exceptions.php" class="btn btn-sm btn-link">Open Desk</a>
+            </div>
+            <div class="card-body" style="padding:0">
+                <div class="exception-list">
+                    <?php if(empty($exceptionList)): ?>
+                        <div class="empty-state"><i class="fas fa-circle-check"></i><p>No recent exceptions in assigned contractors.</p></div>
+                    <?php else: foreach($exceptionList as $ex): ?>
+                        <div class="exception-item">
+                            <div>
+                                <strong><?= htmlspecialchars($ex['exception_type'] ?: 'Attendance Exception') ?></strong>
+                                <span><?= htmlspecialchars($ex['workman_name'] ?: 'Unknown Worker') ?> · <?= htmlspecialchars($ex['contractor_name'] ?: 'N/A') ?></span>
+                            </div>
+                            <span class="badge badge-warning"><?= strtoupper(htmlspecialchars($ex['status'] ?: 'open')) ?></span>
+                        </div>
+                    <?php endforeach; endif; ?>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -285,6 +405,7 @@ function renderContent() {
     .green .stat-icon { background: rgba(16,185,129,0.1); color: #10b981; }
     .purple .stat-icon { background: rgba(124,58,237,0.1); color: #7c3aed; }
     .amber .stat-icon { background: rgba(245,158,11,0.1); color: #f59e0b; }
+    .red .stat-icon { background: rgba(239,68,68,0.1); color: #ef4444; }
     .stat-label { font-size: 13px; color: #64748b; font-weight: 600; }
     .stat-value { font-size: 28px; font-weight: 800; color: #1e293b; margin: 0; }
     .stat-progress { height: 4px; background: #f1f5f9; border-radius: 2px; }
@@ -293,8 +414,14 @@ function renderContent() {
     .green .progress-bar { background: #10b981; }
     .purple .progress-bar { background: #7c3aed; }
     .amber .progress-bar { background: #f59e0b; }
+    .red .progress-bar { background: #ef4444; }
 
     .dashboard-grid { display: grid; grid-template-columns: 1.5fr 0.5fr; gap: 24px; }
+    .review-grid { display:grid; grid-template-columns: 1.25fr .75fr; gap:24px; margin-bottom:24px; }
+    .ops-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; overflow:hidden; border:1px solid #e2e8f0; border-radius:14px; background:#e2e8f0; margin:-4px 0 24px; }
+    .ops-strip div { background:#fff; padding:14px 18px; display:flex; flex-direction:column; gap:4px; }
+    .ops-strip span { font-size:11px; text-transform:uppercase; color:#64748b; font-weight:800; }
+    .ops-strip strong { font-size:18px; color:#0f172a; }
     .monitoring-links { display: flex; flex-direction: column; gap: 5px; }
     .monitor-link { display: flex; align-items: center; gap: 15px; padding: 12px; border-radius: 12px; text-decoration: none; transition: all 0.2s; border: 1px solid transparent; }
     .monitor-link:hover { background: #f8fafc; border-color: #e2e8f0; transform: translateX(5px); }
@@ -319,9 +446,51 @@ function renderContent() {
 
     .mini-chart { height: 8px; background: #f1f5f9; border-radius: 4px; width: 80px; overflow: hidden; }
     .mini-bar { height: 100%; background: #6366f1; border-radius: 4px; }
+    .exception-list { display:flex; flex-direction:column; }
+    .exception-item { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:15px 18px; border-bottom:1px solid #f1f5f9; }
+    .exception-item strong { display:block; font-size:13px; color:#1e293b; }
+    .exception-item span:not(.badge) { display:block; font-size:11px; color:#64748b; margin-top:4px; }
+    @media (max-width: 1100px) {
+        .charts-grid, .dashboard-grid, .review-grid, .ops-strip { grid-template-columns: 1fr !important; }
+    }
     </style>
 
     <script>
+    async function reviewTraining(workmanId, decision) {
+        const title = decision === 'approved' ? 'Approve training attendance?' : 'Reject training attendance?';
+        const prompt = await Swal.fire({
+            icon: decision === 'approved' ? 'question' : 'warning',
+            title,
+            input: 'textarea',
+            inputPlaceholder: 'Remarks',
+            showCancelButton: true,
+            confirmButtonText: decision === 'approved' ? 'Approve' : 'Reject',
+            confirmButtonColor: decision === 'approved' ? '#10b981' : '#ef4444'
+        });
+        if (!prompt.isConfirmed) return;
+
+        try {
+            const response = await fetch('../../api/execution/approve_training_attendance.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    workman_id: workmanId,
+                    decision,
+                    remarks: prompt.value || ''
+                })
+            });
+            const result = await response.json();
+            if (result.status) {
+                document.getElementById(`training-row-${workmanId}`)?.remove();
+                Swal.fire('Updated', result.message || 'Training attendance reviewed.', 'success');
+            } else {
+                Swal.fire('Action Failed', result.message || 'Unable to update training attendance.', 'error');
+            }
+        } catch (err) {
+            Swal.fire('Connection Error', 'Server response could not be processed.', 'error');
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
         try {
             const response = await fetch('../../api/execution/get_dashboard_stats.php');
@@ -336,7 +505,7 @@ function renderContent() {
                 data: {
                     labels: ['Deployed', 'Idle (Present)', 'Absent (Planned)'],
                     datasets: [{
-                        data: [charts.utilization.deployed, charts.utilization.idle, 0], // Absent requires planned count which is complex, setting 0 for now
+                        data: [charts.utilization.present, charts.utilization.idle, charts.utilization.absent],
                         backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
                         borderWidth: 0
                     }]

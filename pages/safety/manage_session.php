@@ -18,8 +18,20 @@ if (!$session) {
     die("Session not found.");
 }
 
+function safetySessionSetting($conn, $key, $default) {
+    $table = mysqli_query($conn, "SHOW TABLES LIKE 'system_settings'");
+    if (!$table || mysqli_num_rows($table) === 0) {
+        return $default;
+    }
+
+    $row = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key = ? LIMIT 1", 's', [$key]);
+    return isset($row['setting_value']) && $row['setting_value'] !== '' ? $row['setting_value'] : $default;
+}
+
 function renderContent() {
     global $conn, $session, $session_id;
+    $passMark = (int)safetySessionSetting($conn, 'training_pass_mark', 60);
+    $validityDays = (int)safetySessionSetting($conn, 'training_validity_days', 365);
     
     // Fetch assigned workers
     $workers = db_fetch_all($conn, "
@@ -47,6 +59,7 @@ function renderContent() {
                 <span class="badge badge-success" style="padding:10px 20px"><i class="fas fa-lock"></i> SESSION COMPLETED</span>
             <?php else: ?>
                 <form action="../../api/safety/complete_session.php" method="POST" onsubmit="return confirm('Lock this session and finalize results?')">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="session_id" value="<?= $session_id ?>">
                     <button type="submit" class="btn btn-success"><i class="fas fa-check-circle"></i> Finalize & Lock Session</button>
                 </form>
@@ -108,6 +121,7 @@ function renderContent() {
                 <div class="alert alert-info">Attendance is locked for this completed session.</div>
             <?php endif; ?>
             <form action="../../api/safety/save_attendance.php" method="POST">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                 <input type="hidden" name="session_id" value="<?= $session_id ?>">
                 <table class="data-table">
                     <thead>
@@ -149,20 +163,33 @@ function renderContent() {
             <?php if($is_locked): ?>
                 <div class="alert alert-info">Results are locked for this completed session.</div>
             <?php endif; ?>
+            <div class="alert alert-info">
+                Pass mark: <strong><?= $passMark ?></strong> out of 100. Safety training validity: <strong><?= $validityDays ?> days</strong>.
+            </div>
             <form action="../../api/safety/save_results.php" method="POST">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                 <input type="hidden" name="session_id" value="<?= $session_id ?>">
                 <table class="data-table">
                     <thead>
                         <tr>
                             <th>Worker</th>
                             <th>Attendance</th>
-                            <th>Result</th>
+                            <th>Theory Marks</th>
+                            <th>Practical Marks</th>
+                            <th>Total / Result</th>
                             <th>Valid Till</th>
                             <th>Remarks</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach($workers as $w): ?>
+                        <?php
+                            $theoryScore = (int)($w['theory_score'] ?? 0);
+                            $practicalScore = (int)($w['practical_score'] ?? 0);
+                            $totalScore = (int)($w['total_score'] ?? ($theoryScore + $practicalScore));
+                            $resultValue = strtolower((string)($w['result'] ?? 'pending'));
+                            $validTill = $w['valid_till'] ?: date('Y-m-d', strtotime('+' . $validityDays . ' days'));
+                        ?>
                         <tr>
                             <td><?= htmlspecialchars($w['name']) ?></td>
                             <td>
@@ -174,19 +201,33 @@ function renderContent() {
                             </td>
                             <td>
                                 <?php if($w['attendance_status'] == 'present'): ?>
-                                    <select name="result[<?= $w['workman_id'] ?>]" class="form-control" <?= $is_locked ? 'disabled' : '' ?>>
-                                        <option value="pending" <?= $w['result'] == 'pending' ? 'selected' : '' ?>>Pending</option>
-                                        <option value="pass" <?= $w['result'] == 'pass' ? 'selected' : '' ?>>Pass</option>
-                                        <option value="fail" <?= $w['result'] == 'fail' ? 'selected' : '' ?>>Fail</option>
-                                    </select>
+                                    <input type="number" min="0" max="100" name="theory_score[<?= $w['workman_id'] ?>]" class="form-control marks-input" data-worker="<?= (int)$w['workman_id'] ?>" value="<?= $theoryScore ?>" <?= $is_locked ? 'disabled' : '' ?>>
                                 <?php else: ?>
                                     <span class="text-muted" style="font-size:12px">Blocked (Not Present)</span>
                                     <input type="hidden" name="result[<?= $w['workman_id'] ?>]" value="fail">
                                 <?php endif; ?>
                             </td>
                             <td>
+                                <?php if($w['attendance_status'] == 'present'): ?>
+                                    <input type="number" min="0" max="100" name="practical_score[<?= $w['workman_id'] ?>]" class="form-control marks-input" data-worker="<?= (int)$w['workman_id'] ?>" value="<?= $practicalScore ?>" <?= $is_locked ? 'disabled' : '' ?>>
+                                <?php else: ?>
+                                    <span class="text-muted" style="font-size:12px">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if($w['attendance_status'] == 'present'): ?>
+                                    <input type="hidden" name="result[<?= $w['workman_id'] ?>]" value="<?= htmlspecialchars($resultValue ?: 'pending') ?>">
+                                    <strong id="total_<?= (int)$w['workman_id'] ?>"><?= $totalScore ?></strong>
+                                    <span id="result_badge_<?= (int)$w['workman_id'] ?>" class="badge <?= $resultValue === 'pass' ? 'badge-success' : ($resultValue === 'fail' ? 'badge-danger' : 'badge-warning') ?>">
+                                        <?= strtoupper($resultValue ?: 'PENDING') ?>
+                                    </span>
+                                <?php else: ?>
+                                    <strong>0</strong> <span class="badge badge-danger">FAIL</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
                                 <input type="date" name="valid_till[<?= $w['workman_id'] ?>]" class="form-control" 
-                                       value="<?= $w['valid_till'] ?: date('Y-m-d', strtotime('+1 year')) ?>" 
+                                       value="<?= htmlspecialchars($validTill) ?>" 
                                        <?= ($is_locked || $w['attendance_status'] != 'present') ? 'disabled' : '' ?>>
                             </td>
                             <td>
@@ -258,6 +299,30 @@ function renderContent() {
     }
 
     // Handle Form Submissions via AJAX
+    const safetyPassMark = <?= (int)$passMark ?>;
+
+    function updateMarksResult(workerId) {
+        const theory = Number(document.querySelector(`[name="theory_score[${workerId}]"]`)?.value || 0);
+        const practical = Number(document.querySelector(`[name="practical_score[${workerId}]"]`)?.value || 0);
+        const total = theory + practical;
+        const result = total >= safetyPassMark ? 'pass' : 'fail';
+        const totalEl = document.getElementById('total_' + workerId);
+        const badge = document.getElementById('result_badge_' + workerId);
+        const hidden = document.querySelector(`[name="result[${workerId}]"]`);
+
+        if (totalEl) totalEl.textContent = total;
+        if (hidden) hidden.value = result;
+        if (badge) {
+            badge.textContent = result.toUpperCase();
+            badge.className = 'badge ' + (result === 'pass' ? 'badge-success' : 'badge-danger');
+        }
+    }
+
+    document.querySelectorAll('.marks-input').forEach(input => {
+        updateMarksResult(input.dataset.worker);
+        input.addEventListener('input', () => updateMarksResult(input.dataset.worker));
+    });
+
     document.querySelectorAll('form').forEach(form => {
         if (form.action.includes('complete_session.php')) return; // Keep standard POST for finalize for now or convert too
 
@@ -276,16 +341,40 @@ function renderContent() {
                     body: formData
                 });
                 
-                const result = await response.json();
+                const raw = await response.text();
+                let result = {};
+                try {
+                    result = raw ? JSON.parse(raw) : {};
+                } catch (parseError) {
+                    result = {
+                        success: false,
+                        message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : `Server returned HTTP ${response.status}`
+                    };
+                }
+
+                if (!response.ok && !result.message && !result.error) {
+                    result.message = `Server returned HTTP ${response.status}`;
+                }
+
                 if (result.success) {
-                    alert(result.message || 'Saved successfully');
+                    if (window.Swal) {
+                        await Swal.fire('Saved', result.message || 'Saved successfully', 'success');
+                    } else {
+                        alert(result.message || 'Saved successfully');
+                    }
                     location.reload();
+                } else if (window.Swal) {
+                    Swal.fire('Error', result.message || result.error || 'Unknown error', 'error');
                 } else {
                     alert('Error: ' + (result.message || result.error || 'Unknown error'));
                 }
             } catch (err) {
                 console.error(err);
-                alert('Connection Error: Could not reach server');
+                if (window.Swal) {
+                    Swal.fire('Connection Error', err.message || 'Could not reach server', 'error');
+                } else {
+                    alert('Connection Error: ' + (err.message || 'Could not reach server'));
+                }
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = originalText;

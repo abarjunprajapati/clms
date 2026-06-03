@@ -38,7 +38,7 @@ function renderContent() {
           </thead>
           <tbody>
             <?php foreach($workers as $w): 
-              $is_blocked = ($w['status'] == 'blocked' || $w['block_status'] == 'active');
+              $is_blocked = ((int)($w['is_blocked'] ?? 0) === 1 || $w['block_status'] == 'active');
             ?>
             <tr class="<?= $is_blocked ? 'bg-danger-subtle' : '' ?>">
               <td>
@@ -84,15 +84,24 @@ function renderContent() {
         try {
             const res = await fetch('../../api/welfare/update_worker_lifecycle.php', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+                },
                 body: JSON.stringify({workman_id, action, reason})
             });
-            const data = await res.json();
+            const raw = await res.text();
+            let data = {};
+            try {
+                data = raw ? JSON.parse(raw) : {};
+            } catch (err) {
+                data = { success: false, error: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+            }
             if (data.success) {
                 alert('Worker status updated successfully');
                 location.reload();
             } else {
-                alert(data.error || 'Operation failed');
+                alert(data.error || data.message || 'Operation failed');
             }
         } catch (e) {
             alert('Error updating status');
@@ -103,4 +112,3 @@ function renderContent() {
 }
 
 renderLayout("Worker Lifecycle Control", 'renderContent', $role, $name);
-

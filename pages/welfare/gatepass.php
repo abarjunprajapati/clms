@@ -159,13 +159,22 @@ $notif_count = 0;
               <input type="checkbox" id="doc-medical" checked> Medical Fitness Certificate
             </label>
             <label style="display:flex;align-items:center;gap:8px;padding:10px;background:white;border:1px solid var(--gray-200);border-radius:8px">
-              <input type="checkbox" id="doc-police" checked> Police Verification Certificate
+              <input type="checkbox" id="doc-pcc" checked> Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass
             </label>
             <label style="display:flex;align-items:center;gap:8px;padding:10px;background:white;border:1px solid var(--gray-200);border-radius:8px">
-              <input type="checkbox" id="doc-id" checked> ID Proof (Aadhaar/PAN)
+              <input type="checkbox" id="doc-pcc-police" checked> Proof of forwarding PCC to Thane Police Station
             </label>
             <label style="display:flex;align-items:center;gap:8px;padding:10px;background:white;border:1px solid var(--gray-200);border-radius:8px">
-              <input type="checkbox" id="doc-insurance" checked> Insurance Certificate
+              <input type="checkbox" id="doc-pcc-cisf" checked> Proof of forwarding PCC to CISF
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:10px;background:white;border:1px solid var(--gray-200);border-radius:8px">
+              <input type="checkbox" id="doc-police-station" checked> Name of Police Station from where PCC has been obtained
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:10px;background:white;border:1px solid var(--gray-200);border-radius:8px">
+              <input type="checkbox" id="doc-ec-policy" checked> Employee Compensation Policy if not covered under ESI
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:10px;background:white;border:1px solid var(--gray-200);border-radius:8px">
+              <input type="checkbox" id="doc-esi-epf" checked> ESI / EPF Undertaking if not covered under ESI / EPF
             </label>
           </div>
         </div>
@@ -413,4 +422,3 @@ function showToast(icon, message) {
 </script>
 </body>
 </html>
-

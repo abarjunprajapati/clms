@@ -12,9 +12,20 @@ $remarks = $data['remarks'] ?? '';
 $sourceTable = $data['source_table'] ?? 'document_verifications';
 $requestId = (int)($data['request_id'] ?? 0);
 $userId = $_SESSION['user_id'] ?? 0;
-$gatePassDocTypesSql = "'Medical Fitness Certificate','Police Clearance Certificate','Proof for Age','Proof for Address','Bank Account Proof','Insurance (ESI/WC)','Training Certificate'";
-$gatePassRequiredDocCount = 7;
+$gatePassDocTypes = [
+    'Medical Fitness Certificate',
+    'Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass (Template Upload)',
+    'Proof of forwarding PCC to Thane Police Station',
+    'Proof of forwarding PCC to CISF',
+    'Name of Police Station from where PCC has been obtained',
+    'Employee Compensation Policy if not covered under ESI',
+    'ESI / EPF Undertaking if not covered under ESI / EPF',
+];
+$gatePassDocTypesSql = "'" . implode("','", array_map([$conn, 'real_escape_string'], $gatePassDocTypes)) . "'";
 $gatePassTrainingStatuses = ['pass', 'passed', 'training_passed', 'qualified', 'completed'];
+
+@$conn->query("ALTER TABLE gate_pass_requests MODIFY status VARCHAR(30) DEFAULT 'pending'");
+@$conn->query("ALTER TABLE gate_pass_request_workers MODIFY status VARCHAR(30) DEFAULT 'pending'");
 
 function gatePassTrainingPassed($worker) {
     global $gatePassTrainingStatuses;
@@ -27,13 +38,14 @@ function gatePassTrainingPassed($worker) {
 }
 
 function latestGatePassDocsApproved($conn, $workmanId) {
-    global $gatePassDocTypesSql, $gatePassRequiredDocCount;
+    global $gatePassDocTypesSql;
 
     $workmanId = (int)$workmanId;
+    $docs = [];
     $res = $conn->query("
         SELECT
-            COUNT(*) AS total_docs,
-            SUM(CASE WHEN d.status = 'approved' THEN 1 ELSE 0 END) AS approved_docs
+            d.document_type,
+            COALESCE(d.status, 'pending') AS status
         FROM documents d
         JOIN (
             SELECT document_type, MAX(id) AS latest_id
@@ -43,46 +55,66 @@ function latestGatePassDocsApproved($conn, $workmanId) {
             GROUP BY document_type
         ) latest_docs ON latest_docs.latest_id = d.id
     ");
+    while ($res && ($row = $res->fetch_assoc())) {
+        $docs[] = $row;
+    }
 
-    $row = $res ? $res->fetch_assoc() : null;
-    $totalDocs = (int)($row['total_docs'] ?? 0);
-    $approvedDocs = (int)($row['approved_docs'] ?? 0);
-
-    return $totalDocs >= $gatePassRequiredDocCount && $approvedDocs >= $gatePassRequiredDocCount;
+    return gatePassDocSetApproved($docs);
 }
 
 function requestGatePassDocsApproved($conn, $workmanId, $requestId) {
-    global $gatePassDocTypesSql, $gatePassRequiredDocCount;
+    global $gatePassDocTypesSql;
 
     $workmanId = (int)$workmanId;
     $requestId = (int)$requestId;
     if (!$requestId) return latestGatePassDocsApproved($conn, $workmanId);
 
-    $requestRes = $conn->query("SELECT created_at FROM gate_pass_requests WHERE id = $requestId LIMIT 1");
-    $request = $requestRes ? $requestRes->fetch_assoc() : null;
-    if (!$request || empty($request['created_at'])) return latestGatePassDocsApproved($conn, $workmanId);
-
-    $createdAt = $conn->real_escape_string($request['created_at']);
+    $docs = [];
     $res = $conn->query("
         SELECT
-            COUNT(*) AS total_docs,
-            SUM(CASE WHEN d.status = 'approved' THEN 1 ELSE 0 END) AS approved_docs
+            d.document_type,
+            COALESCE(d.status, 'pending') AS status
         FROM documents d
         JOIN (
             SELECT document_type, MAX(id) AS latest_id
             FROM documents
             WHERE workman_id = $workmanId
               AND document_type IN ($gatePassDocTypesSql)
-              AND uploaded_at >= DATE_SUB('$createdAt', INTERVAL 10 MINUTE)
             GROUP BY document_type
         ) latest_docs ON latest_docs.latest_id = d.id
     ");
+    while ($res && ($row = $res->fetch_assoc())) {
+        $docs[] = $row;
+    }
 
-    $row = $res ? $res->fetch_assoc() : null;
-    $totalDocs = (int)($row['total_docs'] ?? 0);
-    $approvedDocs = (int)($row['approved_docs'] ?? 0);
+    return gatePassDocSetApproved($docs);
+}
 
-    return $totalDocs >= $gatePassRequiredDocCount && $approvedDocs >= $gatePassRequiredDocCount;
+function gatePassDocSetApproved(array $docs) {
+    $hasMedical = false;
+    $hasPcc = false;
+    $hasCoverage = false;
+
+    foreach ($docs as $doc) {
+        $type = strtolower((string)($doc['document_type'] ?? ''));
+        $status = strtolower((string)($doc['status'] ?? 'pending'));
+
+        if ($status !== 'approved') {
+            return false;
+        }
+
+        if (strpos($type, 'medical fitness') !== false) {
+            $hasMedical = true;
+        }
+        if (strpos($type, 'pcc') !== false || strpos($type, 'police clearance') !== false || strpos($type, 'police station') !== false) {
+            $hasPcc = true;
+        }
+        if (strpos($type, 'employee compensation') !== false || strpos($type, 'esi') !== false || strpos($type, 'epf') !== false) {
+            $hasCoverage = true;
+        }
+    }
+
+    return $hasMedical && $hasPcc && $hasCoverage;
 }
 
 if (!$docId) {
@@ -152,7 +184,7 @@ if ($sourceTable === 'contractor_documents') {
 }
 
 if ($sourceTable === 'documents') {
-    $dbStatus = $status === 'reupload_required' ? 'rejected' : $status;
+    $dbStatus = $status === 'reupload_required' ? 'reupload_required' : $status;
     $oldRes = $conn->query("
         SELECT COALESCE(w.application_no, CONCAT('WORKMAN-', d.workman_id)) AS application_id, d.document_type, d.status, d.workman_id
         FROM documents d
@@ -181,6 +213,20 @@ if ($sourceTable === 'documents') {
         $workmanId = (int)$oldData['workman_id'];
         $appId = $oldData['application_id'];
 
+        if ($dbStatus === 'reupload_required') {
+            $requestFilter = $requestId ? " AND gprw.request_id = $requestId" : "";
+            $gprwRes = $conn->query("SELECT gprw.request_id FROM gate_pass_request_workers gprw WHERE gprw.workman_id = $workmanId $requestFilter ORDER BY gprw.id DESC LIMIT 1");
+            if ($gprwRes && ($gprw = $gprwRes->fetch_assoc())) {
+                $rid = (int)$gprw['request_id'];
+                $safeRemarks = $conn->real_escape_string($remarks);
+                $conn->query("UPDATE gate_pass_request_workers SET status = 'reupload_required', updated_at = NOW() WHERE request_id = $rid AND workman_id = $workmanId");
+                $conn->query("UPDATE gate_pass_requests SET status = 'reupload_required', rejection_reason = '$safeRemarks', updated_at = NOW() WHERE id = $rid");
+            }
+
+            echo json_encode(['success' => true, 'message' => 'Document rejected and sent for contractor re-upload.', 'all_approved' => false, 'status' => $dbStatus]);
+            exit;
+        }
+
         $allApproved = false;
         if (requestGatePassDocsApproved($conn, $workmanId, $requestId)) {
             $workerRes = $conn->query("SELECT id, contractor_id, safety_training_status, training_status, worker_type FROM workmen WHERE id = $workmanId LIMIT 1");
@@ -195,8 +241,9 @@ if ($sourceTable === 'documents') {
                     $requestFilter = $requestId ? " AND gprw.request_id = $requestId" : "";
                     $gprwRes = $conn->query("SELECT gprw.id, gprw.request_id FROM gate_pass_request_workers gprw WHERE gprw.workman_id = $workmanId $requestFilter ORDER BY gprw.id DESC LIMIT 1");
                     if ($gprwRes && ($gprw = $gprwRes->fetch_assoc())) {
-                        $conn->query("UPDATE gate_pass_request_workers SET status = 'approved' WHERE workman_id = $workmanId");
-                        $conn->query("UPDATE gate_pass_requests SET status = 'approved', updated_at = NOW() WHERE id = " . (int)$gprw['request_id']);
+                        $rid = (int)$gprw['request_id'];
+                        $conn->query("UPDATE gate_pass_request_workers SET status = 'approved', updated_at = NOW() WHERE request_id = $rid AND workman_id = $workmanId");
+                        $conn->query("UPDATE gate_pass_requests SET status = 'approved', updated_at = NOW() WHERE id = $rid");
                     } else {
                         $contractorId = (int)$worker['contractor_id'];
                         $workerRole = ucfirst($worker['worker_type'] ?? 'Workmen');
@@ -277,8 +324,9 @@ if ($stmt) {
                 $requestFilter = $requestId ? " AND gprw.request_id = $requestId" : "";
                 $gprwRes = $conn->query("SELECT gprw.id, gprw.request_id FROM gate_pass_request_workers gprw WHERE gprw.workman_id = $wId $requestFilter ORDER BY gprw.id DESC LIMIT 1");
                 if ($gprwRes && ($gprw = $gprwRes->fetch_assoc())) {
-                    $conn->query("UPDATE gate_pass_request_workers SET status = 'approved' WHERE workman_id = $wId");
-                    $conn->query("UPDATE gate_pass_requests SET status = 'approved', updated_at = NOW() WHERE id = " . (int)$gprw['request_id']);
+                    $rid = (int)$gprw['request_id'];
+                    $conn->query("UPDATE gate_pass_request_workers SET status = 'approved', updated_at = NOW() WHERE request_id = $rid AND workman_id = $wId");
+                    $conn->query("UPDATE gate_pass_requests SET status = 'approved', updated_at = NOW() WHERE id = $rid");
                 } else {
                     $contractorId = (int)$worker['contractor_id'];
                     $workerRole = ucfirst($worker['worker_type'] ?? 'Workmen');
