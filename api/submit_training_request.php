@@ -91,7 +91,7 @@ try {
     foreach ($workerIds as $workerId) {
         $worker = db_single(
             $conn,
-            "SELECT id, training_status, execution_training_status FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
+            "SELECT id, training_status, execution_training_status, execution_training_reviewed_by FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
             'ii',
             [$workerId, $contractorId]
         );
@@ -99,12 +99,25 @@ try {
             continue;
         }
 
-        if (strtolower((string)($worker['execution_training_status'] ?? 'pending')) !== 'approved') {
+        if (strtolower((string)($worker['execution_training_status'] ?? 'pending')) !== 'approved' || (int)($worker['execution_training_reviewed_by'] ?? 0) <= 0) {
             continue;
         }
 
         $status = strtolower((string)$worker['training_status']);
         if (in_array($status, ['training_scheduled', 'training_passed', 'pass', 'qualified', 'completed'], true)) {
+            continue;
+        }
+
+        $existing = db_single(
+            $conn,
+            "SELECT id FROM training_requests
+             WHERE workman_id = ?
+               AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed')
+             ORDER BY id DESC LIMIT 1",
+            'i',
+            [$workerId]
+        );
+        if ($existing) {
             continue;
         }
 
@@ -120,7 +133,7 @@ try {
             'remarks' => trim($input['remarks'] ?? ''),
             'source' => 'contractor',
             'requested_by' => $userId,
-            'status' => 'pending',
+            'status' => 'welfare_pending',
             'created_at' => date('Y-m-d H:i:s'),
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
@@ -143,7 +156,7 @@ try {
 
     training_json([
         'success' => true,
-        'message' => 'Safety training request submitted successfully',
+        'message' => 'Safety training request submitted successfully and forwarded to Welfare',
         'data' => [
             'request_id' => 'STR-' . date('Ymd') . '-' . random_int(1000, 9999),
             'worker_count' => $created,
@@ -225,6 +238,7 @@ function training_ensure_schema($conn) {
     ] as $column => $definition) {
         training_ensure_column($conn, 'training_requests', $column, $definition);
     }
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
     $idMeta = training_column_meta($conn, 'training_requests', 'id');
     if ($idMeta && stripos($idMeta['Extra'] ?? '', 'auto_increment') === false) {
@@ -234,7 +248,12 @@ function training_ensure_schema($conn) {
     if (training_table_exists($conn, 'workmen')) {
         training_ensure_column($conn, 'workmen', 'training_status', "VARCHAR(50) DEFAULT 'pending'");
         training_ensure_column($conn, 'workmen', 'safety_training_status', "VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+        training_ensure_column($conn, 'workmen', 'execution_training_status', "VARCHAR(30) DEFAULT 'pending'");
+        training_ensure_column($conn, 'workmen', 'execution_training_reviewed_by', 'BIGINT NULL');
         training_ensure_column($conn, 'workmen', 'updated_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP');
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
     }
 
     mysqli_query($conn, "CREATE TABLE IF NOT EXISTS application_workflow (

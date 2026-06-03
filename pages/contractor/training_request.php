@@ -18,16 +18,32 @@ function renderContent() {
 
     // Eligible workers (pending training)
     $eligible_workers = $c_id ? db_fetch_all($conn,
-        "SELECT id, name, trade, skill, temp_id FROM workmen
+        "SELECT id, name, trade, skill, temp_id, executing_officer_code, executing_officer_name FROM workmen
          WHERE contractor_id = ?
            AND COALESCE(execution_training_status, 'pending') = 'approved'
+           AND COALESCE(execution_training_reviewed_by, 0) > 0
            AND training_status IN ('pending','training_pending','training_failed','fail')
+           AND NOT EXISTS (
+               SELECT 1 FROM training_requests tr
+               WHERE tr.workman_id = workmen.id
+                 AND tr.status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed')
+           )
          ORDER BY name",
+        'i', [$c_id]) : [];
+
+    $eo_pending_workers = $c_id ? db_fetch_all($conn,
+        "SELECT id, name, trade, temp_id, executing_officer_code, executing_officer_name, COALESCE(execution_training_status, 'pending_eo') AS execution_training_status, training_approval_doc
+         FROM workmen
+         WHERE contractor_id = ?
+           AND COALESCE(status, '') <> 'draft'
+           AND COALESCE(execution_training_status, 'pending_eo') IN ('pending_eo','pending','rejected')
+           AND training_status IN ('pending','training_pending','training_failed','fail')
+         ORDER BY created_at DESC",
         'i', [$c_id]) : [];
 
     // All training requests for this contractor with full details
     $my_requests = $c_id ? db_fetch_all($conn,
-        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade, COALESCE(w.execution_training_status, 'pending') AS execution_training_status
+        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade, COALESCE(w.execution_training_status, 'pending') AS execution_training_status, COALESCE(w.execution_training_reviewed_by, 0) AS execution_training_reviewed_by
          FROM training_requests tr
          JOIN workmen w ON tr.workman_id = w.id
          WHERE tr.contractor_id = ?
@@ -92,7 +108,7 @@ function renderContent() {
           <div class="empty-state" style="padding:30px 0; text-align:center; color:var(--text-muted);">
             <i class="fas fa-graduation-cap" style="font-size:40px;opacity:.2;display:block;margin-bottom:12px;"></i>
             <p style="font-weight:600;">No eligible workers</p>
-            <p style="font-size:13px;">Worker training request ke liye Executive Officer training attendance approval required hai.</p>
+            <p style="font-size:13px;">Worker training request ke liye Executing Officer approval required hai. Agar request auto-created hai to right side status/history me dikhegi.</p>
           </div>
           <?php else: ?>
           <form id="trainingForm">
@@ -192,10 +208,12 @@ function renderContent() {
             <?php foreach ($my_requests as $r): ?>
             <?php
               $st = $r['status'] ?? 'pending';
-              $executionApproved = strtolower((string)($r['execution_training_status'] ?? 'pending')) === 'approved';
+              $executionApproved = strtolower((string)($r['execution_training_status'] ?? 'pending')) === 'approved' && (int)($r['execution_training_reviewed_by'] ?? 0) > 0;
               $displayStatus = (!$executionApproved && in_array($st, ['pending','failed','correction_required'], true)) ? 'exec_pending' : $st;
               $sc = [
                 'exec_pending'          => 'badge-gray',
+                'welfare_pending'       => 'badge-warning',
+                'welfare_rejected'      => 'badge-danger',
                 'pending'              => 'badge-warning',
                 'scheduled'            => 'badge-info',
                 'contractor_confirmed' => 'badge-primary',
@@ -233,7 +251,17 @@ function renderContent() {
               </td>
               <td>
                 <span class="badge <?= $sc[$displayStatus] ?? 'badge-gray' ?>">
-                  <?= $displayStatus === 'exec_pending' ? 'EXEC APPROVAL PENDING' : strtoupper(str_replace('_', ' ', $st)) ?>
+                  <?php
+                    if ($displayStatus === 'exec_pending') {
+                        echo 'EXEC APPROVAL PENDING';
+                    } elseif ($st === 'welfare_pending') {
+                        echo 'WELFARE CHECK PENDING';
+                    } elseif ($st === 'welfare_rejected') {
+                        echo 'WELFARE REJECTED';
+                    } else {
+                        echo strtoupper(str_replace('_', ' ', $st));
+                    }
+                  ?>
                 </span>
               </td>
               <td>
@@ -256,6 +284,10 @@ function renderContent() {
                 <?php endif; ?>
                 <?php elseif ($st === 'completed' || $st === 'passed'): ?>
                 <span style="font-size:11px; color:var(--success);"><i class="fas fa-trophy"></i> Passed</span>
+                <?php elseif ($st === 'welfare_pending'): ?>
+                <span style="font-size:11px; color:var(--warning);"><i class="fas fa-user-check"></i> Welfare check</span>
+                <?php elseif ($st === 'welfare_rejected'): ?>
+                <span style="font-size:11px; color:var(--danger);"><i class="fas fa-times-circle"></i> Re-submit after correction</span>
                 <?php else: ?>
                 <span style="font-size:11px; color:var(--text-muted);">—</span>
                 <?php endif; ?>
@@ -269,12 +301,71 @@ function renderContent() {
       </div>
     </div>
 
+    <?php if (!empty($eo_pending_workers)): ?>
+    <div class="card glass" style="margin-top:20px;">
+      <div class="card-header">
+        <div class="card-title"><i class="fas fa-user-check"></i> Executing Officer Approval Status</div>
+        <span class="badge badge-warning"><?= count($eo_pending_workers) ?> Pending/Rejected</span>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Worker</th>
+              <th>Executing Officer</th>
+              <th>Attachment</th>
+              <th>Status</th>
+              <th>Next Step</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($eo_pending_workers as $w):
+              $eoStatus = strtolower((string)($w['execution_training_status'] ?? 'pending_eo'));
+              $hasDoc = trim((string)($w['training_approval_doc'] ?? '')) !== '';
+            ?>
+            <tr>
+              <td>
+                <strong><?= htmlspecialchars($w['name'] ?? '') ?></strong><br>
+                <small><?= htmlspecialchars($w['trade'] ?? '') ?> <?= !empty($w['temp_id']) ? ' | ' . htmlspecialchars($w['temp_id']) : '' ?></small>
+              </td>
+              <td>
+                <code><?= htmlspecialchars($w['executing_officer_code'] ?? '-') ?></code><br>
+                <small><?= htmlspecialchars($w['executing_officer_name'] ?? '') ?></small>
+              </td>
+              <td>
+                <?php if ($hasDoc): ?>
+                  <a class="btn btn-sm btn-outline" target="_blank" href="../../uploads/workers/<?= htmlspecialchars($w['training_approval_doc']) ?>">
+                    <i class="fas fa-file-pdf"></i> View
+                  </a>
+                <?php else: ?>
+                  <span class="badge badge-gray">No upload</span>
+                <?php endif; ?>
+              </td>
+              <td>
+                <span class="badge <?= $eoStatus === 'rejected' ? 'badge-danger' : 'badge-warning' ?>">
+                  <?= $eoStatus === 'rejected' ? 'EO REJECTED' : 'EO APPROVAL PENDING' ?>
+                </span>
+              </td>
+              <td style="font-size:12px;color:var(--text-muted);">
+                <?= $eoStatus === 'rejected'
+                    ? 'Worker edit karke corrected document/E-Code submit karein.'
+                    : ($hasDoc ? 'EO/Welfare/Safety view ke liye request available hai.' : 'Executing Officer inbox me online approve/reject karega.') ?>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Info Box -->
     <div class="alert alert-info" style="margin-top:20px;">
       <i class="fas fa-info-circle"></i>
       <div>
         <strong>Training Flow:</strong>
         Submit request (choose Morning/Evening) →
+        Welfare checks approval/document →
         Safety Dept. schedules with date, shift & venue →
         <strong>You confirm attendance here</strong> →
         Safety conducts training →

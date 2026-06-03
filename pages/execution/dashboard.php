@@ -13,7 +13,40 @@ $userId = $_SESSION['user_id'];
 $officerId = clms_execution_get_officer_id($conn, $userId);
 
 function renderContent() {
-    global $conn, $officerId;
+    global $conn, $officerId, $userId;
+    foreach ([
+        'executing_officer_code' => 'VARCHAR(50) NULL',
+        'executing_officer_id' => 'BIGINT NULL',
+        'execution_training_status' => "VARCHAR(30) DEFAULT 'pending'",
+        'training_approval_doc' => 'VARCHAR(255) NULL',
+    ] as $column => $definition) {
+        $safeColumn = mysqli_real_escape_string($conn, $column);
+        $exists = mysqli_query($conn, "SHOW COLUMNS FROM workmen LIKE '$safeColumn'");
+        if (!$exists || mysqli_num_rows($exists) === 0) {
+            @mysqli_query($conn, "ALTER TABLE workmen ADD COLUMN `$column` $definition");
+        }
+    }
+    $officer = db_single($conn, "SELECT employee_code FROM execution_officers WHERE id = ? LIMIT 1", 'i', [$officerId]);
+    $employeeExpr = clms_execution_column_exists($conn, 'users', 'employee_code') ? 'employee_code' : "'' AS employee_code";
+    $loginUser = db_single($conn, "SELECT contractor_id, $employeeExpr FROM users WHERE id = ? LIMIT 1", 'i', [(int)$userId]);
+    $officerCodes = array_values(array_unique(array_filter(array_map(function($code) {
+        return strtoupper(trim((string)$code));
+    }, [
+        $officer['employee_code'] ?? '',
+        $loginUser['employee_code'] ?? '',
+        $loginUser['contractor_id'] ?? '',
+    ]))));
+    $officerNames = array_values(array_unique(array_filter(array_map(function($name) {
+        return strtoupper(trim((string)$name));
+    }, [
+        $_SESSION['name'] ?? '',
+        $name ?? '',
+    ]))));
+    $codePlaceholders = implode(',', array_fill(0, max(1, count($officerCodes)), '?'));
+    $namePlaceholders = implode(',', array_fill(0, max(1, count($officerNames)), '?'));
+    $eoWorkerWhere = "(w.executing_officer_id IN (?, ?) OR UPPER(COALESCE(w.executing_officer_code, '')) IN ($codePlaceholders) OR UPPER(COALESCE(w.executing_officer_name, '')) IN ($namePlaceholders))";
+    $eoParamTypes = 'ii' . str_repeat('s', max(1, count($officerCodes))) . str_repeat('s', max(1, count($officerNames)));
+    $eoParams = array_merge([(int)$officerId, (int)$userId], $officerCodes ?: [''], $officerNames ?: ['']);
 
     // KPI Queries (PDF Correct)
     $totalContractors = db_count($conn, "SELECT COUNT(*) FROM execution_officer_contractors WHERE execution_officer_id = ?", 'i', [$officerId]);
@@ -35,8 +68,8 @@ function renderContent() {
     $attendanceExceptions = db_count($conn, "SELECT COUNT(*) FROM attendance_exceptions ae WHERE DATE(ae.created_at) = CURDATE() AND ae.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
     $totalObservations = db_count($conn, "SELECT COUNT(*) FROM execution_observations WHERE execution_officer_id = ?", 'i', [$officerId]);
     $pendingEscalations = db_count($conn, "SELECT COUNT(*) FROM execution_escalations WHERE execution_officer_id = ? AND COALESCE(status, 'open') != 'closed'", 'i', [$officerId]);
-    $trainingPending = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.training_approval_doc, '') <> '' AND COALESCE(w.execution_training_status, 'pending') = 'pending' AND w.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
-    $trainingApproved = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.execution_training_status, 'pending') = 'approved' AND w.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
+    $trainingPending = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE (COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending') OR (w.execution_training_status = 'approved' AND COALESCE(w.execution_training_reviewed_by, 0) = 0)) AND $eoWorkerWhere", $eoParamTypes, $eoParams);
+    $trainingApproved = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.execution_training_status, 'pending') = 'approved' AND COALESCE(w.execution_training_reviewed_by, 0) > 0 AND $eoWorkerWhere", $eoParamTypes, $eoParams);
     $openActions = db_count($conn, "SELECT COUNT(*) FROM execution_actions WHERE execution_officer_id = ? AND COALESCE(status, 'open') != 'closed'", 'i', [$officerId]);
 
     // Recent Observations
@@ -56,13 +89,16 @@ function renderContent() {
                                        WHERE d.execution_officer_id = ? 
                                        ORDER BY d.deployed_date DESC LIMIT 5", 'i', [$officerId]);
 
-    $trainingQueue = db_fetch_all($conn, "SELECT w.id, w.name, w.aadhaar, w.training_approval_doc, w.execution_training_status, c.contractor_name
+    $trainingQueue = db_fetch_all($conn, "SELECT w.id, w.name, w.father_name, w.gender, w.dob, w.aadhaar, w.mobile, w.temp_id,
+                                                w.worker_type, w.department, w.nature_of_work, w.trade,
+                                                w.training_approval_doc, w.execution_training_status,
+                                                w.executing_officer_code, w.executing_officer_name,
+                                                c.contractor_name
                                          FROM workmen w
                                          LEFT JOIN contractors c ON c.id = w.contractor_id
-                                         WHERE COALESCE(w.training_approval_doc, '') <> ''
-                                           AND COALESCE(w.execution_training_status, 'pending') = 'pending'
-                                           AND w.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)
-                                         ORDER BY w.created_at DESC LIMIT 6", 'i', [$officerId]);
+                                         WHERE (COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending') OR (w.execution_training_status = 'approved' AND COALESCE(w.execution_training_reviewed_by, 0) = 0))
+                                           AND $eoWorkerWhere
+                                         ORDER BY w.created_at DESC LIMIT 6", $eoParamTypes, $eoParams);
 
     $exceptionList = db_fetch_all($conn, "SELECT ae.*, w.name AS workman_name, c.contractor_name
                                          FROM attendance_exceptions ae
@@ -206,26 +242,53 @@ function renderContent() {
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Worker</th>
+                            <th>Person Details</th>
+                            <th>Aadhaar</th>
+                            <th>Pass / Role</th>
+                            <th>Department / Work</th>
+                            <th>Temp ID</th>
                             <th>Contractor</th>
-                            <th>Document</th>
+                            <th>Document / E-Code</th>
+                            <th>Status</th>
                             <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if(empty($trainingQueue)): ?>
-                            <tr><td colspan="4" style="text-align:center;padding:22px;color:#64748b">No training attendance approvals pending.</td></tr>
+                            <tr><td colspan="9" style="text-align:center;padding:22px;color:#64748b">No training attendance approvals pending.</td></tr>
                         <?php else: foreach($trainingQueue as $t): ?>
                             <tr id="training-row-<?= (int)$t['id'] ?>">
                                 <td>
                                     <strong><?= htmlspecialchars($t['name'] ?? '') ?></strong><br>
-                                    <small><?= htmlspecialchars($t['aadhaar'] ?? '') ?></small>
+                                    <small><?= htmlspecialchars($t['gender'] ?? '') ?><?= !empty($t['dob']) ? ' | ' . htmlspecialchars($t['dob']) : '' ?></small>
                                 </td>
+                                <td><code><?= htmlspecialchars($t['aadhaar'] ?? '') ?></code></td>
+                                <td>
+                                    <span class="badge badge-gray"><?= htmlspecialchars(str_replace(' Pass', '', (string)($t['worker_type'] ?? 'Workman'))) ?></span><br>
+                                    <small><?= htmlspecialchars($t['trade'] ?? '') ?></small>
+                                </td>
+                                <td>
+                                    <div><?= htmlspecialchars($t['department'] ?? '') ?></div>
+                                    <small><?= htmlspecialchars($t['nature_of_work'] ?? '') ?></small>
+                                </td>
+                                <td><code class="text-primary"><?= htmlspecialchars($t['temp_id'] ?? 'PENDING') ?></code></td>
                                 <td><?= htmlspecialchars($t['contractor_name'] ?? 'N/A') ?></td>
                                 <td>
-                                    <a class="btn btn-sm btn-outline" target="_blank" href="../../uploads/workers/<?= htmlspecialchars($t['training_approval_doc']) ?>">
-                                        <i class="fas fa-file-pdf"></i> View
-                                    </a>
+                                    <?php if (!empty($t['training_approval_doc'])): ?>
+                                        <a class="btn btn-sm btn-outline" target="_blank" href="../../uploads/workers/<?= htmlspecialchars($t['training_approval_doc']) ?>">
+                                            <i class="fas fa-file-pdf"></i> View
+                                        </a>
+                                    <?php else: ?>
+                                        <span class="badge badge-warning">No attachment</span>
+                                    <?php endif; ?>
+                                    <div style="margin-top:4px;">
+                                        <code style="background:rgba(14,165,233,0.1);color:#0369a1;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:700;"><?= htmlspecialchars($t['executing_officer_code'] ?? '') ?></code>
+                                    </div>
+                                    <div style="font-size:11px;color:#64748b;margin-top:3px;"><?= htmlspecialchars($t['executing_officer_name'] ?? '') ?></div>
+                                </td>
+                                <td>
+                                    <span class="badge badge-warning">EO Pending</span><br>
+                                    <small style="color:#64748b;"><?= htmlspecialchars($t['execution_training_status'] ?? 'pending') ?></small>
                                 </td>
                                 <td>
                                     <button class="btn btn-sm btn-success" onclick="reviewTraining(<?= (int)$t['id'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>

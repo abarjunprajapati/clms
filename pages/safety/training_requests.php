@@ -59,10 +59,13 @@ function safety_training_page_ensure_schema($conn) {
     ] as $column => $definition) {
         safety_training_page_ensure_column($conn, 'training_requests', $column, $definition);
     }
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
     if (safety_training_page_table_exists($conn, 'workmen')) {
         safety_training_page_ensure_column($conn, 'workmen', 'safety_training_status', "VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
         safety_training_page_ensure_column($conn, 'workmen', 'training_status', "VARCHAR(50) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
     }
     if (safety_training_page_table_exists($conn, 'contractors')) {
         safety_training_page_ensure_column($conn, 'contractors', 'work_order_no', 'VARCHAR(100) NULL');

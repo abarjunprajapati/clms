@@ -269,6 +269,9 @@ function worker4a_ensure_schema($conn) {
         'certified_wage_rate' => 'VARCHAR(100) NULL',
         'safety_language' => 'VARCHAR(50) NULL',
         'training_approval_doc' => 'VARCHAR(255) NULL',
+        'executing_officer_code' => 'VARCHAR(50) NULL',
+        'executing_officer_name' => 'VARCHAR(200) NULL',
+        'executing_officer_id' => 'BIGINT NULL',
         'execution_training_status' => "VARCHAR(30) DEFAULT 'pending'",
         'execution_training_remarks' => 'TEXT NULL',
         'execution_training_reviewed_by' => 'BIGINT NULL',
@@ -390,6 +393,60 @@ function worker4a_validate_upload_file($key, $file) {
     }
 }
 
+function worker4a_lookup_execution_officer($conn, $code) {
+    $code = strtoupper(trim((string)$code));
+    if ($code === '') return null;
+
+    if (worker4a_table_exists($conn, 'users')) {
+        $where = ["contractor_id = ?"];
+        if (worker4a_column_exists($conn, 'users', 'employee_code')) {
+            $where[] = "employee_code = ?";
+        }
+        $sql = "SELECT id, name, contractor_id"
+             . (worker4a_column_exists($conn, 'users', 'employee_code') ? ", employee_code" : ", contractor_id AS employee_code")
+             . " FROM users WHERE role = 'execution_officer' AND (" . implode(' OR ', $where) . ") LIMIT 1";
+        $params = array_fill(0, count($where), $code);
+        $user = db_single($conn, $sql, str_repeat('s', count($params)), $params);
+        if ($user) {
+            return [
+                'id' => (int)$user['id'],
+                'employee_code' => $user['employee_code'] ?: $user['contractor_id'],
+                'name' => $user['name'] ?? '',
+            ];
+        }
+    }
+
+    if (worker4a_table_exists($conn, 'execution_officers')) {
+        $officer = db_single($conn, "SELECT id, employee_code, name FROM execution_officers WHERE employee_code = ? LIMIT 1", 's', [$code]);
+        if ($officer) {
+            return [
+                'id' => (int)$officer['id'],
+                'employee_code' => $officer['employee_code'],
+                'name' => $officer['name'] ?? '',
+            ];
+        }
+    }
+
+    foreach (['sap_employee_master', 'sap_employees', 'employee_master', 'sqlserver_employee_master'] as $table) {
+        if (!worker4a_table_exists($conn, $table)) continue;
+        $codeCol = worker4a_column_exists($conn, $table, 'employee_code') ? 'employee_code' : (worker4a_column_exists($conn, $table, 'e_code') ? 'e_code' : '');
+        if ($codeCol === '') continue;
+        $nameExpr = worker4a_column_exists($conn, $table, 'name') ? 'name' : (worker4a_column_exists($conn, $table, 'employee_name') ? 'employee_name' : "''");
+        $safeTable = str_replace('`', '``', $table);
+        $safeCodeCol = str_replace('`', '``', $codeCol);
+        $row = db_single($conn, "SELECT `$safeCodeCol` AS employee_code, $nameExpr AS name FROM `$safeTable` WHERE `$safeCodeCol` = ? LIMIT 1", 's', [$code]);
+        if ($row) {
+            return [
+                'id' => 0,
+                'employee_code' => $row['employee_code'],
+                'name' => $row['name'] ?? '',
+            ];
+        }
+    }
+
+    return null;
+}
+
 function worker4a_upsert_workflow($conn, $application_no, $contractor_id) {
     if (!worker4a_table_exists($conn, 'application_workflow')) return;
 
@@ -433,6 +490,62 @@ function worker4a_upsert_workflow($conn, $application_no, $contractor_id) {
     }
 }
 
+function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $requested_by = 0) {
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+        id INT NOT NULL AUTO_INCREMENT,
+        workman_id INT NOT NULL,
+        contractor_id INT NOT NULL,
+        training_type VARCHAR(100) NULL,
+        requested_date DATE NULL,
+        preferred_date DATE NULL,
+        preferred_shift VARCHAR(20) DEFAULT 'morning',
+        remarks TEXT NULL,
+        source VARCHAR(30) NULL,
+        requested_by INT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    foreach ([
+        'training_type' => 'VARCHAR(100) NULL',
+        'requested_date' => 'DATE NULL',
+        'preferred_date' => 'DATE NULL',
+        'preferred_shift' => "VARCHAR(20) DEFAULT 'morning'",
+        'remarks' => 'TEXT NULL',
+        'source' => 'VARCHAR(30) NULL',
+        'requested_by' => 'INT NULL',
+        'status' => "VARCHAR(50) DEFAULT 'pending'",
+        'created_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
+        'updated_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
+    ] as $column => $definition) {
+        worker4a_ensure_column($conn, 'training_requests', $column, $definition);
+    }
+
+    $existing = db_single(
+        $conn,
+        "SELECT id FROM training_requests WHERE workman_id = ? AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
+        'i',
+        [$workman_id]
+    );
+    if ($existing) return;
+
+    insert_table_row($conn, 'training_requests', [
+        'workman_id' => $workman_id,
+        'contractor_id' => $contractor_id,
+        'training_type' => 'Safety Induction',
+        'requested_date' => date('Y-m-d'),
+        'preferred_date' => date('Y-m-d'),
+        'preferred_shift' => 'morning',
+        'remarks' => 'Auto-created after Executing Officer approval/document validation. Waiting for Welfare check.',
+        'source' => 'enrolment',
+        'requested_by' => $requested_by,
+        'status' => 'welfare_pending',
+        'created_at' => date('Y-m-d H:i:s'),
+        'updated_at' => date('Y-m-d H:i:s'),
+    ]);
+}
+
 worker4a_ensure_schema($conn);
 
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -448,6 +561,19 @@ worker4a_ensure_schema($conn);
     }
     if ($action !== 'draft') {
         worker4a_validate_dob_age($data['dob'] ?? '');
+    }
+    $executingOfficerCode = strtoupper(trim((string)($data['executing_officer_code'] ?? '')));
+    $executingOfficer = null;
+    if ($action !== 'draft') {
+        if ($executingOfficerCode === '') {
+            throw new Exception("Executing Officer E-Code is mandatory.");
+        }
+        $executingOfficer = worker4a_lookup_execution_officer($conn, $executingOfficerCode);
+        if (!$executingOfficer) {
+            throw new Exception("Executing Officer E-Code User Master/SAP/SQL Server mein nahi mila.");
+        }
+    } elseif ($executingOfficerCode !== '') {
+        $executingOfficer = worker4a_lookup_execution_officer($conn, $executingOfficerCode);
     }
 
     // ========== ANNEXURE 5/A: PASS LIMIT VALIDATION ==========
@@ -609,6 +735,9 @@ worker4a_ensure_schema($conn);
         'certified_wage_rate' => $data['certified_wage_rate'] ?? '',
         'safety_language' => $data['safety_language'] ?? '',
         'training_approval_doc' => $uploaded_files['training_approval_doc'],
+        'executing_officer_code' => $executingOfficer['employee_code'] ?? $executingOfficerCode,
+        'executing_officer_name' => $executingOfficer['name'] ?? ($data['executing_officer_name'] ?? ''),
+        'executing_officer_id' => $executingOfficer['id'] ?? null,
         'photo' => $uploaded_files['photo'],
         'education_doc' => $uploaded_files['education_doc'],
         'educational_doc' => $uploaded_files['education_doc'],
@@ -648,6 +777,11 @@ worker4a_ensure_schema($conn);
     }
 
     if ($existing_workman) {
+        $existingExecutionStatus = strtolower(trim((string)($existing_workman['execution_training_status'] ?? '')));
+        if ($action !== 'draft' && $existingExecutionStatus === 'rejected' && empty($new_uploaded_files['training_approval_doc'])) {
+            throw new Exception("Executing Officer ne request reject ki hai. Corrected Training Approval document dobara upload karein.");
+        }
+
         $file_map = [
             'photo' => 'photo',
             'education_doc' => 'education_doc',
@@ -680,8 +814,10 @@ worker4a_ensure_schema($conn);
     $workman_row['aadhaar_doc'] = $uploaded_files['aadhaar_doc'];
     $workman_row['signature_doc'] = $uploaded_files['signature'];
     $workman_row['training_approval_doc'] = $uploaded_files['training_approval_doc'];
+    if ($action !== 'draft') {
+        $workman_row['execution_training_status'] = 'pending_eo';
+    }
     if (!empty($new_uploaded_files['training_approval_doc'])) {
-        $workman_row['execution_training_status'] = 'pending';
         $workman_row['execution_training_remarks'] = null;
         $workman_row['execution_training_reviewed_by'] = null;
         $workman_row['execution_training_reviewed_at'] = null;

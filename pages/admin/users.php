@@ -6,7 +6,11 @@ include __DIR__ . '/../../include/layout.php';
 
 function renderContent() {
     global $conn;
-    $users = db_fetch_all($conn, "SELECT id, contractor_id, name, role, email, mobile, status, must_change_password, created_at FROM users ORDER BY created_at DESC");
+    $employeeCol = mysqli_query($conn, "SHOW COLUMNS FROM users LIKE 'employee_code'");
+    if (!$employeeCol || mysqli_num_rows($employeeCol) === 0) {
+        @mysqli_query($conn, "ALTER TABLE users ADD COLUMN employee_code VARCHAR(50) NULL");
+    }
+    $users = db_fetch_all($conn, "SELECT id, contractor_id, employee_code, name, role, email, mobile, status, must_change_password, created_at FROM users ORDER BY created_at DESC");
     $currentUserId = $_SESSION['user_id'];
     
     // Fetch all available roles for the dropdown (Excluding contractor as they are created during registration)
@@ -63,6 +67,7 @@ function renderContent() {
       <thead>
         <tr>
           <th>User ID</th>
+          <th>E-Code</th>
           <th>Name</th>
           <th>Role</th>
           <th>Contact</th>
@@ -105,6 +110,13 @@ function renderContent() {
         <tr id="user-row-<?= $user['id'] ?>">
           <td>
             <code style="background:rgba(99,102,241,0.1);padding:3px 8px;border-radius:6px;font-size:12px;font-weight:600;"><?= htmlspecialchars($user['contractor_id']) ?></code>
+          </td>
+          <td>
+            <?php if(!empty($user['employee_code'])): ?>
+              <code style="background:rgba(14,165,233,0.1);color:#0369a1;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:700;"><?= htmlspecialchars($user['employee_code']) ?></code>
+            <?php else: ?>
+              <span style="opacity:0.4;">-</span>
+            <?php endif; ?>
           </td>
           <td>
             <div style="font-weight:600;"><?= htmlspecialchars($user['name']) ?></div>
@@ -176,6 +188,10 @@ function renderContent() {
         <div class="form-group">
           <label class="form-label required">User ID</label>
           <input type="text" class="form-control" id="edit-contractor-id" readonly style="opacity:0.6;cursor:not-allowed;">
+        </div>
+        <div class="form-group">
+          <label class="form-label" id="edit-employee-code-label">Employee E-Code</label>
+          <input type="text" class="form-control" id="edit-employee-code" placeholder="E-Code" style="text-transform:uppercase;">
         </div>
         <div class="form-group">
           <label class="form-label required">Full Name</label>
@@ -308,13 +324,29 @@ function renderContent() {
 function openEditModal(user) {
     document.getElementById('edit-user-id').value = user.id;
     document.getElementById('edit-contractor-id').value = user.contractor_id;
+    document.getElementById('edit-employee-code').value = user.employee_code || '';
     document.getElementById('edit-name').value = user.name;
     document.getElementById('edit-email').value = user.email;
     document.getElementById('edit-mobile').value = user.mobile || '';
     document.getElementById('edit-role').value = user.role;
     document.getElementById('edit-status').value = user.status;
+    syncEditEcodeRequirement();
     document.getElementById('editModal').style.display = 'flex';
 }
+
+function syncEditEcodeRequirement() {
+    const role = document.getElementById('edit-role').value;
+    const input = document.getElementById('edit-employee-code');
+    const label = document.getElementById('edit-employee-code-label');
+    const required = role === 'execution_officer';
+    input.required = required;
+    label.classList.toggle('required', required);
+}
+
+document.getElementById('edit-role').addEventListener('change', syncEditEcodeRequirement);
+document.getElementById('edit-employee-code').addEventListener('input', function() {
+    this.value = this.value.toUpperCase();
+});
 
 async function saveEdit() {
     const btn = document.getElementById('saveEditBtn');
@@ -323,6 +355,7 @@ async function saveEdit() {
 
     const payload = {
         user_id: document.getElementById('edit-user-id').value,
+        employee_code: document.getElementById('edit-employee-code').value.trim(),
         name: document.getElementById('edit-name').value,
         email: document.getElementById('edit-email').value,
         mobile: document.getElementById('edit-mobile').value,

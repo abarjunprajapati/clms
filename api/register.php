@@ -25,6 +25,7 @@ try {
     $input = getApiInput();
 
     $contractor_id = trim($input['contractor_id'] ?? '');
+    $employee_code = strtoupper(trim($input['employee_code'] ?? ''));
     $name = trim($input['name'] ?? '');
     $email = trim($input['email'] ?? '');
     $mobile = trim($input['mobile'] ?? '');
@@ -41,6 +42,12 @@ try {
     $validRoles = ['contractor', 'welfare_admin', 'welfare_user', 'safety_user', 'front_line_user', 'pass_user', 'super_admin', 'execution_officer'];
     if (!in_array($role, $validRoles)) apiError('Invalid role', 400);
     if (!in_array($status, ['active', 'inactive'])) apiError('Invalid status', 400);
+    if ($role === 'execution_officer' && $employee_code === '') apiError('Employee E-Code is required for Execution Officer', 400);
+
+    $colRes = mysqli_query($conn, "SHOW COLUMNS FROM users LIKE 'employee_code'");
+    if (!$colRes || mysqli_num_rows($colRes) === 0) {
+        @mysqli_query($conn, "ALTER TABLE users ADD COLUMN employee_code VARCHAR(50) NULL");
+    }
 
     // Check if contractor_id already exists
     $count = db_count($conn, "SELECT COUNT(*) FROM users WHERE contractor_id = ?", 's', [$contractor_id]);
@@ -49,6 +56,11 @@ try {
     // Check if email already exists
     $count = db_count($conn, "SELECT COUNT(*) FROM users WHERE email = ?", 's', [$email]);
     if ($count > 0) apiError('Email already exists', 409);
+
+    if ($employee_code !== '') {
+        $count = db_count($conn, "SELECT COUNT(*) FROM users WHERE employee_code = ?", 's', [$employee_code]);
+        if ($count > 0) apiError('Employee E-Code already exists', 409);
+    }
 
     // Hash password
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
@@ -59,13 +71,13 @@ try {
     try {
         // Insert user with must_change_password = 1
         $stmt = $conn->prepare("
-            INSERT INTO users (contractor_id, name, email, mobile, role, password, status, must_change_password, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())
+            INSERT INTO users (contractor_id, employee_code, name, email, mobile, role, password, status, must_change_password, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
         ");
 
         if (!$stmt) throw new Exception('Database error: ' . $conn->error);
 
-        $stmt->bind_param('sssssss', $contractor_id, $name, $email, $mobile, $role, $hashedPassword, $status);
+        $stmt->bind_param('ssssssss', $contractor_id, $employee_code, $name, $email, $mobile, $role, $hashedPassword, $status);
 
         if (!$stmt->execute()) throw new Exception('Failed to create user: ' . $stmt->error);
 
@@ -74,9 +86,10 @@ try {
 
         // If role is execution_officer, sync with execution_officers table
         if ($role === 'execution_officer') {
+            $eoCode = $employee_code ?: $contractor_id;
             $stmtEO = $conn->prepare("INSERT INTO execution_officers (employee_code, name, email, mobile, status) VALUES (?, ?, ?, ?, ?)");
             if (!$stmtEO) throw new Exception('EO Database error: ' . $conn->error);
-            $stmtEO->bind_param('sssss', $contractor_id, $name, $email, $mobile, $status);
+            $stmtEO->bind_param('sssss', $eoCode, $name, $email, $mobile, $status);
             if (!$stmtEO->execute()) throw new Exception('Failed to create officer record: ' . $stmtEO->error);
             $stmtEO->close();
         }
@@ -89,7 +102,7 @@ try {
 
     // Audit log
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-    $logValue = json_encode(['user_id' => $userId, 'contractor_id' => $contractor_id, 'name' => $name, 'role' => $role]);
+    $logValue = json_encode(['user_id' => $userId, 'contractor_id' => $contractor_id, 'employee_code' => $employee_code, 'name' => $name, 'role' => $role]);
     db_execute($conn,
         "INSERT INTO audit_logs (user_id, action, module, new_value, remarks, ip_address, created_at) VALUES (?, 'create_user', 'user_management', ?, ?, ?, NOW())",
         'isss', [$_SESSION['user_id'], $logValue, "Created user: $name ($contractor_id) as $role", $ip]
@@ -98,6 +111,7 @@ try {
     apiSuccess([
         'user_id' => $userId,
         'contractor_id' => $contractor_id,
+        'employee_code' => $employee_code,
         'role' => $role,
         'status' => $status,
         'must_change_password' => true

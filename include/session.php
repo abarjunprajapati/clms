@@ -88,6 +88,19 @@ if (session_status() === PHP_SESSION_NONE) {
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
+
+    $sessionName = session_name();
+    if (isset($_COOKIE[$sessionName])) {
+        if (is_array($_COOKIE[$sessionName])) {
+            unset($_COOKIE[$sessionName]);
+        } else {
+            $sessionCookie = (string)$_COOKIE[$sessionName];
+            if ($sessionCookie === '' || !preg_match('/^[A-Za-z0-9,-]{1,128}$/', $sessionCookie)) {
+                unset($_COOKIE[$sessionName]);
+            }
+        }
+    }
+
     session_start();
 }
 

@@ -563,6 +563,10 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'dcate', 'dcate') . ",
                 " . enrolment_expr($conn, 'workmen', 'certified_wage_rate', 'certified_wage_rate') . ",
                 " . enrolment_expr($conn, 'workmen', 'safety_language', 'safety_language') . ",
+                " . enrolment_expr($conn, 'workmen', 'executing_officer_code', 'executing_officer_code') . ",
+                " . enrolment_expr($conn, 'workmen', 'executing_officer_name', 'executing_officer_name') . ",
+                " . enrolment_expr($conn, 'workmen', 'execution_training_status', 'execution_training_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'execution_training_reviewed_by', 'execution_training_reviewed_by', '0') . ",
                 " . enrolment_expr($conn, 'workmen', 'uan_number', 'pf_no') . ",
                 " . enrolment_expr($conn, 'workmen', 'esic_number', 'esi_no') . ",
                 '' AS bank_account,
@@ -657,14 +661,9 @@ function renderContent() {
     .flow-control { width:100%; border:1.5px solid #cbd5e1 !important; border-radius:8px; background:#fff !important; color:#0f172a !important; padding:10px 12px; min-height:44px; font-size:13px; font-weight:700; }
     .flow-control:disabled { background:#f1f5f9 !important; color:#94a3b8 !important; cursor:not-allowed; }
     .flow-control:focus { border-color:#6366f1 !important; box-shadow:0 0 0 3px rgba(99,102,241,.14); outline:none; }
-    .flow-summary { margin-top:14px; display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
-    .flow-summary-item { border:1px solid #dbe3ef; background:#fff; border-radius:8px; padding:9px 11px; }
-    .flow-summary-item span { display:block; font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase; margin-bottom:3px; }
-    .flow-summary-item strong { display:block; color:#0f172a; font-size:13px; min-height:18px; }
     @media (max-width: 900px) {
       .work-flow-steps { grid-template-columns:1fr; }
       .work-flow-step:not(:last-child)::after { content:'\f063'; top:auto; bottom:-16px; right:50%; transform:translateX(50%); }
-      .flow-summary { grid-template-columns:1fr; }
     }
     
     .doc-card { background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; }
@@ -770,6 +769,7 @@ function renderContent() {
               <th>Pass / Role</th>
               <th>Department / Work</th>
               <th>Temp ID</th>
+              <th>Executing Officer</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -803,6 +803,22 @@ function renderContent() {
               </td>
               <td><code class="text-primary"><?= $w['temp_id'] ?? 'PENDING' ?></code></td>
               <td>
+                <?php if (!empty($w['executing_officer_code'])): ?>
+                  <code style="background:rgba(14,165,233,0.1);color:#0369a1;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:700;"><?= htmlspecialchars($w['executing_officer_code']) ?></code>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><?= htmlspecialchars($w['executing_officer_name'] ?: 'Name not found') ?></div>
+                  <?php
+                    $eoStatus = strtolower((string)($w['execution_training_status'] ?? 'pending'));
+                    $eoReviewed = (int)($w['execution_training_reviewed_by'] ?? 0) > 0;
+                    $eoIsApproved = $eoStatus === 'approved' && $eoReviewed;
+                    $eoBadge = $eoIsApproved ? 'bg-success text-white' : ($eoStatus === 'rejected' ? 'bg-danger text-white' : 'bg-warning');
+                    $eoLabel = $eoIsApproved ? 'EO Approved' : ($eoStatus === 'rejected' ? 'EO Rejected' : 'EO Pending');
+                  ?>
+                  <span class="badge-status <?= $eoBadge ?>" style="margin-top:4px;display:inline-block;"><?= $eoLabel ?></span>
+                <?php else: ?>
+                  <span style="opacity:0.4;">-</span>
+                <?php endif; ?>
+              </td>
+              <td>
                 <span class="badge-status <?= $w['safety_status']==='pass'?'bg-success text-white':'bg-warning' ?>">Safety: <?= $w['safety_status'] ?></span>
               </td>
               <td>
@@ -833,7 +849,7 @@ function renderContent() {
     <div id="formSection" class="hidden">
       <div class="card">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-          <h3 class="card-title" id="enrollFormTitle"> <?= htmlspecialchars($selectedType['pass']) ?> Enrollment</h3>
+          <h3 class="card-title" id="enrollFormTitle">Workmen Enrollment</h3>
           <button class="btn btn-outline" onclick="closeForm()">Back to List</button>
         </div>
         <form id="enrollForm" enctype="multipart/form-data">
@@ -1043,11 +1059,6 @@ function renderContent() {
                     <select class="flow-control" id="jobProfileOptions" aria-label="Job profile selection" required disabled></select>
                   </div>
                 </div>
-                <div class="flow-summary">
-                  <div class="flow-summary-item"><span>Nature of Work</span><strong id="flowNatureSummary">Not selected</strong></div>
-                  <div class="flow-summary-item"><span>Skill Category</span><strong id="flowSkillSummary">Not selected</strong></div>
-                  <div class="flow-summary-item"><span>Worker Category</span><strong id="flowRoleSummary">Not selected</strong></div>
-                </div>
                 <input type="hidden" name="nature_of_work" required>
                 <input type="hidden" name="skill_category" required>
                 <input type="hidden" name="education" id="educationQualification" required>
@@ -1091,6 +1102,15 @@ function renderContent() {
                   <option value="Tamil">Tamil</option>
                   <option value="English">English</option>
                 </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label required">Executing Officer E-Code <span id="eoCodeStatus" class="badge-status" style="display:none;margin-left:10px;"></span></label>
+                <input type="text" class="form-control" name="executing_officer_code" id="executingOfficerCode" maxlength="50" required style="text-transform:uppercase;">
+                <small class="form-hint">E-Code will be verified from User Master/SAP/SQL Server.</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Executing Officer Name</label>
+                <input type="text" class="form-control" name="executing_officer_name" id="executingOfficerName" readonly>
               </div>
             </div>
           </div>
@@ -1304,6 +1324,9 @@ function renderContent() {
         const pdfMaxSize = 5 * 1024 * 1024;
         const minimumCertifiedWage = <?= json_encode((float)$minimumCertifiedWage) ?>;
         const certifiedWageInput = document.getElementById('certifiedWageRate');
+        const executingOfficerCodeInput = document.getElementById('executingOfficerCode');
+        const executingOfficerNameInput = document.getElementById('executingOfficerName');
+        const executingOfficerStatus = document.getElementById('eoCodeStatus');
         const indianStateDistricts = {
           'Andhra Pradesh': ['Anantapur', 'Chittoor', 'East Godavari', 'Guntur', 'Krishna', 'Kurnool', 'Prakasam', 'SPSR Nellore', 'Srikakulam', 'Visakhapatnam', 'Vizianagaram', 'West Godavari', 'YSR Kadapa'],
           'Arunachal Pradesh': ['Anjaw', 'Changlang', 'East Kameng', 'East Siang', 'Itanagar Capital Complex', 'Lohit', 'Lower Dibang Valley', 'Lower Subansiri', 'Namsai', 'Papum Pare', 'Tawang', 'Tirap', 'Upper Siang', 'Upper Subansiri', 'West Kameng', 'West Siang'],
@@ -1385,6 +1408,46 @@ function renderContent() {
           input.setCustomValidity(message);
           if (message && showMessage) input.reportValidity();
           return message === '';
+        }
+
+        function setExecutingOfficerStatus(message = '', type = '') {
+          if (!executingOfficerStatus) return;
+          executingOfficerStatus.textContent = message;
+          executingOfficerStatus.style.display = message ? 'inline-block' : 'none';
+          executingOfficerStatus.className = 'badge-status ' + (type || '');
+        }
+
+        async function verifyExecutingOfficerCode(showMessage = true) {
+          const code = (executingOfficerCodeInput?.value || '').trim().toUpperCase();
+          if (executingOfficerCodeInput) executingOfficerCodeInput.value = code;
+          if (!code) {
+            if (executingOfficerNameInput) executingOfficerNameInput.value = '';
+            setExecutingOfficerStatus('', '');
+            return false;
+          }
+
+          setExecutingOfficerStatus('Checking...', 'badge-warning');
+          try {
+            const res = await fetch('../../api/verify_execution_officer.php?code=' + encodeURIComponent(code));
+            const data = await res.json();
+            if (data.success && data.data) {
+              if (executingOfficerNameInput) executingOfficerNameInput.value = data.data.name || '';
+              setExecutingOfficerStatus('Verified', 'badge-success');
+              return true;
+            }
+            if (executingOfficerNameInput) executingOfficerNameInput.value = '';
+            setExecutingOfficerStatus('Invalid', 'badge-danger');
+            if (showMessage) {
+              activateTab('work');
+              notify('Invalid E-Code', data.message || 'Executing Officer E-Code User Master/SAP/SQL Server mein nahi mila.', 'error');
+            }
+            return false;
+          } catch (err) {
+            if (executingOfficerNameInput) executingOfficerNameInput.value = '';
+            setExecutingOfficerStatus('Error', 'badge-danger');
+            if (showMessage) notify('E-Code Check Failed', err.message || 'Unable to verify E-Code.', 'error');
+            return false;
+          }
         }
 
         function getFieldLabel(field) {
@@ -1746,9 +1809,9 @@ function renderContent() {
             flowEls.skillInput.value = flowState.category;
             flowEls.educationInput.value = flowState.qualification;
             flowEls.roleInput.value = flowState.category;
-            flowEls.natureSummary.textContent = flowState.jobProfile || 'Not selected';
-            flowEls.skillSummary.textContent = flowState.category || 'Not selected';
-            flowEls.roleSummary.textContent = flowState.category || 'Not selected';
+            if (flowEls.natureSummary) flowEls.natureSummary.textContent = flowState.jobProfile || 'Not selected';
+            if (flowEls.skillSummary) flowEls.skillSummary.textContent = flowState.category || 'Not selected';
+            if (flowEls.roleSummary) flowEls.roleSummary.textContent = flowState.category || 'Not selected';
         }
 
         function renderCategoryOptions() {
@@ -1853,7 +1916,8 @@ function renderContent() {
             const fieldsToReset = [
                 'name', 'gender', 'dob', 'marital_status', 'nationality', 'mobile', 'present_address', 
                 'permanent_address', 'state', 'district', 'nature_of_work', 
-                'skill_category', 'education', 'role_type', 'blood_group', 'pf_no', 'esi_no', 'uan_number', 'email', 'father_name'
+                'skill_category', 'education', 'role_type', 'blood_group', 'pf_no', 'esi_no', 'uan_number', 'email', 'father_name',
+                'executing_officer_code', 'executing_officer_name'
             ];
             
             fieldsToReset.forEach(key => {
@@ -1939,6 +2003,9 @@ function renderContent() {
             skill_category: worker.skill_category,
             education: worker.education,
             role_type: worker.role_type || worker.skill_category
+            ,executing_officer_code: worker.executing_officer_code
+            ,executing_officer_name: worker.executing_officer_name
+            ,execution_training_reviewed_by: worker.execution_training_reviewed_by
           };
 
           Object.entries(values).forEach(([name, value]) => setFieldValue(name, value));
@@ -1951,11 +2018,17 @@ function renderContent() {
             deptField.style.backgroundColor = '#f1f5f9';
           }
           document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => input.removeAttribute('required'));
+          const trainingApprovalInput = form.querySelector('[name="training_approval_doc"]');
+          const rejectedByEO = String(worker.execution_training_status || '').toLowerCase() === 'rejected';
+          if (trainingApprovalInput && rejectedByEO) {
+            trainingApprovalInput.setAttribute('required', 'true');
+            notify('Document Required', 'Executing Officer ne request reject ki hai. Corrected Training Approval document dobara upload karein.', 'warning');
+          }
           syncWorkFlowFromFields();
           listSection.style.display = 'none';
           formSection.style.display = 'block';
           formSection.classList.remove('hidden');
-          activateTab('basic');
+          activateTab(rejectedByEO ? 'docs' : 'basic');
         }
 
         async function deleteWorker(workerId, workerName) {
@@ -2060,6 +2133,11 @@ function renderContent() {
             return;
           }
 
+          if (!(await verifyExecutingOfficerCode(true))) {
+            focusInvalidField(executingOfficerCodeInput);
+            return;
+          }
+
           const invalidFile = Array.from(document.querySelectorAll('#tab-docs input[type="file"]')).find(input => !validateWorkerFile(input, false));
           if (invalidFile) {
             focusInvalidField(invalidFile);
@@ -2136,6 +2214,13 @@ function renderContent() {
           });
         }
 
+        executingOfficerCodeInput?.addEventListener('input', () => {
+          executingOfficerCodeInput.value = executingOfficerCodeInput.value.toUpperCase();
+          if (executingOfficerNameInput) executingOfficerNameInput.value = '';
+          setExecutingOfficerStatus('', '');
+        });
+        executingOfficerCodeInput?.addEventListener('blur', () => verifyExecutingOfficerCode(false));
+
         if (prefillAadhaar) {
           document.getElementById('btnOpenModal')?.click();
         }
@@ -2155,6 +2240,8 @@ function renderContent() {
             <div><strong>Temp ID:</strong> <span class="text-primary">${w.temp_id}</span></div>
             <div><strong>Aadhaar:</strong> ${w.aadhaar}</div>
             <div><strong>Work:</strong> ${w.nature_of_work} (${w.department})</div>
+            <div><strong>Executing Officer:</strong> ${(w.executing_officer_code || '-')} ${(w.executing_officer_name ? ' - ' + w.executing_officer_name : '')}</div>
+            <div><strong>EO Approval:</strong> ${((w.execution_training_status === 'approved' && Number(w.execution_training_reviewed_by || 0) > 0) ? 'APPROVED' : (w.execution_training_status === 'rejected' ? 'REJECTED' : 'PENDING'))}</div>
           </div>
         </div>
         <hr>

@@ -62,14 +62,39 @@ function executionTrainingEnsureFlowSchema($conn) {
     ] as $column => $definition) {
         executionTrainingEnsureColumn($conn, 'training_requests', $column, $definition);
     }
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
     foreach ([
         'training_status' => "VARCHAR(50) DEFAULT 'pending'",
         'safety_training_status' => "VARCHAR(50) DEFAULT 'PENDING_TRAINING'",
+        'executing_officer_code' => 'VARCHAR(50) NULL',
+        'executing_officer_id' => 'BIGINT NULL',
         'updated_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
     ] as $column => $definition) {
         executionTrainingEnsureColumn($conn, 'workmen', $column, $definition);
     }
+    @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+    @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
+}
+
+function executionTrainingEnsureRequest($conn, $workmanId, $contractorId, $userId) {
+    $existing = db_single(
+        $conn,
+        "SELECT id FROM training_requests WHERE workman_id = ? AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
+        'i',
+        [$workmanId]
+    );
+    if ($existing) return;
+
+    db_execute(
+        $conn,
+        "INSERT INTO training_requests
+         (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
+         VALUES (?, ?, 'Safety Induction', CURDATE(), CURDATE(), 'morning', 'Auto-created after Executing Officer online approval. Waiting for Welfare check.', 'execution', ?, 'welfare_pending', NOW(), NOW())",
+        'iii',
+        [$workmanId, $contractorId, $userId]
+    );
 }
 
 try {
@@ -84,6 +109,23 @@ try {
     if (!$officerId) {
         executionTrainingJson(['status' => false, 'message' => 'Officer record not found.'], 403);
     }
+    $officer = db_single($conn, "SELECT employee_code FROM execution_officers WHERE id = ? LIMIT 1", 'i', [$officerId]);
+    $employeeExpr = executionTrainingColumnExists($conn, 'users', 'employee_code') ? 'employee_code' : "'' AS employee_code";
+    $loginUser = db_single($conn, "SELECT contractor_id, $employeeExpr FROM users WHERE id = ? LIMIT 1", 'i', [(int)($_SESSION['user_id'] ?? 0)]);
+    $officerCodes = array_values(array_unique(array_filter(array_map(function($code) {
+        return strtoupper(trim((string)$code));
+    }, [
+        $officer['employee_code'] ?? '',
+        $loginUser['employee_code'] ?? '',
+        $loginUser['contractor_id'] ?? '',
+    ]))));
+    $officerNames = array_values(array_unique(array_filter(array_map(function($name) {
+        return strtoupper(trim((string)$name));
+    }, [
+        $_SESSION['name'] ?? '',
+    ]))));
+    $codePlaceholders = implode(',', array_fill(0, max(1, count($officerCodes)), '?'));
+    $namePlaceholders = implode(',', array_fill(0, max(1, count($officerNames)), '?'));
 
     $workmanId = (int)($input['workman_id'] ?? 0);
     $decision = strtolower(trim((string)($input['decision'] ?? '')));
@@ -98,23 +140,18 @@ try {
         "SELECT w.id, w.name, w.contractor_id, w.training_approval_doc, w.training_status
          FROM workmen w
          WHERE w.id = ?
-           AND EXISTS (
-               SELECT 1
-               FROM execution_officer_contractors eoc
-               WHERE eoc.execution_officer_id = ?
-                 AND eoc.contractor_id = w.contractor_id
+           AND (
+               w.executing_officer_id IN (?, ?)
+               OR UPPER(COALESCE(w.executing_officer_code, '')) IN ($codePlaceholders)
+               OR UPPER(COALESCE(w.executing_officer_name, '')) IN ($namePlaceholders)
            )
          LIMIT 1",
-        'ii',
-        [$workmanId, $officerId]
+        'iii' . str_repeat('s', max(1, count($officerCodes))) . str_repeat('s', max(1, count($officerNames))),
+        array_merge([$workmanId, (int)$officerId, (int)($_SESSION['user_id'] ?? 0)], $officerCodes ?: [''], $officerNames ?: [''])
     );
 
     if (!$worker) {
         executionTrainingJson(['status' => false, 'message' => 'Worker is not assigned to this officer.'], 403);
-    }
-
-    if (trim((string)($worker['training_approval_doc'] ?? '')) === '') {
-        executionTrainingJson(['status' => false, 'message' => 'Training approval document is not uploaded for this worker.'], 400);
     }
 
     $conn->begin_transaction();
@@ -139,13 +176,17 @@ try {
         [$officerId, $workmanId, json_encode(['decision' => $decision, 'remarks' => $remarks], JSON_UNESCAPED_SLASHES)]
     );
 
+    if ($decision === 'approved') {
+        executionTrainingEnsureRequest($conn, $workmanId, (int)$worker['contractor_id'], (int)($_SESSION['user_id'] ?? 0));
+    }
+
     $conn->commit();
 
     executionTrainingJson([
         'status' => true,
         'message' => $decision === 'approved'
-            ? 'Training attendance approved. Contractor can now submit the safety training request.'
-            : 'Training attendance rejected. Contractor can upload the corrected document again.',
+            ? 'Executing Officer approval completed. Request forwarded to Welfare for safety training check.'
+            : 'Executing Officer rejected the enrolment approval request.',
     ]);
 } catch (Throwable $e) {
     if (isset($conn) && method_exists($conn, 'rollback')) {

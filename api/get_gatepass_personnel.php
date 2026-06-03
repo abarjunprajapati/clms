@@ -19,13 +19,14 @@ try {
             tr.workman_id AS id,
             tr.name,
             tr.trade AS role,
-            COALESCE(w.tempId, CONCAT('TMP-', tr.workman_id)) AS tempId,
+            COALESCE(w.temp_id, CONCAT('TMP-', tr.workman_id)) AS tempId,
             tr.result AS training,
             tr.attendance_status
         FROM training_results tr
         LEFT JOIN workmen w ON w.id = tr.workman_id
-        WHERE LOWER(tr.result) = 'qualified'
+        WHERE LOWER(tr.result) IN ('qualified', 'pass', 'passed')
           AND LOWER(tr.attendance_status) = 'present'
+          AND LOWER(COALESCE(w.training_status, '')) IN ('pass', 'passed', 'qualified', 'completed', 'training_passed')
         ORDER BY tr.name ASC
     ";
 

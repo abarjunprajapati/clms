@@ -336,8 +336,12 @@ function clms_execution_get_officer_id($conn, $userId = null) {
     }
     clms_execution_ensure_schema($conn);
 
-    $user = db_single($conn, "SELECT id, contractor_id, name, email, mobile FROM users WHERE id = ? LIMIT 1", 'i', [$userId]);
-    $employeeCode = trim((string)($user['contractor_id'] ?? ''));
+    $employeeExpr = clms_execution_column_exists($conn, 'users', 'employee_code') ? 'employee_code' : "'' AS employee_code";
+    $user = db_single($conn, "SELECT id, contractor_id, $employeeExpr, name, email, mobile FROM users WHERE id = ? LIMIT 1", 'i', [$userId]);
+    $employeeCode = trim((string)($user['employee_code'] ?? ''));
+    if ($employeeCode === '') {
+        $employeeCode = trim((string)($user['contractor_id'] ?? ''));
+    }
     if ($employeeCode === '') {
         $employeeCode = 'EXEC-' . $userId;
     }

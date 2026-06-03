@@ -50,6 +50,15 @@ function renderContent() {
             </small>
           </div>
 
+          <div class="form-group" id="cu-employee-code-wrap">
+            <label class="form-label">Employee E-Code</label>
+            <input type="text" class="form-control" name="employee_code" id="cu-employee-code"
+              placeholder="e.g. E12345" style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()">
+            <small class="form-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;display:block;">
+              Mandatory for Execution Officer users and used for worker mapping.
+            </small>
+          </div>
+
           <div class="form-group">
             <label class="form-label required">Full Name</label>
             <input type="text" class="form-control" name="name" id="cu-name" placeholder="Enter full name" required>
@@ -232,6 +241,13 @@ document.getElementById('cu-password').addEventListener('input', function() {
     validatePasswordRules(this.value);
 });
 
+document.getElementById('cu-role').addEventListener('change', function() {
+    const code = document.getElementById('cu-employee-code');
+    const required = this.value === 'execution_officer';
+    code.required = required;
+    code.closest('.form-group')?.querySelector('.form-label')?.classList.toggle('required', required);
+});
+
 function validatePasswordRules(pwd) {
     const rules = {
         length: pwd.length >= 6,
@@ -251,6 +267,9 @@ document.getElementById('createUserForm').addEventListener('submit', async funct
 
     // Validate required fields
     const fields = ['cu-contractor-id', 'cu-name', 'cu-email', 'cu-role', 'cu-password'];
+    if (document.getElementById('cu-role').value === 'execution_officer') {
+        fields.push('cu-employee-code');
+    }
     let hasError = false;
     fields.forEach(id => {
         const el = document.getElementById(id);
@@ -291,6 +310,7 @@ document.getElementById('createUserForm').addEventListener('submit', async funct
         name: document.getElementById('cu-name').value.trim(),
         email: email.trim(),
         mobile: document.getElementById('cu-mobile').value.trim(),
+        employee_code: document.getElementById('cu-employee-code').value.trim(),
         role: document.getElementById('cu-role').value,
         status: document.getElementById('cu-status').value,
         password: pwd
