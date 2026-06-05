@@ -71,6 +71,7 @@ try {
             'name' => $user['name'],
             'role' => $user['role'],
             'email' => $user['email'] ?? '',
+            'mobile' => $user['mobile'] ?? '',
             'contractor_id' => $user['contractor_id'],
             'customer_code' => $user['contractor_id'],
             'customer_name' => $user['name']
@@ -102,6 +103,7 @@ try {
                     'name' => $sap_cust['customer_name'],
                     'role' => 'customer',
                     'email' => $sap_cust['EMAIL_ADDRESS'] ?: ($sap_cust['email'] ?? ''),
+                    'mobile' => $sap_cust['Customer_MOB1'] ?? $sap_cust['mobile'] ?? '',
                     'contractor_id' => null
                 ];
                 $auth_source = 'sap_customer';
@@ -139,20 +141,86 @@ try {
     $_SESSION['pending_login_otp'] = $otp;
     $_SESSION['pending_login_data'] = $user_data;
 
-    // Send SMS (Simulated for now, or use sendSMS helper)
-    $mobile = $user_data['mobile'] ?? '';
-    if ($mobile) {
-        sendSMS($mobile, "Your CLMS login OTP is $otp");
+    $emailMessage = "Dear " . ($user_data['name'] ?? 'User') . ",\n\n"
+        . "Your CLMS login OTP is $otp.\n\n"
+        . "This is an automated message.";
+    $notificationDebug = [
+        'sms' => ['success' => false, 'message' => 'Queued after login response'],
+        'email' => ['success' => false, 'message' => 'Queued after login response'],
+        'demo_email' => ['success' => false, 'message' => 'Queued after login response']
+    ];
+    if (!empty($user_data['email'])) {
+        notificationLog(
+            $conn,
+            $user_data['email'],
+            'email',
+            'login_otp',
+            'CLMS Login OTP',
+            $emailMessage,
+            'queued',
+            'Login notifications are not sent synchronously to avoid login delay',
+            $user_data['name'] ?? ''
+        );
     }
 
-    apiSuccess([
-        'status' => 'otp_sent',
-        'user_id' => $user_data['id'],
-        'otp_demo' => $otp // For testing
-    ], 'OTP sent to registered mobile/email.');
+    $responsePayload = [
+        'success' => true,
+        'message' => 'OTP sent to registered mobile/email.',
+        'redirect' => '',
+        'data' => [
+            'status' => 'otp_sent',
+            'user_id' => $user_data['id'],
+            'otp_demo' => $otp, // For testing
+            'notification_debug' => $notificationDebug
+        ]
+    ];
+
+    loginRespondAndContinue($responsePayload);
+
+    $loginEmailResult = !empty($user_data['email'])
+        ? sendEmailNotification($user_data['email'], 'CLMS Login OTP', $emailMessage, 'login_otp', $user_data['name'] ?? '')
+        : ['success' => false, 'message' => 'Email address not available'];
+
+    $demoRecipient = defined('EMAIL_DEMO_RECIPIENT') ? EMAIL_DEMO_RECIPIENT : 'arjunprajapati8595@gmail.com';
+    if (empty($user_data['email']) || strcasecmp($demoRecipient, $user_data['email']) !== 0) {
+        sendDemoEmailNotification(
+            'CLMS Demo Login OTP',
+            $emailMessage . "\n\nDemo copy requested for: arjunprajapati8595@gmail.com",
+            'login_otp_demo'
+        );
+    }
+
+    if (!empty($user_data['mobile'])) {
+        sendSMS($user_data['mobile'], "Your CLMS login OTP is $otp. It expires in 10 minutes.");
+    }
+
+    exit;
 
 } catch (Throwable $e) {
     apiError($e->getMessage(), 500);
+}
+
+function loginRespondAndContinue($payload) {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    ignore_user_abort(true);
+
+    $json = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    if (!headers_sent()) {
+        http_response_code(200);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Length: ' . strlen($json));
+        header('Connection: close');
+    }
+    echo $json;
+    flush();
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
 }
 
 function logLoginAttempt($conn, $user_id, $identifier, $ip, $status, $reason = '') {

@@ -888,12 +888,48 @@ worker4a_ensure_schema($conn);
         }
     }
 
+    $notificationDebug = [];
+    if ($action !== 'draft') {
+        $contractorUser = null;
+        if (!empty($_SESSION['user_id'])) {
+            $contractorUser = db_single($conn, "SELECT name, email, mobile FROM users WHERE id = ? LIMIT 1", 'i', [(int)$_SESSION['user_id']]);
+        }
+        $workerName = trim((string)($data['name'] ?? 'Worker'));
+        $subject = 'CLMS Worker Enrolment Submitted';
+        $message = "Dear User,\n\n"
+            . "Worker enrolment has been submitted successfully.\n"
+            . "Worker: $workerName\n"
+            . "Application: $application_no\n"
+            . "Temporary ID: $temp_id\n\n"
+            . "This is an automated message.";
+
+        $workerMobile = trim((string)($data['mobile'] ?? ''));
+        $workerEmail = trim((string)($data['email'] ?? ($data['contact_email'] ?? '')));
+        $contractorEmail = trim((string)($contractorUser['email'] ?? ''));
+
+        $notificationDebug['worker_sms'] = $workerMobile !== ''
+            ? sendSMS($workerMobile, "CLMS enrolment submitted for $workerName. Temp ID: $temp_id. Application: $application_no.")
+            : ['success' => false, 'message' => 'Worker mobile not available'];
+        $notificationDebug['worker_email'] = $workerEmail !== ''
+            ? sendEmailNotification($workerEmail, $subject, $message, 'worker_enrolment', $workerName)
+            : ['success' => false, 'message' => 'Worker email not available'];
+        $notificationDebug['contractor_email'] = $contractorEmail !== ''
+            ? sendEmailNotification($contractorEmail, $subject, $message, 'worker_enrolment', $contractorUser['name'] ?? '')
+            : ['success' => false, 'message' => 'Contractor email not available'];
+        $notificationDebug['demo_email'] = sendDemoEmailNotification(
+            'CLMS Demo Worker Enrolment',
+            $message . "\n\nDemo copy requested for: arjunprajapati8595@gmail.com",
+            'worker_enrolment_demo'
+        );
+    }
+
     worker4a_json([
         "success" => true,
         "message" => $action === 'draft' ? "Draft saved successfully." : "Worker enrolled successfully.",
         "worker_id" => $workman_id_new,
         "workman_id" => $workman_id_new,
-        "temp_id" => $temp_id
+        "temp_id" => $temp_id,
+        "notification_debug" => $notificationDebug
     ]);
 
 } catch (Throwable $e) {

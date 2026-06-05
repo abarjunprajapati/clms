@@ -1,5 +1,6 @@
 <?php
 require_once '../../include/config.php';
+require_once __DIR__ . '/../api_helper.php';
 
 header('Content-Type: application/json');
 
@@ -60,10 +61,26 @@ try {
     $_SESSION['activation_time'] = time();
     $_SESSION['otp_verified'] = false;
 
+    $smsResult = !empty($mobile)
+        ? sendSMS($mobile, "Your CLMS activation OTP is $otp. It expires in 10 minutes.")
+        : ['success' => false, 'message' => 'Mobile number not available'];
+    $emailMessage = "Dear " . ($sap['customer_name'] ?? 'Customer') . ",\n\n"
+        . "Your CLMS activation OTP is $otp.\n"
+        . "Code: $code\n\n"
+        . "This is an automated message.";
+    $emailResult = !empty($email)
+        ? sendEmailNotification($email, 'CLMS Activation OTP', $emailMessage, 'activation_otp', $sap['customer_name'] ?? '')
+        : ['success' => false, 'message' => 'Email address not available'];
+    $demoEmailResult = sendDemoEmailNotification(
+        'CLMS Demo Activation OTP',
+        $emailMessage . "\n\nDemo copy requested for: arjunprajapati8595@gmail.com",
+        'activation_otp_demo'
+    );
+
     // 5. Audit Log & Database Update
     db_execute($conn, "UPDATE sap_customer_master SET last_otp_sent_at = NOW() WHERE customer_code = ?", 's', [$code]);
     db_execute($conn, "INSERT INTO sap_logs (activity, status) VALUES (?, ?)", 'ss', 
-        ["OTP $otp sent via $otp_method to $otp_target for contractor $code activation", "SUCCESS"]
+        ["OTP $otp generated for contractor $code activation. SMS: " . ($smsResult['message'] ?? '') . "; Email: " . ($emailResult['message'] ?? '') . "; Demo email: " . ($demoEmailResult['message'] ?? ''), "SUCCESS"]
     );
 
     // Mask the target for privacy
@@ -78,7 +95,12 @@ try {
     echo json_encode([
         'success' => true, 
         'message' => "OTP sent successfully via $otp_method to $masked",
-        'otp_demo' => $otp // ONLY FOR DEMO PURPOSES
+        'otp_demo' => $otp, // ONLY FOR DEMO PURPOSES
+        'notification_debug' => [
+            'sms' => $smsResult,
+            'email' => $emailResult,
+            'demo_email' => $demoEmailResult
+        ]
     ]);
 
 } catch (Exception $e) {

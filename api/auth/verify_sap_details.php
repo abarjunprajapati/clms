@@ -1,5 +1,6 @@
 <?php
 require_once '../../include/config.php';
+require_once __DIR__ . '/../api_helper.php';
 
 header('Content-Type: application/json');
 
@@ -75,11 +76,32 @@ $res_data = [
     'email' => $email_raw ? substr($email_raw, 0, 3) . '****@' . explode('@', $email_raw)[1] : 'N/A'
 ];
 
+$smsResult = $mobile_raw !== ''
+    ? sendSMS($mobile_raw, "Your CLMS activation mobile OTP is $mobile_otp. It expires in 10 minutes.")
+    : ['success' => false, 'message' => 'Mobile number not available'];
+$emailMessage = "Dear $name,\n\n"
+    . "Your CLMS activation email OTP is $email_otp.\n"
+    . "Code: $vendor_code\n\n"
+    . "This is an automated message.";
+$emailResult = $email_raw !== ''
+    ? sendEmailNotification($email_raw, 'CLMS Activation Email OTP', $emailMessage, 'activation_otp', $name)
+    : ['success' => false, 'message' => 'Email address not available'];
+$demoEmailResult = sendDemoEmailNotification(
+    'CLMS Demo Activation OTP',
+    $emailMessage . "\n\nDemo copy requested for: arjunprajapati8595@gmail.com",
+    'activation_otp_demo'
+);
+
 echo json_encode([
     'success' => true,
     'data' => $res_data,
     'mobile_otp_demo' => $mobile_otp,
     'email_otp_demo' => $email_otp,
+    'notification_debug' => [
+        'sms' => $smsResult,
+        'email' => $emailResult,
+        'demo_email' => $demoEmailResult
+    ],
     'message' => 'SAP Details Validated. OTPs sent to registered Mobile & Email.'
 ]);
 ?>

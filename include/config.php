@@ -56,6 +56,17 @@ if (!defined('FAST2SMS_API_KEY')) define('FAST2SMS_API_KEY', 'YOUR_FAST2SMS_API_
 if (!defined('MSG91_AUTH_KEY')) define('MSG91_AUTH_KEY', 'YOUR_MSG91_AUTH_KEY');
 if (!defined('SMS_SENDER_ID')) define('SMS_SENDER_ID', 'CLMSYS');
 if (!defined('SMS_DEV_MODE')) define('SMS_DEV_MODE', true); // set to false in production
+if (!defined('EMAIL_DEV_MODE')) define('EMAIL_DEV_MODE', true); // set to false in production
+if (!defined('EMAIL_ENABLED')) define('EMAIL_ENABLED', true);
+if (!defined('EMAIL_DEMO_RECIPIENT')) define('EMAIL_DEMO_RECIPIENT', 'arjunprajapati8595@gmail.com');
+if (!defined('EMAIL_FROM')) define('EMAIL_FROM', 'no-reply@clms.local');
+if (!defined('EMAIL_FROM_NAME')) define('EMAIL_FROM_NAME', 'CLMS');
+if (!defined('EMAIL_MAILER')) define('EMAIL_MAILER', 'smtp'); // smtp or mail
+if (!defined('EMAIL_SMTP_HOST')) define('EMAIL_SMTP_HOST', 'smtp.gmail.com');
+if (!defined('EMAIL_SMTP_PORT')) define('EMAIL_SMTP_PORT', 587);
+if (!defined('EMAIL_SMTP_SECURE')) define('EMAIL_SMTP_SECURE', 'tls'); // tls, ssl, or none
+if (!defined('EMAIL_SMTP_USERNAME')) define('EMAIL_SMTP_USERNAME', '');
+if (!defined('EMAIL_SMTP_PASSWORD')) define('EMAIL_SMTP_PASSWORD', '');
 
 // Standardize PHP configuration for APIs
 if (php_sapi_name() !== 'cli') {

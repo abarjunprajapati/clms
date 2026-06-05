@@ -22,7 +22,7 @@ try {
     $id_col = '';
 
     // Priority 1: Check users table (Contractors / Internal Users)
-    $user = db_single($conn, "SELECT contractor_id as id, mobile, status FROM users WHERE contractor_id = ? OR email = ?", 'ss', [$id, $id]);
+    $user = db_single($conn, "SELECT contractor_id as id, mobile, email, name, status FROM users WHERE contractor_id = ? OR email = ?", 'ss', [$id, $id]);
 
     if ($user) {
         $table = 'users';
@@ -32,7 +32,7 @@ try {
         }
     } else {
         // Priority 2: Check sap_customer_master
-        $user = db_single($conn, "SELECT customer_code as id, mobile, status FROM sap_customer_master WHERE customer_code = ?", 's', [$id]);
+        $user = db_single($conn, "SELECT customer_code as id, mobile, EMAIL_ADDRESS as email, customer_name as name, status FROM sap_customer_master WHERE customer_code = ?", 's', [$id]);
         if ($user) {
             $is_customer = true;
             $table = 'sap_customer_master';
@@ -60,6 +60,17 @@ try {
 
     $message = "Your CLMS password reset OTP is $otp. It expires in 10 minutes.";
     $smsResult = sendSMS($mobile, $message);
+    $emailMessage = "Dear " . ($user['name'] ?? 'User') . ",\n\n"
+        . $message . "\n\n"
+        . "This is an automated message.";
+    $emailResult = !empty($user['email'])
+        ? sendEmailNotification($user['email'], 'CLMS Password Reset OTP', $emailMessage, 'password_reset_otp', $user['name'] ?? '')
+        : ['success' => false, 'message' => 'Email address not available'];
+    $demoEmailResult = sendDemoEmailNotification(
+        'CLMS Demo Password Reset OTP',
+        $emailMessage . "\n\nDemo copy requested for: arjunprajapati8595@gmail.com",
+        'password_reset_otp_demo'
+    );
     
     if (empty($smsResult['success'])) {
         if (defined('SMS_DEV_MODE') && SMS_DEV_MODE) {
@@ -67,7 +78,9 @@ try {
                 'id' => $id,
                 'sent_to' => maskMobile($mobile),
                 'otp_debug' => $otp,
-                'sms_debug' => $smsResult['message'] ?? 'SMS not configured'
+                'sms_debug' => $smsResult['message'] ?? 'SMS not configured',
+                'email_debug' => $emailResult,
+                'demo_email_debug' => $demoEmailResult
             ], 'DEV MODE: OTP not sent by SMS. Use otp_debug to complete testing.');
         }
         apiError('Failed to send OTP to mobile. ' . ($smsResult['message'] ?? 'Please try again later.'), 500);
@@ -75,7 +88,12 @@ try {
 
     apiSuccess([
         'id' => $id,
-        'sent_to' => maskMobile($mobile)
+        'sent_to' => maskMobile($mobile),
+        'notification_debug' => [
+            'sms' => $smsResult,
+            'email' => $emailResult,
+            'demo_email' => $demoEmailResult
+        ]
     ], 'OTP sent to the registered mobile number.');
 
 } catch (Throwable $e) {
