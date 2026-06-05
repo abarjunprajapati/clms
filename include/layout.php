@@ -350,7 +350,10 @@ function renderSidebar($role) {
             echo '<a href="'.$ab.'compliance_dashboard.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Dashboard</a>';
             echo '<a href="'.$ab.'attendance_dashboard.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance Dashboard</a>';
             echo '<a href="'.$ab.'biometric_dashboard.php" class="sidebar-item"><i class="fas fa-fingerprint"></i> Biometric Governance</a>';
-            echo '<a href="'.$ab.'pass_limits.php" class="sidebar-item"><i class="fas fa-sliders-h"></i> Pass Limits</a>';
+            echo '<a href="'.$ab.'pass_limits.php" class="sidebar-item"><i class="fas fa-sliders-h"></i> Pass Category Limit</a>';
+            echo '<a href="'.BASE_URL.'pages/welfare/certified_wages.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Certified Wage Rate</a>';
+            echo '<a href="'.BASE_URL.'pages/welfare/labour_license_threshold.php" class="sidebar-item"><i class="fas fa-scale-balanced"></i> Labour License Threshold</a>';
+            echo '<a href="'.BASE_URL.'pages/welfare/temporary_pass_validity.php" class="sidebar-item"><i class="fas fa-calendar-day"></i> Temporary Pass Validity</a>';
             echo '<a href="'.$ab.'master_data.php" class="sidebar-item"><i class="fas fa-database"></i> Master Data</a>';
             
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Enterprise Governance</div>';
@@ -378,8 +381,13 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'admin_dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Admin Home</a>';
             echo '<a href="'.$ab.'users.php" class="sidebar-item"><i class="fas fa-users-cog"></i> User Management</a>';
             echo '<a href="'.$ab.'create_user.php" class="sidebar-item"><i class="fas fa-user-plus"></i> Create User</a>';
-            echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Pass & Policy Control</div>';
-            echo '<a href="'.$wb.'pass_limits.php" class="sidebar-item"><i class="fas fa-sliders-h"></i> Pass Limits</a>';
+            echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Master Data Management</div>';
+            echo '<a href="'.$wb.'pass_limits.php" class="sidebar-item"><i class="fas fa-sliders-h"></i> Pass Category Limit</a>';
+            echo '<a href="'.$wb.'certified_wages.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Certified Wage Rate</a>';
+            echo '<a href="'.$wb.'labour_license_threshold.php" class="sidebar-item"><i class="fas fa-scale-balanced"></i> Labour License Threshold</a>';
+            echo '<a href="'.$wb.'temporary_pass_validity.php" class="sidebar-item"><i class="fas fa-calendar-day"></i> Temporary Pass Validity</a>';
+            echo '<a href="'.$wb.'education_correction.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Education Job Profile</a>';
+            echo '<a href="'.$wb.'nationality_master.php" class="sidebar-item"><i class="fas fa-globe"></i> Nationality Masters</a>';
             echo '<a href="'.$wb.'verify_documents.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Document Master</a>';
             echo '<a href="'.$wb.'temp_pass_control.php" class="sidebar-item"><i class="fas fa-clock"></i> Temp Pass Control</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Monitoring & Oversight</div>';
@@ -387,7 +395,6 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'entity_directory.php" class="sidebar-item"><i class="fas fa-address-book"></i> Contractor / Customer Data</a>';
             echo '<a href="'.$wb.'approve_3a.php" class="sidebar-item"><i class="fas fa-file-contract"></i> Contractor Info Verification </a>';
             echo '<a href="'.$wb.'enrollment_monitor.php" class="sidebar-item"><i class="fas fa-users-viewfinder"></i> Worker Monitor</a>';
-            echo '<a href="'.$wb.'education_correction.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Education Correction</a>';
             echo '<a href="'.$wb.'training_monitor.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Training Monitor</a>';
             echo '<a href="'.$wb.'gatepass_monitor.php" class="sidebar-item"><i class="fas fa-id-card-clip"></i> Gate Pass Monitor</a>';
             echo '<a href="'.$wb.'acc_tracking.php" class="sidebar-item"><i class="fas fa-fingerprint"></i> ACC Monitor</a>';
@@ -425,6 +432,7 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'acc_return_queue.php" class="sidebar-item"><i class="fas fa-undo"></i> Relieving Management</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Monitor</div>';
             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Verification</a>';
+            echo '<a href="'.$wb.'certified_wages.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Certified Wage Rate</a>';
             echo '<a href="'.$wb.'gatepass_monitor.php" class="sidebar-item"><i class="fas fa-id-card"></i> Gate Pass Monitoring</a>';
             echo '<a href="'.$wb.'attendance_monitor.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance Monitor</a>';
             echo '<a href="'.$wb.'verification_history.php" class="sidebar-item"><i class="fas fa-history"></i> Contractor History</a>';
@@ -549,6 +557,7 @@ function renderSidebar($role) {
             $eb = BASE_URL . 'pages/execution/';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Supervision Command</div>';
             echo '<a href="'.$eb.'dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Command Center</a>';
+            echo '<a href="'.$eb.'training_attendance.php" class="sidebar-item"><i class="fas fa-file-signature"></i> Training Attendance Approval</a>';
             echo '<a href="'.$eb.'contractors.php" class="sidebar-item"><i class="fas fa-building"></i> Assigned Contractors</a>';
             echo '<a href="'.$eb.'work_orders.php" class="sidebar-item"><i class="fas fa-handshake"></i> Work Order Tracking</a>';
             

@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['welfare_admin', 'super_admin', 'welfare_user']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
+require_once __DIR__ . '/../../include/nationality_location_masters.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Welfare Admin';
@@ -14,7 +15,8 @@ function renderContent() {
                                         FROM workmen w 
                                         JOIN contractors c ON w.contractor_id = c.id 
                                         ORDER BY w.created_at DESC");
-    $nationalities = ['Indian', 'Nepalese', 'Bangladeshi', 'Sri Lankan', 'Myanmar', 'Filipino', 'Malaysian', 'Singaporean', 'Emirati', 'Saudi Arabian', 'Omani', 'Qatari', 'Kuwaiti', 'Afghan', 'American', 'British', 'Chinese', 'Japanese', 'Russian', 'Other'];
+    $nationalities = clms_get_nationality_options($conn);
+    $monitorStateDistrictMap = clms_get_state_district_map($conn);
     ?>
     <div class="content-header">
       <h2 class="page-title">Enrollment Monitoring</h2>
@@ -137,6 +139,12 @@ function renderContent() {
       'Uttar Pradesh': ['Agra', 'Kanpur Nagar', 'Lucknow', 'Prayagraj', 'Varanasi'],
       'West Bengal': ['Darjeeling', 'Howrah', 'Kolkata', 'North 24 Parganas', 'South 24 Parganas']
     };
+    const masterMonitorStateDistricts = <?= json_encode($monitorStateDistrictMap, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+    if (Object.keys(masterMonitorStateDistricts).length) {
+      Object.entries(masterMonitorStateDistricts).forEach(([state, districts]) => {
+        monitorStateDistricts[state] = Array.from(new Set([...(monitorStateDistricts[state] || []), ...districts]));
+      });
+    }
 
     function monitorIsIndian() {
       return String(document.getElementById('nationalityInput').value || '').trim().toLowerCase() === 'indian';

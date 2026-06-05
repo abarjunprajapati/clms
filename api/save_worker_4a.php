@@ -39,6 +39,7 @@ try {
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customer_portal_context.php';
 require_once __DIR__ . '/../include/wage_settings.php';
+require_once __DIR__ . '/../include/training_flow.php';
 require_once __DIR__ . '/api_helper.php';
 
 // include/session.php installs diagnostic handlers; restore JSON handlers for this API.
@@ -203,6 +204,91 @@ function worker4a_column_exists($conn, $table, $column) {
     $column = mysqli_real_escape_string($conn, $column);
     $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
     return $result && mysqli_num_rows($result) > 0;
+}
+
+function worker4a_contractor_select_expr($conn) {
+    $columns = ['id', 'application_no', 'work_order_no', 'status', 'vendor_code', 'contractor_id', 'sap_code', 'user_id'];
+    $parts = [];
+    foreach ($columns as $column) {
+        $safeColumn = str_replace('`', '``', $column);
+        if (worker4a_column_exists($conn, 'contractors', $column)) {
+            $parts[] = "`$safeColumn` AS `$safeColumn`";
+        } else {
+            $parts[] = "NULL AS `$safeColumn`";
+        }
+    }
+    return implode(', ', $parts);
+}
+
+function worker4a_get_contractor_row($conn, $data) {
+    if (!worker4a_table_exists($conn, 'contractors')) {
+        return null;
+    }
+
+    $select = worker4a_contractor_select_expr($conn);
+    $postedId = (int)($data['contractor_id'] ?? 0);
+    $sessionUserId = (int)($_SESSION['user_id'] ?? 0);
+    $sessionVendor = trim((string)($_SESSION['contractor_id'] ?? ($_SESSION['vendor_code'] ?? '')));
+    $workOrderNo = trim((string)($data['work_order_no'] ?? ''));
+
+    if ($postedId > 0) {
+        $row = db_single($conn, "SELECT $select FROM contractors WHERE id = ? LIMIT 1", 'i', [$postedId]);
+        if ($row) {
+            $rowUserId = (int)($row['user_id'] ?? 0);
+            $rowVendorValues = array_filter([
+                trim((string)($row['vendor_code'] ?? '')),
+                trim((string)($row['contractor_id'] ?? '')),
+                trim((string)($row['sap_code'] ?? '')),
+            ]);
+            $vendorMatches = $sessionVendor !== '' && in_array($sessionVendor, $rowVendorValues, true);
+            $userMatches = $sessionUserId > 0 && $rowUserId === $sessionUserId;
+            $workMatches = $workOrderNo !== '' && trim((string)($row['work_order_no'] ?? '')) === $workOrderNo;
+            if ($userMatches || $vendorMatches || $workMatches) {
+                return $row;
+            }
+        }
+    }
+
+    if ($sessionVendor !== '') {
+        $where = [];
+        $params = [];
+        $types = '';
+        foreach (['vendor_code', 'contractor_id', 'sap_code'] as $column) {
+            if (worker4a_column_exists($conn, 'contractors', $column)) {
+                $where[] = "`$column` = ?";
+                $params[] = $sessionVendor;
+                $types .= 's';
+            }
+        }
+        if ($where) {
+            $row = db_single($conn, "SELECT $select FROM contractors WHERE " . implode(' OR ', $where) . " ORDER BY id DESC LIMIT 1", $types, $params);
+            if ($row) return $row;
+        }
+    }
+
+    if ($sessionUserId > 0 && worker4a_column_exists($conn, 'contractors', 'user_id')) {
+        $row = db_single($conn, "SELECT $select FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [$sessionUserId]);
+        if ($row) return $row;
+    }
+
+    if ($workOrderNo !== '' && worker4a_column_exists($conn, 'contractors', 'work_order_no')) {
+        return db_single($conn, "SELECT $select FROM contractors WHERE work_order_no = ? ORDER BY id DESC LIMIT 1", 's', [$workOrderNo]);
+    }
+
+    return null;
+}
+
+function worker4a_limit_type_from_value($value) {
+    $raw = strtolower(trim((string)$value));
+    if (strpos($raw, 'supervisor') !== false) return 'Supervisor';
+    if (strpos($raw, 'representative') !== false) return 'Representative';
+    if (strpos($raw, 'contractor') !== false) return 'Contractor';
+    return 'Workman';
+}
+
+function worker4a_status_counts_for_limit($status) {
+    $status = strtolower(trim((string)$status));
+    return !in_array($status, ['draft', 'rejected', 'removed', 'inactive', 'deleted', 'blocked'], true);
 }
 
 function worker4a_ensure_column($conn, $table, $column, $definition) {
@@ -585,30 +671,9 @@ worker4a_ensure_schema($conn);
     elseif (stripos($pass_type_raw, 'representative') !== false) $limit_type = 'Representative';
     elseif (stripos($pass_type_raw, 'contractor') !== false) $limit_type = 'Contractor';
 
-    // Get contractor/application context from work order first, then session user.
-    $contractor_row = null;
-    if (!empty($_SESSION['user_id'])) {
-        $contractor_row = db_single(
-            $conn,
-            "SELECT id, application_no, work_order_no, status FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1",
-            'i',
-            [(int)$_SESSION['user_id']]
-        );
-    }
-    if (!$contractor_row && !empty($data['work_order_no'])) {
-        $contractor_row = db_single(
-            $conn,
-                "SELECT id, application_no, work_order_no, status FROM contractors WHERE work_order_no = ?",
-            's',
-            [$data['work_order_no'] ?? '']
-        );
-    }
+    $contractor_row = worker4a_get_contractor_row($conn, $data);
     $editing_worker_id = (int)($data['worker_id'] ?? 0);
 
-    if ($action !== 'draft' && $contractor_row && !$editing_worker_id) {
-        // This will throw Exception if limit exceeded
-        validatePassLimit($conn, (int)$contractor_row['id'], $limit_type, 1, false);
-    }
     // ========== END ANNEXURE 5/A VALIDATION ==========
 
     $upload_dir = '../uploads/workers/';
@@ -651,6 +716,9 @@ worker4a_ensure_schema($conn);
 
     $source_val = $data['source'] ?? 'MANUAL';
     $contractor_id = (int)$contractor_row['id'];
+    $trade = $data['nature_of_work'] ?? '';
+    $skill = $data['skill_category'] ?? '';
+    $workmen_skill_category = normalize_skill_category($skill);
     if ($action !== 'draft') {
         if (($data['epf_registered_worker'] ?? '') === 'YES' && trim($data['pf_no'] ?? '') === '') {
             throw new Exception("UAN Number is mandatory when EPF Registered is Yes.");
@@ -661,13 +729,17 @@ worker4a_ensure_schema($conn);
         if (trim($data['certified_wage_rate'] ?? '') === '') {
             throw new Exception("Certified Wage Rate is mandatory.");
         }
-        $minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
+        $categoryWageRule = clms_get_active_certified_wage_for_category($conn, $workmen_skill_category);
+        $minimumCertifiedWage = $categoryWageRule ? (float)$categoryWageRule['wage_rate'] : clms_get_minimum_certified_wage($conn);
         $submittedWage = clms_parse_wage_amount($data['certified_wage_rate'] ?? '');
         if ($submittedWage === null) {
             throw new Exception("Please enter a valid Certified Wage Rate.");
         }
         if ($minimumCertifiedWage > 0 && $submittedWage < $minimumCertifiedWage) {
-            throw new Exception("Certified Wage Rate cannot be less than " . number_format($minimumCertifiedWage, 2) . ".");
+            throw new Exception("Certified Wage Rate cannot be less than " . number_format($minimumCertifiedWage, 2) . " for " . ($workmen_skill_category ?: 'selected category') . ".");
+        }
+        if ($categoryWageRule) {
+            $data['certified_wage_rate'] = number_format((float)$categoryWageRule['wage_rate'], 2, '.', '');
         }
         if (trim($data['safety_language'] ?? '') === '') {
             throw new Exception("Language Preferred for Safety Induction is mandatory.");
@@ -683,9 +755,6 @@ worker4a_ensure_schema($conn);
         [$contractor_id]
     );
     $application_no = $contractor_row['application_no'] ?: ($application_row['application_id'] ?? ('APP-' . $contractor_id));
-    $trade = $data['nature_of_work'] ?? '';
-    $skill = $data['skill_category'] ?? '';
-    $workmen_skill_category = normalize_skill_category($skill);
     $worker_type = 'Workmen Pass';
     if (strtolower($limit_type) === 'supervisor') $worker_type = 'Supervisor Pass';
     elseif (strtolower($limit_type) === 'representative') $worker_type = 'Representative Pass';
@@ -776,6 +845,20 @@ worker4a_ensure_schema($conn);
         );
     }
 
+    if ($action !== 'draft') {
+        $existingLimitType = $existing_workman
+            ? worker4a_limit_type_from_value($existing_workman['worker_type'] ?? ($existing_workman['pass_type'] ?? ''))
+            : '';
+        $existingStatus = $existing_workman['status'] ?? '';
+        $alreadyCountsInSameLimit = $existing_workman
+            && $existingLimitType === $limit_type
+            && worker4a_status_counts_for_limit($existingStatus);
+
+        if (!$alreadyCountsInSameLimit) {
+            validatePassLimit($conn, $contractor_id, $limit_type, 1, false);
+        }
+    }
+
     if ($existing_workman) {
         $existingExecutionStatus = strtolower(trim((string)($existing_workman['execution_training_status'] ?? '')));
         if ($action !== 'draft' && $existingExecutionStatus === 'rejected' && empty($new_uploaded_files['training_approval_doc'])) {
@@ -815,12 +898,19 @@ worker4a_ensure_schema($conn);
     $workman_row['signature_doc'] = $uploaded_files['signature'];
     $workman_row['training_approval_doc'] = $uploaded_files['training_approval_doc'];
     if ($action !== 'draft') {
-        $workman_row['execution_training_status'] = 'pending_eo';
+        if (!empty($uploaded_files['training_approval_doc'])) {
+            $workman_row['execution_training_status'] = 'approved';
+            $workman_row['execution_training_remarks'] = 'Auto-approved because Training Attendance Approval document is attached.';
+            $workman_row['execution_training_reviewed_by'] = (int)($executingOfficer['id'] ?? 0);
+            $workman_row['execution_training_reviewed_at'] = date('Y-m-d H:i:s');
+        } else {
+            $workman_row['execution_training_status'] = 'pending_eo';
+        }
     }
     if (!empty($new_uploaded_files['training_approval_doc'])) {
-        $workman_row['execution_training_remarks'] = null;
-        $workman_row['execution_training_reviewed_by'] = null;
-        $workman_row['execution_training_reviewed_at'] = null;
+        $workman_row['execution_training_remarks'] = 'Auto-approved because Training Attendance Approval document is attached.';
+        $workman_row['execution_training_reviewed_by'] = (int)($executingOfficer['id'] ?? 0);
+        $workman_row['execution_training_reviewed_at'] = date('Y-m-d H:i:s');
     }
 
     if ($existing_workman) {
@@ -828,6 +918,15 @@ worker4a_ensure_schema($conn);
         update_table_row_by_id($conn, 'workmen', $workman_id_new, $workman_row);
     } else {
         $workman_id_new = insert_table_row($conn, 'workmen', $workman_row);
+    }
+
+    if ($action !== 'draft' && !empty($uploaded_files['training_approval_doc'])) {
+        clms_training_auto_approve_attached_document(
+            $conn,
+            $workman_id_new,
+            (int)($executingOfficer['id'] ?? 0),
+            'Auto-approved because Training Attendance Approval document is attached.'
+        );
     }
 
     $temp_id = '';

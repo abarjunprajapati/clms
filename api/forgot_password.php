@@ -30,9 +30,23 @@ try {
         if ($user['status'] !== 'active') {
             apiError('Account is inactive', 403);
         }
+
+        if (empty($user['mobile'])) {
+            $sapVendor = db_single(
+                $conn,
+                "SELECT vendor_mob1, email_address, vendor_name FROM sap_vendor_master WHERE vendor_code = ? LIMIT 1",
+                's',
+                [$user['id']]
+            );
+            if ($sapVendor) {
+                $user['mobile'] = $sapVendor['vendor_mob1'] ?? '';
+                $user['email'] = $user['email'] ?: ($sapVendor['email_address'] ?? '');
+                $user['name'] = $user['name'] ?: ($sapVendor['vendor_name'] ?? '');
+            }
+        }
     } else {
         // Priority 2: Check sap_customer_master
-        $user = db_single($conn, "SELECT customer_code as id, mobile, EMAIL_ADDRESS as email, customer_name as name, status FROM sap_customer_master WHERE customer_code = ?", 's', [$id]);
+        $user = db_single($conn, "SELECT customer_code as id, Customer_MOB1 as mobile, EMAIL_ADDRESS as email, customer_name as name, status FROM sap_customer_master WHERE customer_code = ?", 's', [$id]);
         if ($user) {
             $is_customer = true;
             $table = 'sap_customer_master';

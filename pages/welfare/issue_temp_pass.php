@@ -4,6 +4,7 @@ checkAuth(['pass_user', 'super_admin', 'welfare_user', 'welfare_admin']);
 
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
+require_once __DIR__ . '/../../include/temporary_pass_validity.php';
 
 $workman_id = $_GET['id'] ?? 0;
 
@@ -12,6 +13,7 @@ $name = $_SESSION['name'] ?? 'Pass Issuing Officer';
 
 function renderContent() {
     global $conn, $workman_id;
+    $tempValidityDays = clms_get_temporary_pass_validity_days($conn);
     
     if (!$workman_id) {
         $issuedPasses = db_fetch_all($conn, "SELECT w.*, c.contractor_name
@@ -194,14 +196,14 @@ function renderContent() {
                 </div>
                 <div class="form-group">
                   <label class="form-label">Valid To</label>
-                  <input type="date" name="valid_to" class="form-control" value="<?= date('Y-m-d', strtotime('+7 days')) ?>" required>
+                  <input type="date" name="valid_to" class="form-control" value="<?= htmlspecialchars(date('Y-m-d', strtotime('+' . ($tempValidityDays - 1) . ' days'))) ?>" required>
                 </div>
               </div>
 
               <div class="form-group mt-3">
                 <label class="form-label">Duration (Days)</label>
-                <input type="number" id="duration" class="form-control" readonly value="7">
-                <p style="font-size:11px; opacity:0.6; margin-top:4px;">Auto-calculated based on From/To dates.</p>
+                <input type="number" id="duration" class="form-control" readonly value="<?= (int)$tempValidityDays ?>">
+                <p style="font-size:11px; opacity:0.6; margin-top:4px;">Auto-calculated based on From/To dates. Current master validity: <?= (int)$tempValidityDays ?> days.</p>
               </div>
 
               <div class="form-group mt-3">
@@ -251,6 +253,7 @@ function renderContent() {
       const fromInput = form.querySelector('input[name="valid_from"]');
       const toInput = form.querySelector('input[name="valid_to"]');
       const durationInput = document.getElementById('duration');
+      const maxTempValidityDays = <?= (int)$tempValidityDays ?>;
 
       function calculateDuration() {
         const from = new Date(fromInput.value);
@@ -268,6 +271,11 @@ function renderContent() {
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        calculateDuration();
+        if (parseInt(durationInput.value || '0', 10) > maxTempValidityDays) {
+          alert(`Temporary pass validity cannot exceed ${maxTempValidityDays} days.`);
+          return;
+        }
         if (!confirm('Issue temporary gate pass?')) return;
 
         const formData = new FormData(form);

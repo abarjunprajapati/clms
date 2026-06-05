@@ -2,6 +2,7 @@
 require_once '../../include/auth_middleware.php';
 require_once '../../include/config.php';
 require_once '../../include/NotificationEngine.php';
+require_once '../../include/temporary_pass_validity.php';
 
 require_role(['pass_issuer', 'pass_user', 'admin', 'welfare', 'welfare_user', 'welfare_admin']);
 
@@ -34,6 +35,14 @@ if (!$workman_id || !in_array($pass_type, ['temporary', 'permanent'])) {
     try {
         if ($pass_type === 'temporary') {
             if (!$valid_to) throw new Exception("Validity end date is required for temporary pass.");
+            $maxTempValidityDays = clms_get_temporary_pass_validity_days($conn);
+            $durationDays = (int)floor((strtotime($valid_to) - strtotime($valid_from)) / 86400) + 1;
+            if ($durationDays < 1) {
+                throw new Exception("Temporary pass validity date range is invalid.");
+            }
+            if ($durationDays > $maxTempValidityDays) {
+                throw new Exception("Temporary pass validity cannot exceed {$maxTempValidityDays} days.");
+            }
             
             $year = date('Y');
             $count = db_count($conn, "SELECT COUNT(*) FROM workmen WHERE temp_pass_no LIKE 'TEMP-$year-%'") + 1;
@@ -73,4 +82,3 @@ if (!$workman_id || !in_array($pass_type, ['temporary', 'permanent'])) {
     mysqli_rollback($conn);
     json_response(false, null, $e->getMessage());
 }
-

@@ -4,6 +4,7 @@
 require_once '../../include/auth.php';
 checkAuth(['welfare_user', 'super_admin', 'execution_officer']);
 include '../../include/config.php';
+require_once '../../include/labour_license_threshold.php';
 
 $_role = $_SESSION['role'] ?? '';
 if (!in_array($_role, ['welfare_user', 'authority', 'admin'])) {
@@ -12,6 +13,7 @@ if (!in_array($_role, ['welfare_user', 'authority', 'admin'])) {
 }
 
 $role = $_SESSION['role'];
+$labourLicenseThreshold = clms_get_labour_license_threshold($conn);
 // Stats using workflow_status column
 $awaiting       = db_count($conn, "SELECT COUNT(*) c FROM annexure2a WHERE workflow_status='verified'");
 $approved_month = db_count($conn, "SELECT COUNT(*) c FROM annexure2a WHERE workflow_status IN ('welfare_approved', 'acc_approved', 'pass_generated') AND MONTH(updated_at)=MONTH(CURDATE())");
@@ -205,6 +207,20 @@ $notif_count    = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE ro
           </div>
 
           <!-- Authority Decision Form -->
+          <div id="workmenTermsBox" class="alert alert-warning" style="display:none;margin-bottom:20px;align-items:flex-start;">
+            <i class="fas fa-triangle-exclamation"></i>
+            <div>
+              <strong>Terms & Conditions Applicable</strong>
+              <div style="font-size:12px;margin-top:6px;line-height:1.5;">
+                Since the contractor has more workmen than the active labour licence threshold (<?= (int)$labourLicenseThreshold ?>), Labour Licence and applicable statutory compliance must be verified before approval.
+              </div>
+              <label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:12px;font-weight:700;cursor:pointer;">
+                <input type="checkbox" id="workmenTermsAccepted" style="margin-top:2px;">
+                <span>I confirm Labour Licence / statutory terms have been checked for this contractor.</span>
+              </label>
+            </div>
+          </div>
+
           <div class="form-group">
             <label class="form-label">Authority Approval Remarks <span class="required">*</span></label>
             <textarea class="form-control" rows="3" id="approvalRemarks" placeholder="Enter your decision remarks..."></textarea>
@@ -315,6 +331,8 @@ $notif_count    = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE ro
 
 <script>
   let currentAppId = null;
+  let currentWorkmenCount = 0;
+  const WORKMEN_TERMS_THRESHOLD = <?= (int)$labourLicenseThreshold ?>;
 
   function safe(val) {
     return val ?? 'N/A';
@@ -382,10 +400,18 @@ $notif_count    = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE ro
         document.getElementById('sum-policy').textContent = app.ecp_number || 'N/A';
         document.getElementById('sum-skilled').textContent = app.skilled_count || 0;
         document.getElementById('sum-semi_unskilled').textContent = (parseInt(app.semi_skilled_count)||0) + (parseInt(app.unskilled_count)||0);
-        document.getElementById('sum-total_workmen').textContent = app.workers_proposed || 0;
+        currentWorkmenCount = parseInt(app.workers_proposed || app.total_workmen || 0, 10) || 0;
+        document.getElementById('sum-total_workmen').textContent = currentWorkmenCount;
 
         const strengthEl = document.getElementById('approvedStrength');
-        if (strengthEl) strengthEl.value = app.workers_proposed || 0;
+        if (strengthEl) strengthEl.value = currentWorkmenCount;
+
+        const termsBox = document.getElementById('workmenTermsBox');
+        const termsAccepted = document.getElementById('workmenTermsAccepted');
+        if (termsAccepted) termsAccepted.checked = false;
+        if (termsBox) {
+          termsBox.style.display = currentWorkmenCount > WORKMEN_TERMS_THRESHOLD ? 'flex' : 'none';
+        }
 
         // Render Documents
         const docsBody = document.getElementById('approvalDocsBody');
@@ -412,6 +438,12 @@ $notif_count    = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE ro
     if (!currentAppId) { alert('No application selected.'); return; }
     const remarks = document.getElementById('approvalRemarks')?.value?.trim() || '';
     if (!remarks) { alert('Please enter approval remarks.'); return; }
+    const approvedStrength = parseInt(document.getElementById('approvedStrength')?.value || currentWorkmenCount || 0, 10) || 0;
+    const needsTerms = approvedStrength > WORKMEN_TERMS_THRESHOLD || currentWorkmenCount > WORKMEN_TERMS_THRESHOLD;
+    if (needsTerms && !document.getElementById('workmenTermsAccepted')?.checked) {
+      alert(`For more than ${WORKMEN_TERMS_THRESHOLD} workmen, please confirm Labour Licence / statutory terms before approval.`);
+      return;
+    }
     if (!confirm('Approve application ' + currentAppId + '?')) return;
 
     try {

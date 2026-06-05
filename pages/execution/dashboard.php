@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['execution_officer', 'execution', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/execution_context.php';
+include __DIR__ . '/../../include/training_flow.php';
 include __DIR__ . '/../../include/layout.php';
 
 $role = $_SESSION['role'];
@@ -47,6 +48,21 @@ function renderContent() {
     $eoWorkerWhere = "(w.executing_officer_id IN (?, ?) OR UPPER(COALESCE(w.executing_officer_code, '')) IN ($codePlaceholders) OR UPPER(COALESCE(w.executing_officer_name, '')) IN ($namePlaceholders))";
     $eoParamTypes = 'ii' . str_repeat('s', max(1, count($officerCodes))) . str_repeat('s', max(1, count($officerNames)));
     $eoParams = array_merge([(int)$officerId, (int)$userId], $officerCodes ?: [''], $officerNames ?: ['']);
+
+    clms_training_ensure_schema($conn);
+    $attachedPending = db_fetch_all($conn, "
+        SELECT w.id
+        FROM workmen w
+        WHERE COALESCE(w.training_approval_doc, '') <> ''
+          AND COALESCE(w.contractor_id, 0) > 0
+          AND COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo', 'pending')
+          AND $eoWorkerWhere
+        LIMIT 100
+    ", $eoParamTypes, $eoParams);
+    foreach ($attachedPending as $row) {
+        clms_training_auto_approve_attached_document($conn, (int)$row['id'], (int)$officerId);
+    }
+    clms_training_seed_approved_queue($conn);
 
     // KPI Queries (PDF Correct)
     $totalContractors = db_count($conn, "SELECT COUNT(*) FROM execution_officer_contractors WHERE execution_officer_id = ?", 'i', [$officerId]);
@@ -237,6 +253,7 @@ function renderContent() {
         <div class="card glass">
             <div class="card-header">
                 <div class="card-title"><i class="fas fa-file-signature"></i> Training Attendance Approval Desk</div>
+                <a href="training_attendance.php" class="btn btn-sm btn-link">Open Desk</a>
             </div>
             <div class="card-body" style="padding:0">
                 <table class="data-table">
@@ -287,12 +304,20 @@ function renderContent() {
                                     <div style="font-size:11px;color:#64748b;margin-top:3px;"><?= htmlspecialchars($t['executing_officer_name'] ?? '') ?></div>
                                 </td>
                                 <td>
-                                    <span class="badge badge-warning">EO Pending</span><br>
-                                    <small style="color:#64748b;"><?= htmlspecialchars($t['execution_training_status'] ?? 'pending') ?></small>
+                                    <?php if (!empty($t['training_approval_doc']) && strtolower((string)($t['execution_training_status'] ?? '')) === 'approved'): ?>
+                                        <span class="badge badge-success">Approved</span><br>
+                                        <small style="color:#64748b;">Forwarded to Safety Training</small>
+                                    <?php else: ?>
+                                        <span class="badge badge-warning">EO Pending</span><br>
+                                        <small style="color:#64748b;"><?= htmlspecialchars($t['execution_training_status'] ?? 'pending') ?></small>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-success" onclick="reviewTraining(<?= (int)$t['id'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>
-                                    <button class="btn btn-sm btn-danger" onclick="reviewTraining(<?= (int)$t['id'] ?>, 'rejected')"><i class="fas fa-times"></i> Reject</button>
+                                    <?php if (!empty($t['training_approval_doc'])): ?>
+                                        <a class="btn btn-sm btn-outline" target="_blank" href="../../uploads/workers/<?= htmlspecialchars($t['training_approval_doc']) ?>"><i class="fas fa-eye"></i> View</a>
+                                    <?php else: ?>
+                                        <a class="btn btn-sm btn-primary" href="training_attendance.php"><i class="fas fa-arrow-right"></i> Open Desk</a>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; endif; ?>

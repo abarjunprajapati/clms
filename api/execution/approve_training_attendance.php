@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/execution_context.php';
+require_once __DIR__ . '/../../include/training_flow.php';
 require_once __DIR__ . '/../auth_middleware.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -76,25 +77,6 @@ function executionTrainingEnsureFlowSchema($conn) {
     @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
     @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
     @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
-}
-
-function executionTrainingEnsureRequest($conn, $workmanId, $contractorId, $userId) {
-    $existing = db_single(
-        $conn,
-        "SELECT id FROM training_requests WHERE workman_id = ? AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
-        'i',
-        [$workmanId]
-    );
-    if ($existing) return;
-
-    db_execute(
-        $conn,
-        "INSERT INTO training_requests
-         (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
-         VALUES (?, ?, 'Safety Induction', CURDATE(), CURDATE(), 'morning', 'Auto-created after Executing Officer online approval. Waiting for Welfare check.', 'execution', ?, 'welfare_pending', NOW(), NOW())",
-        'iii',
-        [$workmanId, $contractorId, $userId]
-    );
 }
 
 try {
@@ -177,7 +159,7 @@ try {
     );
 
     if ($decision === 'approved') {
-        executionTrainingEnsureRequest($conn, $workmanId, (int)$worker['contractor_id'], (int)($_SESSION['user_id'] ?? 0));
+        clms_training_ensure_request($conn, $workmanId, (int)$worker['contractor_id'], (int)($_SESSION['user_id'] ?? 0), 'execution', 'Auto-created after Executing Officer online approval. Waiting for Welfare check.');
     }
 
     $conn->commit();

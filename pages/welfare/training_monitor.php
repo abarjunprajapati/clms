@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['welfare_admin', 'super_admin', 'welfare_user']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
+include __DIR__ . '/../../include/training_flow.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Welfare Admin';
@@ -175,6 +176,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
 function renderContent() {
     global $conn;
     welfareTrainingEnsureSchema($conn);
+    clms_training_seed_approved_queue($conn);
     welfareTrainingSeedApprovedQueue($conn);
 
     $queue = db_fetch_all($conn, "
@@ -284,8 +286,11 @@ function renderContent() {
               </td>
               <td>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                  <button class="btn btn-sm btn-success" onclick="reviewTraining(<?= (int)$r['id'] ?>, 'approve')"><i class="fas fa-check"></i> Approve</button>
-                  <button class="btn btn-sm btn-danger" onclick="reviewTraining(<?= (int)$r['id'] ?>, 'reject')"><i class="fas fa-times"></i> Reject</button>
+                  <?php if ($docUrl): ?>
+                    <a class="btn btn-sm btn-outline" href="<?= htmlspecialchars($docUrl) ?>" target="_blank"><i class="fas fa-eye"></i> View</a>
+                  <?php else: ?>
+                    <span class="badge badge-gray">EO Approved</span>
+                  <?php endif; ?>
                 </div>
               </td>
             </tr>

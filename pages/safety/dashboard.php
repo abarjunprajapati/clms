@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['safety_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
+include __DIR__ . '/../../include/training_flow.php';
 include __DIR__ . '/../../include/layout.php';
 
 $role = $_SESSION['role'];
@@ -31,6 +32,7 @@ function safetyDashCount($conn, $sql, $types = '', $params = []) {
 
 function renderContent() {
     global $conn;
+    clms_training_seed_approved_queue($conn);
 
     $hasRequests = safetyDashTableExists($conn, 'training_requests');
     $hasSchedule = safetyDashTableExists($conn, 'training_schedule');
@@ -38,7 +40,7 @@ function renderContent() {
     $hasWorkmen = safetyDashTableExists($conn, 'workmen');
 
     $requestPending = $hasRequests
-        ? safetyDashCount($conn, "SELECT COUNT(*) c FROM training_requests WHERE LOWER(COALESCE(status, 'pending')) IN ('pending', 'failed')")
+        ? safetyDashCount($conn, "SELECT COUNT(*) c FROM training_requests WHERE LOWER(COALESCE(status, 'pending')) IN ('pending', 'welfare_pending', 'failed')")
         : 0;
     $activeSessions = $hasSchedule
         ? safetyDashCount($conn, "SELECT COUNT(*) c FROM training_schedule WHERE LOWER(COALESCE(session_status, 'open')) IN ('open', 'scheduled')")
@@ -104,7 +106,7 @@ function renderContent() {
             FROM training_requests tr
             JOIN workmen w ON w.id = tr.workman_id
             LEFT JOIN contractors c ON c.id = tr.contractor_id
-            WHERE LOWER(COALESCE(tr.status, 'pending')) IN ('pending', 'failed')
+            WHERE LOWER(COALESCE(tr.status, 'pending')) IN ('pending', 'welfare_pending', 'failed')
             ORDER BY $createdExpr DESC
             LIMIT 6
         ");

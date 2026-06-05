@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['safety_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
+include __DIR__ . '/../../include/training_flow.php';
 include __DIR__ . '/../../include/layout.php';
 
 $role = $_SESSION['role'];
@@ -134,7 +135,7 @@ function safety_training_page_sync_request_statuses($conn) {
         UPDATE training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         SET tr.status = 'scheduled', tr.updated_at = NOW()
-        WHERE tr.status = 'pending'
+        WHERE tr.status IN ('pending', 'welfare_pending')
           AND tr.scheduled_date IS NOT NULL
           AND (
               UPPER(TRIM(COALESCE(w.training_status, ''))) IN ('SCHEDULED', 'TRAINING_SCHEDULED')
@@ -146,6 +147,7 @@ function safety_training_page_sync_request_statuses($conn) {
 function renderContent() {
     global $conn;
     safety_training_page_ensure_schema($conn);
+    clms_training_seed_approved_queue($conn);
     safety_training_page_sync_request_statuses($conn);
     $contractorNameParts = [];
     foreach (['contractor_name', 'vendor_name', 'name'] as $column) {
@@ -167,7 +169,7 @@ function renderContent() {
 
     // Fetch Stats
     $stats = [
-        'pending'    => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'pending' AND $contractorRequestWhere")['c'],
+        'pending'    => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status IN ('pending','welfare_pending') AND $contractorRequestWhere")['c'],
         'today'      => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status IN ('scheduled','contractor_confirmed') AND tr.scheduled_date = CURDATE() AND $contractorRequestWhere")['c'],
         'total_pass' => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'passed' AND $contractorRequestWhere")['c'],
         'total_fail' => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'failed' AND $contractorRequestWhere")['c']
@@ -175,12 +177,12 @@ function renderContent() {
 
     // 1. Pending Requests (Needs Scheduling)
     $pending = db_fetch_all($conn, "
-        SELECT tr.id as request_id, tr.*, w.name as worker_name, w.temp_id as worker_code, w.trade, w.aadhaar,
+        SELECT tr.id as request_id, tr.*, w.name as worker_name, w.temp_id as worker_code, w.trade, w.aadhaar, w.training_approval_doc,
                $contractorNameExpr AS contractor_name, $workOrderExpr AS work_order_no
         FROM training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         LEFT JOIN contractors c ON tr.contractor_id = c.id
-        WHERE tr.status IN ('pending', 'failed')
+        WHERE tr.status IN ('pending', 'welfare_pending', 'failed')
           AND $contractorRequestWhere
         ORDER BY tr.created_at DESC
     ");
@@ -282,6 +284,7 @@ function renderContent() {
                  <tr>
                    <th>Worker Info</th>
                    <th>Contractor Details</th>
+                   <th>Document</th>
                    <th>Preferred Date</th>
                    <th>Action</th>
                  </tr>
@@ -296,6 +299,13 @@ function renderContent() {
                    <td>
                      <div style="font-weight:600;"><?= htmlspecialchars($r['contractor_name']) ?></div>
                      <div style="font-size:11px; color:var(--text-muted);">WO: <?= htmlspecialchars($r['work_order_no'] ?? 'N/A') ?></div>
+                   </td>
+                   <td>
+                     <?php if (!empty($r['training_approval_doc'])): ?>
+                       <a class="btn btn-sm btn-outline" target="_blank" href="../../uploads/workers/<?= htmlspecialchars(rawurlencode(basename($r['training_approval_doc']))) ?>"><i class="fas fa-file-pdf"></i> View</a>
+                     <?php else: ?>
+                       <span class="badge badge-gray">EO Approved</span>
+                     <?php endif; ?>
                    </td>
                    <td>
                      <span class="badge badge-gray"><?= !empty($r['preferred_date']) ? date('d M Y', strtotime($r['preferred_date'])) : 'Any Date' ?></span>

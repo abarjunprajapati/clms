@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['welfare_admin', 'super_admin', 'welfare_user', 'pass_user']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
+require_once __DIR__ . '/../../include/labour_license_threshold.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Welfare Admin';
@@ -22,8 +23,7 @@ function renderContent() {
         WHERE a.workflow_status IN ('submitted', 'resubmitted', 'under_review', 'pending') 
         ORDER BY a.submitted_at DESC
     ");
-    $threshold_row = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key = 'labour_license_threshold'");
-    $threshold = intval($threshold_row['setting_value'] ?? 20);
+    $threshold = clms_get_labour_license_threshold($conn);
     $can_edit_threshold = in_array($_SESSION['role'], ['welfare_admin', 'super_admin']);
     ?>
     <div class="content-header">
@@ -37,12 +37,12 @@ function renderContent() {
           <i class="fas fa-hard-hat" style="color:#f59e0b; font-size:18px;"></i>
           <div>
             <div style="font-size:12px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Labour Licence Threshold</div>
-            <div style="font-size:15px; font-weight:800; color:var(--text-primary);">Mandatory when workers &ge; <span id="thresholdDisplay"><?= $threshold ?></span></div>
+            <div style="font-size:15px; font-weight:800; color:var(--text-primary);">Mandatory when workers &gt; <span id="thresholdDisplay"><?= $threshold ?></span></div>
           </div>
         </div>
         <?php if ($can_edit_threshold): ?>
-        <button class="btn btn-sm btn-outline" onclick="openThresholdModal(<?= $threshold ?>)" style="font-size:12px;">
-          <i class="fas fa-cog me-1"></i> Change Threshold
+        <button class="btn btn-sm btn-outline" onclick="window.location.href='labour_license_threshold.php'" style="font-size:12px;">
+          <i class="fas fa-cog me-1"></i> Manage Threshold
         </button>
         <?php endif; ?>
       </div>

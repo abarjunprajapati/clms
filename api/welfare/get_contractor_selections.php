@@ -2,6 +2,7 @@
 session_start();
 header('Content-Type: application/json');
 include __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/labour_license_threshold.php';
 
 set_exception_handler(function($e) {
     if (!headers_sent()) header('Content-Type: application/json', true, 500);
@@ -87,9 +88,7 @@ foreach ($all_docs as $d) {
     }
 }
 
-// System setting: labour_license_threshold
-$threshold_row = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key = 'labour_license_threshold'");
-$threshold = intval($threshold_row['setting_value'] ?? 20);
+$threshold = clms_get_labour_license_threshold($conn);
 
 echo json_encode([
     'success'    => true,

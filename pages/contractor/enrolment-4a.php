@@ -6,6 +6,7 @@ include '../../include/customer_portal_context.php';
 include '../../include/education_flow.php';
 include '../../include/layout.php';
 require_once '../../include/wage_settings.php';
+require_once '../../include/nationality_location_masters.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -27,6 +28,7 @@ $prefillAadhaar = preg_replace('/\D+/', '', (string)($_GET['aadhaar'] ?? ''));
 clms_get_portal_contractor($conn);
 $educationFlow = clms_get_education_flow($conn);
 $minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
+$activeCertifiedWages = clms_get_active_certified_wage_map($conn);
 
 function enrolment_table_exists($conn, $table) {
     $table = mysqli_real_escape_string($conn, $table);
@@ -170,7 +172,7 @@ function enrolment_worker_type_condition($conn, $table, $type) {
     }
 
     if ($type === 'workmen' || $type === 'workman') {
-        return '1=1';
+        return "worker_type IN ('workman', 'workmen', 'Workman', 'Workmen', 'Workman Pass', 'Workmen Pass')";
     }
 
     $map = [
@@ -297,17 +299,10 @@ function enrolment_get_customer_portal_contractor($conn) {
 }
 
 function renderContent() {
-    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar;
-    $nationalityOptions = [
-        'Indian', 'Afghan', 'Albanian', 'Algerian', 'American', 'Angolan', 'Argentine', 'Armenian', 'Australian', 'Austrian',
-        'Bahraini', 'Bangladeshi', 'Belgian', 'Bhutanese', 'Brazilian', 'British', 'Bulgarian', 'Canadian', 'Chinese',
-        'Danish', 'Egyptian', 'Emirati', 'Ethiopian', 'Filipino', 'Finnish', 'French', 'German', 'Ghanaian', 'Greek',
-        'Indonesian', 'Iranian', 'Iraqi', 'Irish', 'Israeli', 'Italian', 'Japanese', 'Jordanian', 'Kenyan', 'Kuwaiti',
-        'Malaysian', 'Maldivian', 'Mexican', 'Moroccan', 'Myanmar', 'Nepalese', 'Netherlands', 'New Zealander', 'Nigerian',
-        'Norwegian', 'Omani', 'Pakistani', 'Polish', 'Portuguese', 'Qatari', 'Russian', 'Saudi Arabian', 'Singaporean',
-        'South African', 'South Korean', 'Spanish', 'Sri Lankan', 'Sudanese', 'Swedish', 'Swiss', 'Syrian', 'Thai',
-        'Turkish', 'Ugandan', 'Ukrainian', 'Vietnamese', 'Yemeni', 'Zimbabwean'
-    ];
+    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages;
+    $nationalityOptions = clms_get_nationality_options($conn);
+    $religionOptions = clms_get_religion_options($conn);
+    $stateDistrictMap = clms_get_state_district_map($conn);
     $dobMax = date('Y-m-d', strtotime('-18 years'));
     $dobMin = date('Y-m-d', strtotime('-60 years'));
 
@@ -516,11 +511,14 @@ function renderContent() {
     $workers = [];
     if ($c_id && enrolment_table_exists($conn, 'workmen')) {
         $workerTypeExpr = enrolment_column_exists($conn, 'workmen', 'worker_type') ? 'worker_type' : "''";
+        $skillCategoryExpr = enrolment_column_exists($conn, 'workmen', 'skill_category') && enrolment_column_exists($conn, 'workmen', 'skill')
+            ? "COALESCE(NULLIF(skill_category, ''), skill) AS skill_category"
+            : (enrolment_column_exists($conn, 'workmen', 'skill_category')
+                ? enrolment_expr($conn, 'workmen', 'skill_category', 'skill_category')
+                : enrolment_expr($conn, 'workmen', 'skill', 'skill_category'));
         $orderExpr = enrolment_column_exists($conn, 'workmen', 'created_at') ? 'created_at DESC' : 'id DESC';
         $typeWhere = enrolment_worker_type_condition($conn, 'workmen', $requestedType);
-        $nonDraftWhere = enrolment_column_exists($conn, 'workmen', 'status')
-            ? "AND COALESCE(status, '') <> 'draft'"
-            : "";
+        $nonDraftWhere = "";
         $workers = enrolment_fetch_all($conn, "
             SELECT
                 " . enrolment_expr($conn, 'workmen', 'id', 'id', '0') . ",
@@ -551,7 +549,7 @@ function renderContent() {
                 '' AS emergency_contact,
                 " . enrolment_expr($conn, 'workmen', 'department', 'department') . ",
                 " . enrolment_expr($conn, 'workmen', 'nature_of_work', 'nature_of_work') . ",
-                " . enrolment_expr($conn, 'workmen', 'skill', 'skill_category') . ",
+                " . $skillCategoryExpr . ",
                 " . enrolment_expr($conn, 'workmen', 'blood_group', 'blood_group') . ",
                 " . enrolment_expr($conn, 'workmen', 'experience', 'experience') . ",
                 " . enrolment_expr($conn, 'workmen', 'region', 'region') . ",
@@ -855,6 +853,7 @@ function renderContent() {
         <form id="enrollForm" enctype="multipart/form-data">
           <input type="hidden" name="worker_id" id="workerEditId" value="">
           <input type="hidden" name="source" id="workerSource" value="MANUAL">
+          <input type="hidden" name="contractor_id" value="<?= (int)$c_id ?>">
           <div class="square-tabs">
             <button type="button" class="square-tab active" data-tab="basic">1. Basic Info</button>
             <button type="button" class="square-tab" data-tab="personal">2. Personal / Medical</button>
@@ -868,10 +867,10 @@ function renderContent() {
             <div class="form-grid-3">
               <div class="form-group">
                 <label class="form-label required">Pass Type</label>
-                <select class="form-control" name="pass_type" required>
+                <select class="form-control" name="pass_type" id="passTypeSelect" required>
                   <option value="Contractor" <?= $selectedType['pass'] === 'Contractor' ? 'selected' : '' ?>>Contractor</option>
-                  <option value="Representative" <?= $selectedType['pass'] === 'Representative' ? 'selected' : '' ?>>Representative</option>
                   <option value="Supervisor" <?= $selectedType['pass'] === 'Supervisor' ? 'selected' : '' ?>>Supervisor</option>
+                  <option value="Representative" <?= $selectedType['pass'] === 'Representative' ? 'selected' : '' ?>>Representative</option>
                   <option value="Workman" <?= $selectedType['pass'] === 'Workman' ? 'selected' : '' ?>>Workman</option>
                 </select>
               </div>
@@ -906,7 +905,7 @@ function renderContent() {
               </div>
               <div class="form-group">
                 <label class="form-label required">Aadhaar Number <span id="aadhaarStatus" class="badge-status" style="display:none; margin-left:10px;"></span></label>
-                <input type="text" class="form-control" name="aadhaar" id="aadhaarInput" maxlength="12" pattern="\d{12}" required>
+                <input type="text" class="form-control" name="aadhaar" id="aadhaarInput" maxlength="12" inputmode="numeric" autocomplete="off" required>
               </div>
               <div class="form-group">
                 <label class="form-label required">Full Name</label>
@@ -963,8 +962,13 @@ function renderContent() {
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label">Region</label>
-                <input type="text" class="form-control" name="region">
+                <label class="form-label">Religion</label>
+                <input type="text" class="form-control" name="region" list="religionList">
+                <datalist id="religionList">
+                  <?php foreach ($religionOptions as $religion): ?>
+                    <option value="<?= htmlspecialchars($religion) ?>"></option>
+                  <?php endforeach; ?>
+                </datalist>
               </div>
               <div class="form-group">
                 <label class="form-label required">Person with Disability</label>
@@ -1091,7 +1095,7 @@ function renderContent() {
               <div class="form-group">
                 <label class="form-label required">Certified Wage Rate</label>
                 <input type="number" class="form-control" name="certified_wage_rate" id="certifiedWageRate" min="<?= htmlspecialchars((string)$minimumCertifiedWage) ?>" step="0.01" required>
-                <small class="form-hint">Minimum allowed: <?= number_format((float)$minimumCertifiedWage, 2) ?></small>
+                <small class="form-hint" id="certifiedWageHint">Select category to apply approved wage rate. Minimum allowed: <?= number_format((float)$minimumCertifiedWage, 2) ?></small>
               </div>
               <div class="form-group">
                 <label class="form-label required">Language Preferred for Safety Induction</label>
@@ -1323,10 +1327,16 @@ function renderContent() {
         const photoMaxSize = 2 * 1024 * 1024;
         const pdfMaxSize = 5 * 1024 * 1024;
         const minimumCertifiedWage = <?= json_encode((float)$minimumCertifiedWage) ?>;
+        const activeCertifiedWages = <?= json_encode($activeCertifiedWages, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        const passTypeSelect = document.getElementById('passTypeSelect');
         const certifiedWageInput = document.getElementById('certifiedWageRate');
+        const certifiedWageHint = document.getElementById('certifiedWageHint');
+        const aadhaarInput = document.getElementById('aadhaarInput');
         const executingOfficerCodeInput = document.getElementById('executingOfficerCode');
         const executingOfficerNameInput = document.getElementById('executingOfficerName');
         const executingOfficerStatus = document.getElementById('eoCodeStatus');
+        let executingOfficerVerifyTimer = null;
+        let executingOfficerVerifyRequest = 0;
         const indianStateDistricts = {
           'Andhra Pradesh': ['Anantapur', 'Chittoor', 'East Godavari', 'Guntur', 'Krishna', 'Kurnool', 'Prakasam', 'SPSR Nellore', 'Srikakulam', 'Visakhapatnam', 'Vizianagaram', 'West Godavari', 'YSR Kadapa'],
           'Arunachal Pradesh': ['Anjaw', 'Changlang', 'East Kameng', 'East Siang', 'Itanagar Capital Complex', 'Lohit', 'Lower Dibang Valley', 'Lower Subansiri', 'Namsai', 'Papum Pare', 'Tawang', 'Tirap', 'Upper Siang', 'Upper Subansiri', 'West Kameng', 'West Siang'],
@@ -1365,6 +1375,12 @@ function renderContent() {
           'Lakshadweep': ['Lakshadweep'],
           'Puducherry': ['Karaikal', 'Mahe', 'Puducherry', 'Yanam']
         };
+        const masterStateDistricts = <?= json_encode($stateDistrictMap, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        if (Object.keys(masterStateDistricts).length) {
+          Object.entries(masterStateDistricts).forEach(([state, districts]) => {
+            indianStateDistricts[state] = Array.from(new Set([...(indianStateDistricts[state] || []), ...districts]));
+          });
+        }
 
         function validateDobAge(showMessage = true) {
           if (!dobInput || !dobInput.value) return true;
@@ -1385,6 +1401,37 @@ function renderContent() {
             dobInput.reportValidity();
           }
           return dobInput.checkValidity();
+        }
+
+        function validateAadhaarNumber(showMessage = true) {
+          if (!aadhaarInput) return true;
+          aadhaarInput.value = aadhaarInput.value.replace(/\D/g, '').slice(0, 12);
+          if (!aadhaarInput.value) {
+            aadhaarInput.setCustomValidity('');
+            return true;
+          }
+          const isValid = /^\d{12}$/.test(aadhaarInput.value);
+          aadhaarInput.setCustomValidity(isValid ? '' : 'Please enter correct Aadhar number');
+          if (!isValid && showMessage) {
+            activateTab('basic');
+            notify('Invalid Aadhar Number', 'Please enter correct Aadhar number', 'warning');
+            setTimeout(() => aadhaarInput.focus(), 120);
+          }
+          return isValid;
+        }
+
+        function normalizePassLimitType(passType) {
+          const raw = String(passType || '').toLowerCase();
+          if (raw.includes('supervisor')) return 'Supervisor';
+          if (raw.includes('representative')) return 'Representative';
+          if (raw.includes('contractor')) return 'Contractor';
+          return 'Workman';
+        }
+
+        function validateSelectedPassLimit(count = 1) {
+          if (typeof PassLimitValidator === 'undefined' || !currentContractorId) return true;
+          const limitType = normalizePassLimitType(passTypeSelect?.value || requestedPassType);
+          return PassLimitValidator.validate(limitType, count);
         }
 
         function validateWorkerFile(input, showMessage = true) {
@@ -1426,10 +1473,12 @@ function renderContent() {
             return false;
           }
 
+          const requestId = ++executingOfficerVerifyRequest;
           setExecutingOfficerStatus('Checking...', 'badge-warning');
           try {
             const res = await fetch('../../api/verify_execution_officer.php?code=' + encodeURIComponent(code));
             const data = await res.json();
+            if (requestId !== executingOfficerVerifyRequest) return false;
             if (data.success && data.data) {
               if (executingOfficerNameInput) executingOfficerNameInput.value = data.data.name || '';
               setExecutingOfficerStatus('Verified', 'badge-success');
@@ -1443,6 +1492,7 @@ function renderContent() {
             }
             return false;
           } catch (err) {
+            if (requestId !== executingOfficerVerifyRequest) return false;
             if (executingOfficerNameInput) executingOfficerNameInput.value = '';
             setExecutingOfficerStatus('Error', 'badge-danger');
             if (showMessage) notify('E-Code Check Failed', err.message || 'Unable to verify E-Code.', 'error');
@@ -1484,6 +1534,11 @@ function renderContent() {
         }
 
         dobInput?.addEventListener('change', () => validateDobAge(false));
+        aadhaarInput?.addEventListener('input', () => validateAadhaarNumber(false));
+        aadhaarInput?.addEventListener('blur', () => {
+          if (aadhaarInput.value) validateAadhaarNumber(false);
+        });
+        passTypeSelect?.addEventListener('change', () => validateSelectedPassLimit(1));
         document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => {
           input.addEventListener('change', () => validateWorkerFile(input, true));
         });
@@ -1812,6 +1867,44 @@ function renderContent() {
             if (flowEls.natureSummary) flowEls.natureSummary.textContent = flowState.jobProfile || 'Not selected';
             if (flowEls.skillSummary) flowEls.skillSummary.textContent = flowState.category || 'Not selected';
             if (flowEls.roleSummary) flowEls.roleSummary.textContent = flowState.category || 'Not selected';
+            applyCertifiedWageForCategory(flowState.category, true);
+        }
+
+        function getCategoryWageRule(category) {
+            const normalized = normalizeFlowCategory(category);
+            return normalized ? (activeCertifiedWages[normalized] || null) : null;
+        }
+
+        function currentMinimumCertifiedWage() {
+            const rule = getCategoryWageRule(flowState.category);
+            const categoryWage = rule ? parseWageValue(rule.wage_rate) : NaN;
+            if (Number.isFinite(categoryWage) && categoryWage > 0) return categoryWage;
+            return Number(minimumCertifiedWage) || 0;
+        }
+
+        function applyCertifiedWageForCategory(category, force = false) {
+            if (!certifiedWageInput) return;
+            const rule = getCategoryWageRule(category);
+            if (rule) {
+                const rate = parseWageValue(rule.wage_rate);
+                if (Number.isFinite(rate) && rate > 0) {
+                    certifiedWageInput.min = rate.toFixed(2);
+                    if (force || !certifiedWageInput.value) {
+                        certifiedWageInput.value = rate.toFixed(2);
+                    }
+                    if (certifiedWageHint) {
+                        const fromDate = rule.wage_from_date || '';
+                        const toDate = rule.wage_to_date || '9999-12-31';
+                        certifiedWageHint.textContent = `${normalizeFlowCategory(category)} approved wage: ${rate.toFixed(2)} (${fromDate} to ${toDate}).`;
+                    }
+                    return;
+                }
+            }
+
+            certifiedWageInput.min = String(minimumCertifiedWage || 0);
+            if (certifiedWageHint) {
+                certifiedWageHint.textContent = `No active category wage found. Minimum allowed: ${(Number(minimumCertifiedWage) || 0).toFixed(2)}.`;
+            }
         }
 
         function renderCategoryOptions() {
@@ -1901,6 +1994,7 @@ function renderContent() {
             flowState.qualification = '';
             flowState.jobProfile = '';
             renderWorkFlow();
+            applyCertifiedWageForCategory(flowState.category, true);
         });
         flowEls.qualification?.addEventListener('change', () => {
             flowState.qualification = flowEls.qualification.value;
@@ -1949,6 +2043,8 @@ function renderContent() {
           const field = form.querySelector(`[name="${name}"]`);
           if (!field) return;
           field.value = value ?? '';
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+          field.dispatchEvent(new Event('change', { bubbles: true }));
           if (name === 'nationality') updateNationalityLocationMode();
         }
 
@@ -1978,7 +2074,7 @@ function renderContent() {
             marital_status: worker.marital_status,
             nationality: worker.nationality || 'Indian',
             identification_mark: worker.identification_mark,
-            present_address: worker.present_address,
+            present_address: worker.present_address || worker.permanent_address,
             permanent_address: worker.permanent_address,
             state: worker.state,
             district: worker.district,
@@ -2069,15 +2165,17 @@ function renderContent() {
         }
 
         function validateCertifiedWage(showMessage = true) {
-          if (!certifiedWageInput || minimumCertifiedWage <= 0) return true;
+          if (!certifiedWageInput) return true;
+          const requiredWage = currentMinimumCertifiedWage();
+          if (requiredWage <= 0) return true;
           const wage = parseWageValue(certifiedWageInput.value);
-          if (!Number.isFinite(wage) || wage >= minimumCertifiedWage) return true;
+          if (!Number.isFinite(wage) || wage >= requiredWage) return true;
 
           if (showMessage) {
             activateTab('work');
             notify(
               'Certified Wage Rate Too Low',
-              `Certified Wage Rate cannot be less than ${minimumCertifiedWage.toFixed(2)}. Please enter an approved wage rate.`,
+              `Certified Wage Rate cannot be less than ${requiredWage.toFixed(2)} for ${flowState.category || 'selected category'}. Please enter an approved wage rate.`,
               'warning'
             );
             certifiedWageInput.focus();
@@ -2114,6 +2212,10 @@ function renderContent() {
               draftBtn.disabled = false;
               draftBtn.innerText = 'Save Draft';
             }
+            return;
+          }
+
+          if (!validateAadhaarNumber(true)) {
             return;
           }
 
@@ -2217,9 +2319,20 @@ function renderContent() {
         executingOfficerCodeInput?.addEventListener('input', () => {
           executingOfficerCodeInput.value = executingOfficerCodeInput.value.toUpperCase();
           if (executingOfficerNameInput) executingOfficerNameInput.value = '';
-          setExecutingOfficerStatus('', '');
+          executingOfficerVerifyRequest++;
+          clearTimeout(executingOfficerVerifyTimer);
+          const code = executingOfficerCodeInput.value.trim();
+          if (code.length < 3) {
+            setExecutingOfficerStatus('', '');
+            return;
+          }
+          setExecutingOfficerStatus('Typing...', 'badge-warning');
+          executingOfficerVerifyTimer = setTimeout(() => verifyExecutingOfficerCode(false), 500);
         });
-        executingOfficerCodeInput?.addEventListener('blur', () => verifyExecutingOfficerCode(false));
+        executingOfficerCodeInput?.addEventListener('blur', () => {
+          clearTimeout(executingOfficerVerifyTimer);
+          verifyExecutingOfficerCode(false);
+        });
 
         if (prefillAadhaar) {
           document.getElementById('btnOpenModal')?.click();

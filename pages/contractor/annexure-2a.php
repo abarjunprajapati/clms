@@ -3,6 +3,7 @@ require_once '../../include/auth.php';
 checkAuth(['contractor', 'super_admin']);
 include '../../include/config.php';
 include '../../include/layout.php';
+require_once '../../include/labour_license_threshold.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -103,9 +104,7 @@ function renderContent() {
     
     $sap_readonly = 'readonly style="background-color:#f1f5f9;"';
 
-    // Fetch labour licence threshold from system settings (set by welfare admin)
-    $threshold_row = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key = 'labour_license_threshold'");
-    $licence_threshold = intval($threshold_row['setting_value'] ?? 20);
+    $licence_threshold = clms_get_labour_license_threshold($conn);
     ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -638,7 +637,7 @@ function renderContent() {
                 <div class="registration-card" id="section7Card">
                     <div class="registration-section-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
                         <span>9. Labour License Details</span>
-                        <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &ge; <?= $licence_threshold ?>)</span>
+                        <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &gt; <?= $licence_threshold ?>)</span>
                     </div>
                     <div class="d-flex justify-content-end mb-3"><button type="button" class="btn btn-sm btn-reg-draft" onclick="addLicenseRow()" <?= $limited_edit_disabled_attr ?>>Add Row</button></div>
                     <div class="table-responsive">
@@ -836,7 +835,7 @@ function renderContent() {
                         <div class="d-flex align-items-center gap-3">
                             <h5 class="mb-0 fw-bold" style="color: #334155; font-size: 1.1rem;">7. Labour Licence Certificate</h5>
                             <span id="licenceMandatoryBadge" class="badge" style="font-size:11px; display:none; background:#fef3c7; color:#92400e; border:1px solid #fcd34d; padding:4px 10px; border-radius:20px;">
-                                <i class="fas fa-exclamation-circle me-1"></i> Mandatory (Workers &ge; <?= $licence_threshold ?>)
+                                <i class="fas fa-exclamation-circle me-1"></i> Mandatory (Workers &gt; <?= $licence_threshold ?>)
                             </span>
                         </div>
                         <button type="button" class="btn btn-sm rounded-pill fw-bold" style="background-color: #f1f5f9; color: #3b82f6; border: 1px solid #cbd5e1; padding: 6px 16px; transition: all 0.2s;" onclick="addLicenseRow()" onmouseover="this.style.backgroundColor='#e2e8f0'" onmouseout="this.style.backgroundColor='#f1f5f9'">
@@ -1365,15 +1364,17 @@ function renderContent() {
     const LICENCE_THRESHOLD = <?= $licence_threshold ?>;
 
     function toggleLicenceMandatory() {
+        const workers = parseInt(document.querySelector('[name="workers_proposed_to_be_engaged"]')?.value || '0', 10) || 0;
+        const mandatory = workers > LICENCE_THRESHOLD;
         const badge = document.getElementById('licenceMandatoryBadge');
         const card = document.getElementById('section7Card');
         const licInputs = document.querySelectorAll('#licenseTableBody input[type="text"], #licenseTableBody input[type="date"]');
         const fileInputs = document.querySelectorAll('#licenseTableBody input[type="file"]');
 
-        if (badge) badge.style.display = 'none';
-        if (card) card.style.borderColor = '';
-        licInputs.forEach(i => i.required = false);
-        fileInputs.forEach(i => i.required = false);
+        if (badge) badge.style.display = mandatory ? 'inline-flex' : 'none';
+        if (card) card.style.borderColor = mandatory ? '#f59e0b' : '';
+        licInputs.forEach(i => i.required = mandatory);
+        fileInputs.forEach(i => i.required = mandatory && !i.closest('td')?.querySelector('input[name="existing_license_file[]"]')?.value);
     }
 
     window.addEventListener('load', () => {

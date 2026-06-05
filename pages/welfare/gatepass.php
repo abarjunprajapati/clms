@@ -4,10 +4,12 @@
 require_once '../../include/auth.php';
 checkAuth(['welfare_user', 'super_admin', 'execution_officer', 'pass_user']);
 include '../../include/config.php';
+require_once '../../include/temporary_pass_validity.php';
 
 
 
 $role = $_SESSION['role'];
+$tempPassValidityDays = clms_get_temporary_pass_validity_days($conn);
 $pending_wo = db_count($conn, "SELECT COUNT(*) c FROM gate_passes WHERE status = 'pending'");
 $notif_count = 0;
 ?>
@@ -185,7 +187,7 @@ $notif_count = 0;
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px">
             <div class="form-group">
               <label class="form-label">Temporary Pass Validity (Days)</label>
-              <input type="number" class="form-control" id="temp-validity" value="30" min="1" max="90">
+              <input type="number" class="form-control" id="temp-validity" value="<?= (int)$tempPassValidityDays ?>" min="1" max="<?= (int)$tempPassValidityDays ?>">
             </div>
             <div class="form-group">
               <label class="form-label">Access Zones</label>

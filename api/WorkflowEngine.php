@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/RuleEngine.php';
 require_once __DIR__ . '/SapDemo.php';
+require_once dirname(__DIR__) . '/include/temporary_pass_validity.php';
 
 class WorkflowEngine {
     private static $logFile = '';
@@ -125,7 +126,8 @@ class WorkflowEngine {
         }
 
         if ($action === 'issue_temporary_pass') {
-            $days = max(1, min(90, (int)($additionalData['temp_validity'] ?? 30)));
+            $defaultDays = function_exists('clms_get_temporary_pass_validity_days') ? clms_get_temporary_pass_validity_days($conn) : 7;
+            $days = max(1, min($defaultDays, (int)($additionalData['temp_validity'] ?? $defaultDays)));
             $validTo = date('Y-m-d', strtotime("+$days days"));
             $validToSql = $conn->real_escape_string($validTo);
             
@@ -441,4 +443,3 @@ class WorkflowEngine {
     }
 }
 ?>
-
