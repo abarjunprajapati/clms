@@ -40,6 +40,8 @@ require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customer_portal_context.php';
 require_once __DIR__ . '/../include/wage_settings.php';
 require_once __DIR__ . '/../include/training_flow.php';
+require_once __DIR__ . '/../include/age_range_mapping.php';
+require_once __DIR__ . '/../include/payment_flow.php';
 require_once __DIR__ . '/api_helper.php';
 
 // include/session.php installs diagnostic handlers; restore JSON handlers for this API.
@@ -341,6 +343,7 @@ function worker4a_ensure_schema($conn) {
         'education' => 'VARCHAR(150) NULL',
         'skill' => 'VARCHAR(150) NULL',
         'skill_category' => 'VARCHAR(150) NULL',
+        'role_type' => 'VARCHAR(150) NULL',
         'trade' => 'VARCHAR(150) NULL',
         'department' => 'VARCHAR(150) NULL',
         'nature_of_work' => 'VARCHAR(200) NULL',
@@ -432,6 +435,8 @@ function worker4a_ensure_upload_dir($dir) {
 }
 
 function worker4a_validate_dob_age($dob) {
+    global $conn;
+
     $dob = trim((string)$dob);
     if ($dob === '') return;
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
@@ -446,11 +451,14 @@ function worker4a_validate_dob_age($dob) {
     }
     $today = new DateTime('today');
     $age = (int)$birth->diff($today)->y;
-    if ($age < 18) {
-        throw new Exception("Worker age is below 18 years. Registration is not allowed.");
+    $range = clms_get_active_age_range($conn);
+    $minAge = (int)($range['min_age'] ?? 18);
+    $maxAge = (int)($range['max_age'] ?? 60);
+    if ($age < $minAge) {
+        throw new Exception("Worker age is below {$minAge} years. Registration is not allowed.");
     }
-    if ($age > 60) {
-        throw new Exception("Worker age is above 60 years. Registration is not allowed.");
+    if ($age > $maxAge) {
+        throw new Exception("Worker age is above {$maxAge} years. Registration is not allowed.");
     }
 }
 
@@ -621,7 +629,7 @@ function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $r
         'contractor_id' => $contractor_id,
         'training_type' => 'Safety Induction',
         'requested_date' => date('Y-m-d'),
-        'preferred_date' => date('Y-m-d'),
+        'preferred_date' => null,
         'preferred_shift' => 'morning',
         'remarks' => 'Auto-created after Executing Officer approval/document validation. Waiting for Welfare check.',
         'source' => 'enrolment',
@@ -790,6 +798,7 @@ worker4a_ensure_schema($conn);
         'education' => $data['education'] ?? '',
         'skill' => $skill,
         'skill_category' => $workmen_skill_category,
+        'role_type' => $workmen_skill_category,
         'trade' => $trade,
         'department' => $data['department'] ?? '',
         'nature_of_work' => $data['nature_of_work'] ?? '',
@@ -930,9 +939,17 @@ worker4a_ensure_schema($conn);
     }
 
     $temp_id = '';
+    $paymentRequest = null;
     if ($action !== 'draft') {
         $temp_id = "TEMP-" . str_pad($workman_id_new, 6, "0", STR_PAD_LEFT);
         update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => $temp_id]);
+        $paymentRequest = clms_create_training_payment_request(
+            $conn,
+            $contractor_id,
+            [$workman_id_new],
+            (int)($_SESSION['user_id'] ?? 0),
+            'enrolment'
+        );
     } else {
         update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => null]);
     }
@@ -1028,6 +1045,12 @@ worker4a_ensure_schema($conn);
         "worker_id" => $workman_id_new,
         "workman_id" => $workman_id_new,
         "temp_id" => $temp_id,
+        "payment" => $paymentRequest ? [
+            "payment_ref" => $paymentRequest['payment_ref'],
+            "amount" => $paymentRequest['total_amount'],
+            "payment_link" => $paymentRequest['payment_link'],
+            "link_expires_at" => $paymentRequest['link_expires_at'],
+        ] : null,
         "notification_debug" => $notificationDebug
     ]);
 

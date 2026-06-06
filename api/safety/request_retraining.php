@@ -2,8 +2,11 @@
 require_once __DIR__ . '/../../include/auth.php';
 require_once __DIR__ . '/../../include/config.php';
 
+checkAuth(['safety_user', 'super_admin']);
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    die("Invalid request");
+    header("Location: ../../pages/safety/retraining.php?error=" . urlencode("Invalid request method"));
+    exit;
 }
 
 function requestRetrainingColumnExists($conn, $table, $column) {

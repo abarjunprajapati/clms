@@ -78,6 +78,134 @@ function safetyReportsNormalStatus($status) {
     return $status;
 }
 
+function safetyReportsRepairConfirmedSessions($conn) {
+    if (
+        !safetyReportsTableExists($conn, 'training_requests') ||
+        !safetyReportsTableExists($conn, 'training_schedule') ||
+        !safetyReportsTableExists($conn, 'training_session_workers') ||
+        !safetyReportsColumnExists($conn, 'training_requests', 'workman_id') ||
+        !safetyReportsColumnExists($conn, 'training_requests', 'scheduled_date') ||
+        !safetyReportsColumnExists($conn, 'training_requests', 'scheduled_venue') ||
+        !safetyReportsColumnExists($conn, 'training_session_workers', 'training_request_id')
+    ) {
+        return;
+    }
+
+    $sessionIdExpr = safetyReportsColumnExists($conn, 'training_requests', 'scheduled_session_id') ? 'tr.scheduled_session_id' : 'NULL';
+    $scheduledTimeExpr = safetyReportsColumnExists($conn, 'training_requests', 'scheduled_time') ? 'tr.scheduled_time' : 'NULL';
+    $scheduledShiftExpr = safetyReportsColumnExists($conn, 'training_requests', 'scheduled_shift') ? 'tr.scheduled_shift' : 'NULL';
+    $instructorExpr = safetyReportsColumnExists($conn, 'training_requests', 'instructor') ? 'tr.instructor' : 'NULL';
+    $batchExpr = safetyReportsColumnExists($conn, 'training_requests', 'batch_number') ? 'tr.batch_number' : 'NULL';
+
+    $stuckRows = db_fetch_all($conn, "
+        SELECT
+            tr.id,
+            tr.workman_id,
+            tr.status,
+            tr.scheduled_date,
+            tr.scheduled_venue,
+            $sessionIdExpr AS scheduled_session_id,
+            $scheduledTimeExpr AS scheduled_time,
+            $scheduledShiftExpr AS scheduled_shift,
+            $instructorExpr AS instructor,
+            $batchExpr AS batch_number,
+            tsw.id AS session_worker_id,
+            tsw.session_id AS existing_session_id
+        FROM training_requests tr
+        LEFT JOIN training_session_workers tsw ON tsw.training_request_id = tr.id
+        WHERE tr.status IN ('scheduled', 'contractor_confirmed')
+          AND tr.scheduled_date IS NOT NULL
+          AND COALESCE(TRIM(tr.scheduled_venue), '') <> ''
+        ORDER BY tr.updated_at DESC, tr.id DESC
+        LIMIT 200
+    ");
+
+    foreach ($stuckRows as $row) {
+        try {
+            $finalTime = $row['scheduled_time'] ?: (($row['scheduled_shift'] ?? '') === 'morning' ? '09:00:00' : '14:00:00');
+            $session = null;
+            if (!empty($row['scheduled_session_id'])) {
+                $session = db_single($conn, "SELECT id, session_status FROM training_schedule WHERE id = ? LIMIT 1", 'i', [(int)$row['scheduled_session_id']]);
+            }
+            if (!$session) {
+                $session = db_single(
+                    $conn,
+                    "SELECT id, session_status
+                     FROM training_schedule
+                     WHERE session_date = ?
+                       AND LOWER(TRIM(location)) = LOWER(TRIM(?))
+                       AND session_time = ?
+                       AND LOWER(COALESCE(session_status, 'open')) <> 'cancelled'
+                     LIMIT 1",
+                    'sss',
+                    [$row['scheduled_date'], trim((string)$row['scheduled_venue']), $finalTime]
+                );
+            }
+            if (!$session) {
+                db_execute(
+                    $conn,
+                    "INSERT INTO training_schedule (session_date, session_time, location, capacity, trainer_name, batch_number, training_type, session_status, created_at)
+                     VALUES (?, ?, ?, 30, ?, ?, 'induction', 'open', NOW())",
+                    'sssss',
+                    [
+                        $row['scheduled_date'],
+                        $finalTime,
+                        trim((string)$row['scheduled_venue']),
+                        (string)($row['instructor'] ?? ''),
+                        (string)($row['batch_number'] ?? '')
+                    ]
+                );
+                $session = ['id' => mysqli_insert_id($conn), 'session_status' => 'open'];
+            }
+
+            $sessionId = (int)($session['id'] ?? 0);
+            if (!$sessionId || strtolower((string)($session['session_status'] ?? 'open')) === 'cancelled') {
+                continue;
+            }
+
+            if (safetyReportsColumnExists($conn, 'training_requests', 'scheduled_session_id')) {
+                db_execute($conn, "UPDATE training_requests SET scheduled_session_id = ? WHERE id = ?", 'ii', [$sessionId, (int)$row['id']]);
+            }
+
+            if (($row['status'] ?? '') === 'contractor_confirmed') {
+                if (!empty($row['session_worker_id'])) {
+                    db_execute(
+                        $conn,
+                        "UPDATE training_session_workers SET session_id = ? WHERE id = ?",
+                        'ii',
+                        [$sessionId, (int)$row['session_worker_id']]
+                    );
+                } else {
+                    db_execute(
+                        $conn,
+                        "INSERT INTO training_session_workers (session_id, workman_id, training_request_id, attendance_status, result, created_at)
+                         VALUES (?, ?, ?, 'pending', 'pending', NOW())",
+                        'iii',
+                        [$sessionId, (int)$row['workman_id'], (int)$row['id']]
+                    );
+                }
+            }
+            if (safetyReportsColumnExists($conn, 'training_schedule', 'enrolled_count')) {
+                db_execute(
+                    $conn,
+                    "UPDATE training_schedule
+                     SET enrolled_count = (
+                         SELECT COUNT(*)
+                         FROM training_session_workers tsw2
+                         JOIN training_requests tr2 ON tr2.id = tsw2.training_request_id
+                         WHERE tsw2.session_id = ? AND tr2.status = 'contractor_confirmed'
+                     )
+                     WHERE id = ?",
+                    'ii',
+                    [$sessionId, $sessionId]
+                );
+            }
+        } catch (Throwable $ignored) {
+            error_log('[safety reports repair] ' . $ignored->getMessage());
+        }
+    }
+}
+
 function renderContent() {
     global $conn;
 
@@ -93,6 +221,8 @@ function renderContent() {
 
     $reportRows = [];
     $seen = [];
+
+    safetyReportsRepairConfirmedSessions($conn);
 
     if (safetyReportsTableExists($conn, 'training_requests') && safetyReportsColumnExists($conn, 'training_requests', 'workman_id')) {
         $dateExprs = [];
@@ -115,7 +245,14 @@ function renderContent() {
             safetyReportsTableExists($conn, 'training_session_workers') &&
             safetyReportsColumnExists($conn, 'training_session_workers', 'training_request_id')
         ) {
-            $attendanceJoin = 'LEFT JOIN training_session_workers sw ON tr.id = sw.training_request_id';
+            $attendanceJoin = "
+            LEFT JOIN (
+                SELECT training_request_id, MAX(id) AS id
+                FROM training_session_workers
+                WHERE training_request_id IS NOT NULL
+                GROUP BY training_request_id
+            ) sw_latest ON tr.id = sw_latest.training_request_id
+            LEFT JOIN training_session_workers sw ON sw.id = sw_latest.id";
             $attendanceExpr = safetyReportsColumnSql($conn, 'training_session_workers', 'sw', 'attendance_status', 'NULL');
         }
 
@@ -174,6 +311,21 @@ function renderContent() {
             $types .= 'i';
         }
 
+        $requestSuppressSql = '';
+        if (safetyReportsTableExists($conn, 'training_requests') && safetyReportsColumnExists($conn, 'training_requests', 'workman_id')) {
+            $requestSuppressSql = "
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM training_requests tr2
+                  WHERE tr2.workman_id = w.id
+                    AND LOWER(COALESCE(tr2.status, 'pending')) IN (
+                        'pending', 'welfare_pending', 'scheduled', 'contractor_confirmed',
+                        'passed', 'failed', 'completed', 'training_scheduled',
+                        'training_passed', 'training_failed'
+                    )
+              )";
+        }
+
         $workerRows = db_fetch_all($conn, "
             SELECT
                 CONCAT('workman-', w.id) AS source_id,
@@ -191,6 +343,7 @@ function renderContent() {
             LEFT JOIN contractors c ON w.contractor_id = c.id
             WHERE $where
               AND LOWER(COALESCE($trainingStatus, $safetyStatus, 'pending')) IN ('pass','passed','fail','failed','training_passed','training_failed','training_pending','training_scheduled','pending','scheduled')
+              $requestSuppressSql
             ORDER BY $workerDateExpr DESC
         ", $types, $params);
         safetyReportsAddRows($workerRows, $reportRows, $seen);

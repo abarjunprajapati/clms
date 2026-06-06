@@ -10,8 +10,20 @@ $name = $_SESSION['name'] ?? 'Safety Officer';
 function renderContent() {
     global $conn;
     
-    // Fetch all active/upcoming sessions
-    $sessions = db_fetch_all($conn, "SELECT * FROM training_schedule ORDER BY session_date DESC, session_time ASC");
+    // Fetch sessions with confirmed attendee count only.
+    $sessions = db_fetch_all($conn, "
+        SELECT ts.*,
+               COALESCE(att.confirmed_count, 0) AS enrolled_count
+        FROM training_schedule ts
+        LEFT JOIN (
+            SELECT tsw.session_id, COUNT(*) AS confirmed_count
+            FROM training_session_workers tsw
+            JOIN training_requests tr ON tr.id = tsw.training_request_id
+            WHERE tr.status = 'contractor_confirmed'
+            GROUP BY tsw.session_id
+        ) att ON att.session_id = ts.id
+        ORDER BY ts.session_date DESC, ts.session_time ASC
+    ");
     ?>
     <div class="content-header">
       <h2 class="page-title">Training Schedule</h2>
@@ -84,6 +96,12 @@ function renderContent() {
             </thead>
             <tbody>
               <?php foreach($sessions as $sess): ?>
+              <?php
+                $capacity = max(1, (int)($sess['capacity'] ?? 0));
+                $enrolled = (int)($sess['enrolled_count'] ?? 0);
+                $progress = min(100, ($enrolled / $capacity) * 100);
+                $sessionStatus = strtolower((string)($sess['session_status'] ?? 'open'));
+              ?>
               <tr>
                 <td>
                   <div style="font-weight:600"><?= date('d M Y', strtotime($sess['session_date'])) ?></div>
@@ -95,16 +113,18 @@ function renderContent() {
                 </td>
                 <td><span class="badge badge-outline"><?= ucfirst($sess['training_type']) ?></span></td>
                 <td>
-                  <div style="font-size:12px"><?= $sess['enrolled_count'] ?> / <?= $sess['capacity'] ?></div>
+                  <div style="font-size:12px"><?= $enrolled ?> / <?= $capacity ?></div>
                   <div class="progress-bar-small">
-                    <div class="progress-fill" style="width: <?= ($sess['enrolled_count']/$sess['capacity'])*100 ?>%"></div>
+                    <div class="progress-fill" style="width: <?= $progress ?>%"></div>
                   </div>
                 </td>
                 <td>
-                  <?php if($sess['session_status'] == 'open'): ?>
+                  <?php if($sessionStatus == 'open'): ?>
                     <span class="badge badge-info">Open</span>
-                  <?php elseif($sess['session_status'] == 'locked'): ?>
+                  <?php elseif($sessionStatus == 'locked'): ?>
                     <span class="badge badge-warning">Locked</span>
+                  <?php elseif($sessionStatus == 'cancelled'): ?>
+                    <span class="badge badge-danger">Cancelled</span>
                   <?php else: ?>
                     <span class="badge badge-success">Completed</span>
                   <?php endif; ?>
@@ -133,4 +153,3 @@ function renderContent() {
 }
 
 renderLayout("Training Schedule", 'renderContent', $role, $name);
-

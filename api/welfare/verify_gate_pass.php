@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['welfare_user', 'super_admin', 'pass_user']);
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/NotificationEngine.php';
+require_once __DIR__ . '/../../include/gate_pass_document_master.php';
 require_once __DIR__ . '/../../api/WorkflowEngine.php';
 
 header('Content-Type: application/json');
@@ -98,14 +99,10 @@ try {
             $workman_id = (int)$w['workman_id'];
             
             // Validate required Annexure 6A documents exist.
-            $requiredDocTypes = [
-                'Medical Fitness Certificate',
-                'Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass (Template Upload)',
-                'Employee Compensation Policy if not covered under ESI',
-            ];
+            $requiredDocTypes = array_values(clms_get_gate_pass_document_type_map($conn, true));
             $requiredDocTypesSql = "'" . implode("','", array_map([$conn, 'real_escape_string'], $requiredDocTypes)) . "'";
             $docCount = db_count($conn, "SELECT COUNT(DISTINCT document_type) FROM documents WHERE workman_id = ? AND document_type IN ($requiredDocTypesSql)", 'i', [$workman_id]);
-            if ($docCount < 3) {
+            if ($docCount < count($requiredDocTypes)) {
                 throw new Exception("Worker ID $workman_id does not have all required Annexure 6A documents.");
             }
             
@@ -126,7 +123,7 @@ try {
             );
         }
 
-        // Notify Pass Issuer (instead of contractor that pass is issued)
+        // Notify Pass Issuer: document verification is complete, pass is not issued yet.
         NotificationEngine::sendRoleNotification(
             $conn, 
             'pass_issuer', 
@@ -134,17 +131,17 @@ try {
             'gatepass'
         );
 
-        // Advance Workflow
+        // Advance Workflow to document verification only. Temporary pass issuance is the next desk step.
         WorkflowEngine::performAction(
             $conn,
             $req['application_id'],
-            'issue_temporary_pass',
+            'verify_documents',
             $_SESSION['role'] ?? 'welfare',
             $user_id,
-            "Temporary pass issued for Annexure 6A request {$req['request_no']}"
+            "Annexure 6A documents approved for request {$req['request_no']}"
         );
 
-        $msg = 'Gate pass request approved. Temporary passes issued.';
+        $msg = 'Gate pass request approved. Worker moved to temporary pass issuance queue.';
     }
 
     $conn->commit();

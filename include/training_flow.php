@@ -92,7 +92,7 @@ function clms_training_ensure_request($conn, $workmanId, $contractorId, $request
         $conn,
         "INSERT INTO training_requests
          (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
-         VALUES (?, ?, 'Safety Induction', CURDATE(), CURDATE(), 'morning', ?, ?, ?, 'welfare_pending', NOW(), NOW())",
+         VALUES (?, ?, 'Safety Induction', CURDATE(), NULL, 'morning', ?, ?, ?, 'welfare_pending', NOW(), NOW())",
         'iissi',
         [(int)$workmanId, (int)$contractorId, $remarks, $source, (int)$requestedBy]
     );
@@ -142,7 +142,7 @@ function clms_training_seed_approved_queue($conn) {
             w.contractor_id,
             'Safety Induction',
             CURDATE(),
-            CURDATE(),
+            NULL,
             'morning',
             'Auto-created for Welfare check after Executing Officer approval.',
             CASE WHEN COALESCE(w.training_approval_doc, '') <> '' THEN 'attached_doc' ELSE 'welfare_seed' END,

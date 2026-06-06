@@ -130,6 +130,7 @@ function renderContent() {
               <td><?= htmlspecialchars($w['contractor_name']) ?></td>
               <td>
                 <form action="../../api/safety/request_retraining.php" method="POST" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="workman_id" value="<?= $w['id'] ?>">
                     <button type="submit" class="btn btn-sm btn-primary">Reset to Pending</button>
                 </form>

@@ -4,6 +4,7 @@ checkAuth(['contractor', 'customer']);
 include '../../include/config.php';
 include '../../include/customer_portal_context.php';
 include '../../include/layout.php';
+require_once '../../include/gate_pass_document_master.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -18,9 +19,13 @@ function renderContent() {
 
     // Training-passed workers eligible for gate pass
     $trained_workers = $c_id ? db_fetch_all($conn,
-        "SELECT id, name, trade, skill, temp_id, aadhaar FROM workmen
+        "SELECT id, name, trade, skill, temp_id, aadhaar, training_valid_till FROM workmen
          WHERE contractor_id = ?
-           AND (training_status IN ('pass','passed','training_passed','qualified','completed') OR safety_training_status = 1)
+           AND (
+                training_status IN ('pass','passed','training_passed','qualified','completed')
+                OR safety_training_status IN ('1','TRAINING_PASSED','PASSED','pass','passed')
+           )
+           AND (training_valid_till IS NULL OR training_valid_till >= CURDATE())
          ORDER BY name",
         'i', [$c_id]) : [];
 
@@ -117,6 +122,7 @@ function renderContent() {
                 <option value="<?= $w['id'] ?>" data-name="<?= htmlspecialchars($w['name']) ?>">
                   <?= htmlspecialchars($w['name']) ?> — <?= htmlspecialchars($w['trade'] ?? '') ?>
                   <?= $w['temp_id'] ? ' | ' . htmlspecialchars($w['temp_id']) : '' ?>
+                  <?= !empty($w['training_valid_till']) ? ' | Training valid till ' . date('d M Y', strtotime($w['training_valid_till'])) : '' ?>
                 </option>
                 <?php endforeach; ?>
               </select>
@@ -157,15 +163,7 @@ function renderContent() {
             <div class="annexure-doc-subtitle">LIST OF DOCUMENTS TO BE SUBMITTED BY CONTRACTOR FOR GATE PASS</div>
 
             <?php
-            $annexure6aDocs = [
-                ['key' => 'medical_certificate', 'id' => 'medical', 'icon' => 'fa-file-medical', 'color' => '#ef4444', 'label' => 'Medical Fitness Certificate', 'hint' => 'Issued by Authorised Medical Attendant (AMA)', 'required' => true],
-                ['key' => 'police_clearance_certificate', 'id' => 'pcc', 'icon' => 'fa-shield-alt', 'color' => '#f59e0b', 'label' => 'Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass (Template Upload)', 'hint' => 'Issued by Local Police Station / Executing Officer', 'required' => true],
-                ['key' => 'pcc_forwarded_police', 'id' => 'pcc-police', 'icon' => 'fa-envelope-open-text', 'color' => '#6366f1', 'label' => 'Proof of forwarding PCC to Thane Police Station', 'hint' => 'Copy of mail / letter sent', 'required' => false],
-                ['key' => 'pcc_forwarded_cisf', 'id' => 'pcc-cisf', 'icon' => 'fa-envelope-circle-check', 'color' => '#14b8a6', 'label' => 'Proof of forwarding PCC to CISF', 'hint' => 'Sealed accepted copy from CISF', 'required' => false],
-                ['key' => 'pcc_police_station_name', 'id' => 'police-station', 'icon' => 'fa-building-shield', 'color' => '#8b5cf6', 'label' => 'Name of Police Station from where PCC has been obtained', 'hint' => 'Upload supporting document if available', 'required' => false],
-                ['key' => 'employee_compensation_policy', 'id' => 'ec-policy', 'icon' => 'fa-umbrella', 'color' => '#3b82f6', 'label' => 'Employee Compensation Policy if not covered under ESI', 'hint' => 'Issued by licensed insurance companies', 'required' => true],
-                ['key' => 'esi_epf_undertaking', 'id' => 'esi-epf', 'icon' => 'fa-file-signature', 'color' => '#10b981', 'label' => 'ESI / EPF Undertaking if not covered under ESI / EPF', 'hint' => 'Issued by contractor', 'required' => false],
-            ];
+            $annexure6aDocs = clms_get_gate_pass_documents_for_form($conn);
             ?>
             <?php foreach ($annexure6aDocs as $index => $doc): ?>
             <div class="doc-upload-item">

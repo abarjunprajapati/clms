@@ -28,8 +28,8 @@ $req = db_single($conn,
     'i', [$req_id]
 );
 
-if (!$req || !in_array($req['status'], ['scheduled', 'contractor_confirmed'])) {
-    echo json_encode(['success' => false, 'error' => 'Request not found or not in a valid state (scheduled/confirmed)']);
+if (!$req || $req['status'] !== 'contractor_confirmed') {
+    echo json_encode(['success' => false, 'error' => 'Request not found or contractor confirmation is pending.']);
     exit;
 }
 

@@ -46,7 +46,19 @@ function renderContent() {
             <div style="margin-top:20px;">
               <?php
                 $search = "%" . $_GET['search'] . "%";
-                $res = db_fetch_all($conn, "SELECT w.*, c.contractor_name FROM workmen w JOIN contractors c ON w.contractor_id = c.id WHERE w.name LIKE ? OR w.aadhaar LIKE ? OR w.temp_id LIKE ?", 'sss', [$search, $search, $search]);
+                $res = db_fetch_all($conn, "
+                  SELECT w.*, c.contractor_name
+                  FROM workmen w
+                  JOIN contractors c ON w.contractor_id = c.id
+                  WHERE (w.name LIKE ? OR w.aadhaar LIKE ? OR w.temp_id LIKE ?)
+                    AND COALESCE(w.pass_issuer_verified, 0) = 1
+                    AND COALESCE(w.is_blocked, 0) = 0
+                    AND (
+                      LOWER(TRIM(COALESCE(w.training_status, ''))) IN ('pass','passed','training_passed','qualified','completed')
+                      OR LOWER(TRIM(COALESCE(w.safety_training_status, ''))) IN ('1','pass','passed','training_passed','qualified','completed')
+                    )
+                    AND (w.training_valid_till IS NULL OR w.training_valid_till = '' OR w.training_valid_till >= CURDATE())
+                ", 'sss', [$search, $search, $search]);
               ?>
               <table class="data-table mt-3">
                 <thead>
@@ -164,6 +176,37 @@ function renderContent() {
     
     if ($workman['pass_issuer_verified'] != 1) {
         echo "<div class='alert alert-warning'>Documents must be verified before issuing a pass. <a href='verify_documents.php?id=$workman_id'>Verify now</a></div>";
+        return;
+    }
+
+    $trainingStatus = strtolower(trim((string)($workman['training_status'] ?? '')));
+    $safetyTrainingStatus = strtolower(trim((string)($workman['safety_training_status'] ?? '')));
+    $trainingPassed = in_array($trainingStatus, ['pass', 'passed', 'training_passed', 'qualified', 'completed'], true)
+        || in_array($safetyTrainingStatus, ['1', 'pass', 'passed', 'training_passed', 'qualified', 'completed'], true);
+    if (!$trainingPassed) {
+        echo "<div class='alert alert-warning'>Safety training must be passed before issuing a temporary gate pass.</div>";
+        return;
+    }
+    if (!empty($workman['training_valid_till']) && strtotime($workman['training_valid_till']) < strtotime(date('Y-m-d'))) {
+        echo "<div class='alert alert-warning'>Safety training validity has expired. Re-training is required before issuing a temporary gate pass.</div>";
+        return;
+    }
+
+    $approvedRequest = db_single(
+        $conn,
+        "SELECT gpr.id
+         FROM gate_pass_request_workers gprw
+         JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
+         WHERE gprw.workman_id = ?
+           AND LOWER(COALESCE(gprw.status, '')) = 'approved'
+           AND LOWER(COALESCE(gpr.status, '')) = 'approved'
+         ORDER BY COALESCE(gpr.updated_at, gpr.created_at) DESC, gpr.id DESC
+         LIMIT 1",
+        "i",
+        [$workman_id]
+    );
+    if (!$approvedRequest) {
+        echo "<div class='alert alert-warning'>Approved gate pass request not found. Please complete document verification first.</div>";
         return;
     }
     
@@ -285,7 +328,10 @@ function renderContent() {
           const res = await fetch('../../api/welfare/issue_pass.php', {
             method: 'POST',
             body: JSON.stringify(data),
-            headers: { 'Content-Type': 'application/json' }
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+            }
           });
           const raw = await res.text();
           let result = {};

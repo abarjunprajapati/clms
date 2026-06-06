@@ -44,15 +44,20 @@ function renderContent() {
     $hasRequests = passDashTableExists($conn, 'gate_pass_requests');
     $hasRequestWorkers = passDashTableExists($conn, 'gate_pass_request_workers');
     $hasDocuments = passDashTableExists($conn, 'documents');
+    $trainingPassedSql = "(
+        LOWER(TRIM(COALESCE(w.training_status, ''))) IN ('pass','passed','training_passed','qualified','completed')
+        OR LOWER(TRIM(COALESCE(w.safety_training_status, ''))) IN ('1','pass','passed','training_passed','qualified','completed')
+    )";
+    $trainingValidSql = "(w.training_valid_till IS NULL OR w.training_valid_till = '' OR w.training_valid_till >= CURDATE())";
 
     $docQueue = ($hasRequests && $hasRequestWorkers)
-        ? db_count($conn, "SELECT COUNT(*) c FROM gate_pass_request_workers gprw JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id WHERE COALESCE(gpr.status, 'pending') IN ('pending','reupload_required') AND COALESCE(gprw.status, 'pending') IN ('pending','reupload_required')")
+        ? db_count($conn, "SELECT COUNT(*) c FROM gate_pass_request_workers gprw JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id JOIN workmen w ON w.id = gprw.workman_id WHERE COALESCE(gpr.status, 'pending') IN ('pending','reupload_required') AND COALESCE(gprw.status, 'pending') IN ('pending','reupload_required') AND $trainingPassedSql AND $trainingValidSql")
         : 0;
     $tempQueue = $hasWorkmen
-        ? db_count($conn, "SELECT COUNT(*) c FROM workmen WHERE COALESCE(pass_issuer_verified, 0) = 1 AND COALESCE(is_blocked, 0) = 0 AND COALESCE(status, '') = 'verified'")
+        ? db_count($conn, "SELECT COUNT(*) c FROM workmen w WHERE COALESCE(pass_issuer_verified, 0) = 1 AND COALESCE(is_blocked, 0) = 0 AND COALESCE(status, '') = 'verified' AND $trainingPassedSql AND $trainingValidSql")
         : 0;
     if ($hasRequests && $hasRequestWorkers) {
-        $tempQueue += db_count($conn, "SELECT COUNT(*) c FROM gate_pass_request_workers gprw JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id JOIN workmen w ON w.id = gprw.workman_id WHERE COALESCE(gpr.status, '') = 'approved' AND COALESCE(gprw.status, '') = 'approved' AND COALESCE(w.is_blocked, 0) = 0 AND COALESCE(w.status, '') <> 'temporary_issued'");
+        $tempQueue += db_count($conn, "SELECT COUNT(*) c FROM gate_pass_request_workers gprw JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id JOIN workmen w ON w.id = gprw.workman_id WHERE COALESCE(gpr.status, '') = 'approved' AND COALESCE(gprw.status, '') = 'approved' AND COALESCE(w.is_blocked, 0) = 0 AND COALESCE(w.status, '') <> 'temporary_issued' AND $trainingPassedSql AND $trainingValidSql");
     }
     $tempIssued = $hasWorkmen
         ? db_count($conn, "SELECT COUNT(*) c FROM workmen WHERE status = 'temporary_issued' OR COALESCE(temp_pass_status, 0) = 1 OR COALESCE(temp_pass_no, '') <> ''")

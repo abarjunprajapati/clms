@@ -4,17 +4,39 @@ checkAuth(['contractor', 'customer']);
 include '../../include/config.php';
 include '../../include/customer_portal_context.php';
 include '../../include/layout.php';
+require_once '../../include/payment_flow.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
 $user_id = $_SESSION['user_id'];
 clms_get_portal_contractor($conn);
 
+function contractorTrainingTableExists($conn, $table) {
+    $safeTable = mysqli_real_escape_string($conn, $table);
+    $res = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+function contractorTrainingColumnExists($conn, $table, $column) {
+    if (!contractorTrainingTableExists($conn, $table)) return false;
+    $safeTable = str_replace('`', '``', $table);
+    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
 function renderContent() {
     global $conn, $user_id;
+    clms_ensure_payment_flow($conn);
 
     $contractor = db_single($conn, "SELECT id, contractor_name FROM contractors WHERE user_id = ?", 'i', [$user_id]);
     $c_id = $contractor['id'] ?? null;
+    $latestPayment = $c_id ? db_single(
+        $conn,
+        "SELECT * FROM training_payment_requests WHERE contractor_id = ? ORDER BY id DESC LIMIT 1",
+        'i',
+        [(int)$c_id]
+    ) : null;
 
     // Eligible workers (pending training)
     $eligible_workers = $c_id ? db_fetch_all($conn,
@@ -22,7 +44,7 @@ function renderContent() {
          WHERE contractor_id = ?
            AND COALESCE(execution_training_status, 'pending') = 'approved'
            AND COALESCE(execution_training_reviewed_by, 0) > 0
-           AND training_status IN ('pending','training_pending','training_failed','fail')
+           AND training_status IN ('pending','training_pending','training_failed','fail','failed')
            AND NOT EXISTS (
                SELECT 1 FROM training_requests tr
                WHERE tr.workman_id = workmen.id
@@ -37,16 +59,64 @@ function renderContent() {
          WHERE contractor_id = ?
            AND COALESCE(status, '') <> 'draft'
            AND COALESCE(execution_training_status, 'pending_eo') IN ('pending_eo','pending','rejected')
-           AND training_status IN ('pending','training_pending','training_failed','fail')
+           AND training_status IN ('pending','training_pending','training_failed','fail','failed')
          ORDER BY created_at DESC",
         'i', [$c_id]) : [];
 
+    $resultSelect = "NULL AS latest_result, NULL AS latest_total_score, NULL AS latest_valid_till, NULL AS latest_result_remarks";
+    $resultJoin = "";
+    if (
+        contractorTrainingTableExists($conn, 'training_session_workers') &&
+        contractorTrainingColumnExists($conn, 'training_session_workers', 'training_request_id')
+    ) {
+        $sessionResultExpr = contractorTrainingColumnExists($conn, 'training_session_workers', 'result') ? 'sr.result' : 'NULL';
+        $sessionScoreExpr = contractorTrainingColumnExists($conn, 'training_session_workers', 'total_score') ? 'sr.total_score' : 'NULL';
+        $sessionValidExpr = contractorTrainingColumnExists($conn, 'training_session_workers', 'valid_till') ? 'sr.valid_till' : 'NULL';
+        $sessionRemarksExpr = contractorTrainingColumnExists($conn, 'training_session_workers', 'remarks') ? 'sr.remarks' : 'NULL';
+        $resultSelect = "$sessionResultExpr AS latest_result, $sessionScoreExpr AS latest_total_score, $sessionValidExpr AS latest_valid_till, $sessionRemarksExpr AS latest_result_remarks";
+        $resultJoin = "
+            LEFT JOIN training_session_workers sr ON sr.training_request_id = tr.id
+        ";
+    } elseif (contractorTrainingTableExists($conn, 'training_results')) {
+        $latestResultExpr = contractorTrainingColumnExists($conn, 'training_results', 'result') ? 'lr.result' : 'NULL';
+        $latestScoreExpr = contractorTrainingColumnExists($conn, 'training_results', 'total_score') ? 'lr.total_score' : 'NULL';
+        $latestValidExpr = contractorTrainingColumnExists($conn, 'training_results', 'valid_till') ? 'lr.valid_till' : 'NULL';
+        $latestRemarksExpr = contractorTrainingColumnExists($conn, 'training_results', 'remarks') ? 'lr.remarks' : 'NULL';
+        $resultSelect = "$latestResultExpr AS latest_result, $latestScoreExpr AS latest_total_score, $latestValidExpr AS latest_valid_till, $latestRemarksExpr AS latest_result_remarks";
+        $resultJoin = "
+            LEFT JOIN (
+                SELECT tr1.*
+                FROM training_results tr1
+                INNER JOIN (
+                    SELECT workman_id, MAX(id) AS max_id
+                    FROM training_results
+                    GROUP BY workman_id
+                ) tr2 ON tr2.max_id = tr1.id
+            ) lr ON lr.workman_id = tr.workman_id
+        ";
+    }
+
+    $workerTrainingValidExpr = contractorTrainingColumnExists($conn, 'workmen', 'training_valid_till') ? 'w.training_valid_till' : 'NULL';
+
     // All training requests for this contractor with full details
     $my_requests = $c_id ? db_fetch_all($conn,
-        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade, COALESCE(w.execution_training_status, 'pending') AS execution_training_status, COALESCE(w.execution_training_reviewed_by, 0) AS execution_training_reviewed_by
+        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade,
+                $workerTrainingValidExpr AS training_valid_till,
+                COALESCE(w.execution_training_status, 'pending') AS execution_training_status,
+                COALESCE(w.execution_training_reviewed_by, 0) AS execution_training_reviewed_by,
+                $resultSelect
          FROM training_requests tr
          JOIN workmen w ON tr.workman_id = w.id
+         $resultJoin
          WHERE tr.contractor_id = ?
+           AND tr.id = (
+               SELECT tr2.id
+               FROM training_requests tr2
+               WHERE tr2.workman_id = tr.workman_id
+                 AND tr2.contractor_id = tr.contractor_id
+               ORDER BY tr2.updated_at DESC, tr2.id DESC
+               LIMIT 1
+           )
          ORDER BY tr.created_at DESC",
         'i', [$c_id]) : [];
 
@@ -71,6 +141,40 @@ function renderContent() {
     <?php if (!$c_id): ?>
     <div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i><div>Complete <a href="annexure-2a.php">Contractor Registration</a> first.</div></div>
     <?php return; endif; ?>
+
+    <?php if ($latestPayment): ?>
+    <?php
+      $payStatus = strtolower((string)$latestPayment['status']);
+      $payExpired = !empty($latestPayment['link_expires_at']) && strtotime($latestPayment['link_expires_at']) < time() && $payStatus !== 'paid';
+      $payBadge = $payExpired ? 'badge-danger' : ($payStatus === 'paid' ? 'badge-success' : 'badge-warning');
+      $payText = $payExpired ? 'EXPIRED' : strtoupper(str_replace('_', ' ', $payStatus));
+    ?>
+    <div class="card glass" style="margin-bottom:18px;">
+      <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:12px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Latest Safety Training Payment</div>
+          <div style="font-size:22px;font-weight:800;margin-top:4px;">
+            Rs. <?= number_format((float)$latestPayment['total_amount'], 2) ?>
+            <span class="badge <?= $payBadge ?>" style="vertical-align:middle;margin-left:8px;"><?= htmlspecialchars($payText) ?></span>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
+            Ref: <?= htmlspecialchars($latestPayment['payment_ref']) ?>
+            <?php if (!empty($latestPayment['link_expires_at'])): ?>
+              | Valid till <?= htmlspecialchars(date('d M Y h:i A', strtotime($latestPayment['link_expires_at']))) ?>
+            <?php endif; ?>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <a class="btn btn-primary" href="payment.php?token=<?= urlencode($latestPayment['payment_token']) ?>">
+            <i class="fas fa-credit-card"></i> <?= $payStatus === 'paid' ? 'View Payment' : 'Pay Fee' ?>
+          </a>
+          <a class="btn btn-outline" href="../payments/download_training_invoice.php?token=<?= urlencode($latestPayment['payment_token']) ?>">
+            <i class="fas fa-file-invoice"></i> GST Invoice
+          </a>
+        </div>
+      </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Confirm Modal -->
     <div id="confirmModal" class="modal-backdrop hidden">
@@ -108,7 +212,7 @@ function renderContent() {
           <div class="empty-state" style="padding:30px 0; text-align:center; color:var(--text-muted);">
             <i class="fas fa-graduation-cap" style="font-size:40px;opacity:.2;display:block;margin-bottom:12px;"></i>
             <p style="font-weight:600;">No eligible workers</p>
-            <p style="font-size:13px;">Worker training request ke liye Executing Officer approval required hai. Agar request auto-created hai to right side status/history me dikhegi.</p>
+            <p style="font-size:13px;">Training requests become available after Executing Officer approval. Auto-created requests are shown in the Training Request Status panel.</p>
           </div>
           <?php else: ?>
           <form id="trainingForm">
@@ -209,7 +313,18 @@ function renderContent() {
             <?php
               $st = $r['status'] ?? 'pending';
               $executionApproved = strtolower((string)($r['execution_training_status'] ?? 'pending')) === 'approved' && (int)($r['execution_training_reviewed_by'] ?? 0) > 0;
-              $displayStatus = (!$executionApproved && in_array($st, ['pending','failed','correction_required'], true)) ? 'exec_pending' : $st;
+              $latestResult = strtolower((string)($r['latest_result'] ?? ''));
+              $viewStatus = $st;
+              if (in_array($latestResult, ['pass', 'passed'], true)) {
+                  $viewStatus = 'passed';
+              } elseif (in_array($latestResult, ['fail', 'failed'], true)) {
+                  $viewStatus = 'failed';
+              }
+              if ($executionApproved && in_array($viewStatus, ['pending', 'welfare_pending'], true) && empty($r['scheduled_date'])) {
+                  $viewStatus = 'welfare_pending';
+              }
+              $displayStatus = (!$executionApproved && in_array($viewStatus, ['pending','failed','correction_required'], true)) ? 'exec_pending' : $viewStatus;
+              $validTill = $r['latest_valid_till'] ?: ($r['training_valid_till'] ?? '');
               $sc = [
                 'exec_pending'          => 'badge-gray',
                 'welfare_pending'       => 'badge-warning',
@@ -254,15 +369,33 @@ function renderContent() {
                   <?php
                     if ($displayStatus === 'exec_pending') {
                         echo 'EXEC APPROVAL PENDING';
-                    } elseif ($st === 'welfare_pending') {
-                        echo 'WELFARE CHECK PENDING';
-                    } elseif ($st === 'welfare_rejected') {
+                    } elseif ($viewStatus === 'welfare_pending') {
+                        echo 'READY FOR SAFETY SCHEDULING';
+                    } elseif ($viewStatus === 'welfare_rejected') {
                         echo 'WELFARE REJECTED';
                     } else {
-                        echo strtoupper(str_replace('_', ' ', $st));
+                        echo strtoupper(str_replace('_', ' ', $viewStatus));
                     }
                   ?>
                 </span>
+                <?php if (in_array($viewStatus, ['passed','completed','failed'], true) || in_array($latestResult, ['pass','passed','fail','failed'], true)): ?>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                    <?php if ($latestResult !== ''): ?>
+                      Result: <strong><?= htmlspecialchars(strtoupper(str_replace('ed', '', $latestResult))) ?></strong>
+                    <?php endif; ?>
+                    <?php if ($r['latest_total_score'] !== null && $r['latest_total_score'] !== ''): ?>
+                      | Marks: <?= (int)$r['latest_total_score'] ?>
+                    <?php endif; ?>
+                    <?php if (!empty($validTill) && in_array($viewStatus, ['passed','completed'], true)): ?>
+                      | Valid till <?= date('d M Y', strtotime($validTill)) ?>
+                    <?php endif; ?>
+                  </div>
+                  <?php if (!empty($r['conduct_remarks']) || !empty($r['latest_result_remarks'])): ?>
+                    <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">
+                      <i class="fas fa-comment-alt"></i> <?= htmlspecialchars($r['conduct_remarks'] ?: $r['latest_result_remarks']) ?>
+                    </div>
+                  <?php endif; ?>
+                <?php endif; ?>
               </td>
               <td>
                 <?php if ($st === 'scheduled'): ?>
@@ -282,12 +415,22 @@ function renderContent() {
                 <?php if ($r['contractor_remarks']): ?>
                 <div style="font-size:10px; color:var(--text-muted);"><?= htmlspecialchars($r['contractor_remarks']) ?></div>
                 <?php endif; ?>
-                <?php elseif ($st === 'completed' || $st === 'passed'): ?>
+                <?php elseif ($viewStatus === 'completed' || $viewStatus === 'passed'): ?>
                 <span style="font-size:11px; color:var(--success);"><i class="fas fa-trophy"></i> Passed</span>
-                <?php elseif ($st === 'welfare_pending'): ?>
-                <span style="font-size:11px; color:var(--warning);"><i class="fas fa-user-check"></i> Welfare check</span>
+                <?php elseif ($viewStatus === 'welfare_pending'): ?>
+                <span style="font-size:11px; color:var(--warning);"><i class="fas fa-calendar-plus"></i> Awaiting safety schedule</span>
                 <?php elseif ($st === 'welfare_rejected'): ?>
-                <span style="font-size:11px; color:var(--danger);"><i class="fas fa-times-circle"></i> Re-submit after correction</span>
+                <a class="btn btn-sm btn-outline" href="enrolment-4a.php?type=workmen" title="Open worker enrolment for correction">
+                  <i class="fas fa-edit"></i> Correct & re-submit
+                </a>
+                <?php elseif ($displayStatus === 'exec_pending'): ?>
+                <span style="font-size:11px; color:var(--text-muted);"><i class="fas fa-user-clock"></i> EO approval pending</span>
+                <?php elseif ($st === 'pending'): ?>
+                <span style="font-size:11px; color:var(--warning);"><i class="fas fa-hourglass-half"></i> Awaiting action</span>
+                <?php elseif ($viewStatus === 'failed' || $viewStatus === 'rejected' || $viewStatus === 'correction_required'): ?>
+                <button type="button" class="btn btn-sm btn-outline" onclick="reRequestTraining(<?= (int)$r['workman_id'] ?>)" title="Submit a fresh training request if this worker is eligible">
+                  <i class="fas fa-redo"></i> Re-request
+                </button>
                 <?php else: ?>
                 <span style="font-size:11px; color:var(--text-muted);">—</span>
                 <?php endif; ?>
@@ -348,8 +491,8 @@ function renderContent() {
               </td>
               <td style="font-size:12px;color:var(--text-muted);">
                 <?= $eoStatus === 'rejected'
-                    ? 'Worker edit karke corrected document/E-Code submit karein.'
-                    : ($hasDoc ? 'EO/Welfare/Safety view ke liye request available hai.' : 'Executing Officer inbox me online approve/reject karega.') ?>
+                    ? 'Update the worker details and submit the corrected document or E-Code for review.'
+                    : ($hasDoc ? 'The request is available for review and scheduling by the responsible team.' : 'The request is pending online review by the Executing Officer.') ?>
               </td>
             </tr>
             <?php endforeach; ?>
@@ -365,7 +508,7 @@ function renderContent() {
       <div>
         <strong>Training Flow:</strong>
         Submit request (choose Morning/Evening) →
-        Welfare checks approval/document →
+        Executing Officer approval/document validation →
         Safety Dept. schedules with date, shift & venue →
         <strong>You confirm attendance here</strong> →
         Safety conducts training →
@@ -463,6 +606,46 @@ function renderContent() {
       btn.disabled = false;
       btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Training Request';
     });
+
+    async function reRequestTraining(workmanId) {
+      if (!workmanId) {
+        showToast('Invalid worker selected.', 'error');
+        return;
+      }
+      const confirmed = window.Swal
+        ? await Swal.fire({
+            title: 'Submit re-training request?',
+            text: 'This worker will be sent back to the Safety scheduling queue.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Submit Request'
+          })
+        : { isConfirmed: confirm('Submit re-training request for this worker?') };
+      if (!confirmed.isConfirmed) return;
+
+      try {
+        const res = await fetch('../../api/submit_training_request.php', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            workman_ids: [workmanId],
+            training_type: 'Safety Induction',
+            preferred_shift: 'morning',
+            preferred_date: '',
+            remarks: 'Re-training requested after failed Safety Induction.'
+          })
+        });
+        const result = await res.json();
+        if (result.success) {
+          showToast(result.message || 'Re-training request submitted.', 'success');
+          setTimeout(() => location.reload(), 1400);
+        } else {
+          showToast('Error: ' + (result.message || result.error || 'Re-request failed'), 'error');
+        }
+      } catch (err) {
+        showToast('Network error. Please try again.', 'error');
+      }
+    }
 
     // Confirm training modal
     function openConfirmModal(data) {

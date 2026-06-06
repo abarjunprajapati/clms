@@ -91,7 +91,11 @@ try {
     $instructor = trim($instructor);
 
     $session = db_single($conn, 
-        "SELECT id FROM training_schedule WHERE session_date = ? AND LOWER(TRIM(location)) = LOWER(TRIM(?)) AND session_time = ?", 
+        "SELECT id FROM training_schedule
+         WHERE session_date = ?
+           AND LOWER(TRIM(location)) = LOWER(TRIM(?))
+           AND session_time = ?
+           AND LOWER(COALESCE(session_status, 'open')) <> 'cancelled'", 
         'sss', [$scheduled_date, $scheduled_venue, $final_time]
     );
 
@@ -118,30 +122,27 @@ try {
         throw new Exception("Could not determine session ID.");
     }
 
-    // 3. Assign Worker to Session Mapping Table
-    // Get workman_id from request
-    $req_data = db_single($conn, "SELECT workman_id FROM training_requests WHERE id = ?", 'i', [$req_id]);
-    if ($req_data) {
-        $wid = (int)$req_data['workman_id'];
-        
-        // Use a more robust insert/update with our new unique key (workman_id, training_request_id)
-        $existingMap = db_single($conn, "SELECT id FROM training_session_workers WHERE workman_id = ? AND training_request_id = ? LIMIT 1", 'ii', [$wid, $req_id]);
-        if ($existingMap) {
-            db_execute($conn, "UPDATE training_session_workers SET session_id = ?, attendance_status = 'pending', result = 'pending' WHERE id = ?", 'ii', [$session_id, $existingMap['id']]);
-        } else {
-            safety_schedule_insert_row($conn, 'training_session_workers', [
-                'session_id' => $session_id,
-                'workman_id' => $wid,
-                'training_request_id' => $req_id,
-                'attendance_status' => 'pending',
-                'result' => 'pending',
-                'created_at' => date('Y-m-d H:i:s'),
-            ]);
-        }
-        
-        // Update enrolled count in session
-        db_execute($conn, "UPDATE training_schedule SET enrolled_count = (SELECT COUNT(*) FROM training_session_workers WHERE session_id = ?) WHERE id = ?", 'ii', [$session_id, $session_id]);
-    }
+    db_execute(
+        $conn,
+        "UPDATE training_requests SET scheduled_session_id = ? WHERE id = ?",
+        'ii',
+        [$session_id, $req_id]
+    );
+
+    // Worker is not mapped to the batch yet. Mapping happens only after contractor confirmation.
+    db_execute(
+        $conn,
+        "UPDATE training_schedule
+         SET enrolled_count = (
+             SELECT COUNT(*)
+             FROM training_session_workers tsw
+             JOIN training_requests tr ON tr.id = tsw.training_request_id
+             WHERE tsw.session_id = ? AND tr.status = 'contractor_confirmed'
+         )
+         WHERE id = ?",
+        'ii',
+        [$session_id, $session_id]
+    );
 
     // 4. Notify contractor
     $req = db_single($conn, "SELECT tr.*, w.name as worker_name, c.user_id as contractor_user_id FROM training_requests tr JOIN workmen w ON tr.workman_id = w.id LEFT JOIN contractors c ON tr.contractor_id = c.id WHERE tr.id=?", 'i', [$req_id]);
@@ -156,7 +157,7 @@ try {
     }
 
     $conn->commit();
-    safety_schedule_json(['success' => true, 'message' => 'Training scheduled and worker assigned to session successfully.']);
+    safety_schedule_json(['success' => true, 'message' => 'Training schedule sent to contractor for confirmation. Worker will appear in the batch after confirmation.']);
 } catch (Exception $e) {
     $conn->rollback();
     safety_schedule_json(['success' => false, 'error' => 'Error: ' . $e->getMessage()]);
@@ -228,6 +229,7 @@ function safety_schedule_ensure_schema($conn) {
         'instructor' => 'VARCHAR(150) NULL',
         'contractor_confirmed' => 'TINYINT(1) DEFAULT 0',
         'scheduled_by' => 'INT NULL',
+        'scheduled_session_id' => 'INT NULL',
         'status' => "VARCHAR(50) DEFAULT 'pending'",
         'updated_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
     ] as $column => $definition) {

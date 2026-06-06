@@ -354,6 +354,9 @@ function renderSidebar($role) {
             echo '<a href="'.BASE_URL.'pages/welfare/certified_wages.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Certified Wage Rate</a>';
             echo '<a href="'.BASE_URL.'pages/welfare/labour_license_threshold.php" class="sidebar-item"><i class="fas fa-scale-balanced"></i> Labour License Threshold</a>';
             echo '<a href="'.BASE_URL.'pages/welfare/temporary_pass_validity.php" class="sidebar-item"><i class="fas fa-calendar-day"></i> Temporary Pass Validity</a>';
+            echo '<a href="'.BASE_URL.'pages/welfare/age_range_mapping.php" class="sidebar-item"><i class="fas fa-user-clock"></i> Age Range Mapping</a>';
+            echo '<a href="'.BASE_URL.'pages/welfare/gate_pass_document_master.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Gate Pass Document Master</a>';
+            echo '<a href="'.BASE_URL.'pages/welfare/payment_gateway.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment Gateway / QR</a>';
             echo '<a href="'.$ab.'master_data.php" class="sidebar-item"><i class="fas fa-database"></i> Master Data</a>';
             
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Enterprise Governance</div>';
@@ -388,7 +391,9 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'temporary_pass_validity.php" class="sidebar-item"><i class="fas fa-calendar-day"></i> Temporary Pass Validity</a>';
             echo '<a href="'.$wb.'education_correction.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Education Job Profile</a>';
             echo '<a href="'.$wb.'nationality_master.php" class="sidebar-item"><i class="fas fa-globe"></i> Nationality Masters</a>';
-            echo '<a href="'.$wb.'verify_documents.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Document Master</a>';
+            echo '<a href="'.$wb.'age_range_mapping.php" class="sidebar-item"><i class="fas fa-user-clock"></i> Age Range Mapping</a>';
+            echo '<a href="'.$wb.'gate_pass_document_master.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Gate Pass Document Master</a>';
+            echo '<a href="'.$wb.'payment_gateway.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment Gateway / QR</a>';
             echo '<a href="'.$wb.'temp_pass_control.php" class="sidebar-item"><i class="fas fa-clock"></i> Temp Pass Control</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Monitoring & Oversight</div>';
             echo '<a href="'.$wb.'approve_contractors.php" class="sidebar-item"><i class="fas fa-building"></i> Contractor Verification</a>';
@@ -457,6 +462,7 @@ function renderSidebar($role) {
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Management</div>';
                 echo '<a href="enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Worker Management</a>';
                 echo '<a href="training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
+                echo '<a href="payment.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment</a>';
                 echo '<a href="gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Gate Pass</a>';
                 echo '<a href="gatepass-reupload.php" class="sidebar-item"><i class="fas fa-file-circle-exclamation"></i> Re-upload Gate Pass Docs</a>';
                 echo '<a href="pass_status.php" class="sidebar-item"><i class="fas fa-id-card"></i> ACC Card</a>';
@@ -529,6 +535,7 @@ function renderSidebar($role) {
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Monitoring</div>';
             echo '<a href="'.$cp.'enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Worker Management</a>';
             echo '<a href="'.$cp.'training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
+            echo '<a href="'.$cp.'payment.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment</a>';
             echo '<a href="'.$cp.'gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Gate Pass</a>';
             echo '<a href="'.$cp.'gatepass-reupload.php" class="sidebar-item"><i class="fas fa-file-circle-exclamation"></i> Re-upload Gate Pass Docs</a>';
             echo '<a href="'.$cp.'pass_status.php" class="sidebar-item"><i class="fas fa-fingerprint"></i> ACC Card</a>';

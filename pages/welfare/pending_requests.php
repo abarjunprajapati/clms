@@ -10,6 +10,12 @@ $name = $_SESSION['name'] ?? 'Pass Issuing Officer';
 
 function renderContent() {
     global $conn;
+
+    $trainingPassedSql = "(
+        LOWER(TRIM(COALESCE(w.training_status, ''))) IN ('pass','passed','training_passed','qualified','completed')
+        OR LOWER(TRIM(COALESCE(w.safety_training_status, ''))) IN ('1','pass','passed','training_passed','qualified','completed')
+    )";
+    $trainingValidSql = "(w.training_valid_till IS NULL OR w.training_valid_till = '' OR w.training_valid_till >= CURDATE())";
     
     $query = "(SELECT
                 w.*,
@@ -27,7 +33,9 @@ function renderContent() {
                 )
                 AND LOWER(COALESCE(gprw.status, '')) != 'issued'
                 AND LOWER(COALESCE(gpr.status, '')) != 'issued'
-                AND COALESCE(w.is_blocked, 0) = 0)
+                AND COALESCE(w.is_blocked, 0) = 0
+                AND $trainingPassedSql
+                AND $trainingValidSql)
               UNION
               (SELECT
                 w.*,
@@ -40,6 +48,8 @@ function renderContent() {
               WHERE w.pass_issuer_verified = 1
                 AND w.status = 'verified'
                 AND COALESCE(w.is_blocked, 0) = 0
+                AND $trainingPassedSql
+                AND $trainingValidSql
                 AND NOT EXISTS (
                   SELECT 1
                   FROM gate_pass_request_workers existing_gprw

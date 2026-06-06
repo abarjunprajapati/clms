@@ -516,6 +516,14 @@ function renderContent() {
             : (enrolment_column_exists($conn, 'workmen', 'skill_category')
                 ? enrolment_expr($conn, 'workmen', 'skill_category', 'skill_category')
                 : enrolment_expr($conn, 'workmen', 'skill', 'skill_category'));
+        $roleTypeFallbacks = [];
+        if (enrolment_column_exists($conn, 'workmen', 'skill_category')) $roleTypeFallbacks[] = "NULLIF(skill_category, '')";
+        if (enrolment_column_exists($conn, 'workmen', 'skill')) $roleTypeFallbacks[] = "NULLIF(skill, '')";
+        $roleTypeFallbacks[] = "''";
+        if (enrolment_column_exists($conn, 'workmen', 'role_type')) {
+            array_unshift($roleTypeFallbacks, "NULLIF(role_type, '')");
+        }
+        $roleTypeExpr = "COALESCE(" . implode(', ', $roleTypeFallbacks) . ") AS role_type";
         $orderExpr = enrolment_column_exists($conn, 'workmen', 'created_at') ? 'created_at DESC' : 'id DESC';
         $typeWhere = enrolment_worker_type_condition($conn, 'workmen', $requestedType);
         $nonDraftWhere = "";
@@ -576,7 +584,7 @@ function renderContent() {
                 '' AS police_doc,
                 '' AS insurance_doc,
                 " . enrolment_expr($conn, 'workmen', 'education', 'education') . ",
-                " . enrolment_expr($conn, 'workmen', 'worker_type', 'role_type') . ",
+                " . $roleTypeExpr . ",
                 " . enrolment_expr($conn, 'workmen', 'training_status', 'safety_status') . ",
                 " . enrolment_expr($conn, 'workmen', 'status', 'gate_pass_status') . ",
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
@@ -1809,19 +1817,21 @@ function renderContent() {
                         notify('Worker Found', `Details auto-filled from ${data.source}.`, 'success');
                     } else {
                         // Not found, reset form fields to allow manual entry
+                        const preserveManualWorkFlow = sourceInput.value === 'MANUAL' && Boolean(flowState.category || flowState.qualification || flowState.jobProfile);
                         statusBadge.className = 'badge-status bg-gray text-dark';
                         statusBadge.innerText = 'New Worker';
                         sourceInput.value = 'MANUAL';
-                        resetAutoFilledFields();
+                        resetAutoFilledFields({ preserveWorkFlow: preserveManualWorkFlow });
                     }
                 } catch (err) {
                     statusBadge.style.display = 'none';
                     console.error('Failed to fetch worker details', err);
                 }
             } else {
+                const preserveManualWorkFlow = sourceInput.value === 'MANUAL' && Boolean(flowState.category || flowState.qualification || flowState.jobProfile);
                 statusBadge.style.display = 'none';
                 sourceInput.value = 'MANUAL';
-                resetAutoFilledFields();
+                resetAutoFilledFields({ preserveWorkFlow: preserveManualWorkFlow });
             }
         });
 
@@ -1962,7 +1972,7 @@ function renderContent() {
         function normalizeFlowCategory(category) {
             const value = (category || '').trim().toLowerCase();
             if (value === 'skilled') return 'Skilled';
-            if (value === 'semi-skilled' || value === 'semi skilled') return 'Semi-Skilled';
+            if (value === 'semi-skilled' || value === 'semi skilled' || value === 'semiskilled') return 'Semi-Skilled';
             if (value === 'unskilled') return 'Unskilled';
             return '';
         }
@@ -2006,7 +2016,8 @@ function renderContent() {
             renderWorkFlow();
         });
 
-        function resetAutoFilledFields() {
+        function resetAutoFilledFields(options = {}) {
+            const preserveWorkFlow = Boolean(options.preserveWorkFlow);
             const fieldsToReset = [
                 'name', 'gender', 'dob', 'marital_status', 'nationality', 'mobile', 'present_address', 
                 'permanent_address', 'state', 'district', 'nature_of_work', 
@@ -2027,7 +2038,11 @@ function renderContent() {
                     }
                 }
             });
-            resetWorkFlow();
+            if (preserveWorkFlow) {
+                renderWorkFlow();
+            } else {
+                resetWorkFlow();
+            }
             updateNationalityLocationMode();
             const photoInput = form.querySelector('[name="photo"]');
             if(photoInput) photoInput.setAttribute('required', 'true');

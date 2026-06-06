@@ -38,7 +38,7 @@
     <div class="sidebar-section">
       <div class="sidebar-section-label">Applications</div>
       <a href="contractor-dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
-      <a href="safety-training-request.php" class="sidebar-item"><i class="fas fa-hard-hat"></i> Safety Training</a>
+      <a href="training_request.php" class="sidebar-item"><i class="fas fa-hard-hat"></i> Safety Training</a>
     </div>
   </div>
 

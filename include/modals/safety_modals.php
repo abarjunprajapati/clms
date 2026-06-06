@@ -85,6 +85,14 @@
 </div>
 
 <script>
+function safetyScheduleAlert(title, message, type = 'info') {
+  if (window.Swal && Swal.fire) {
+    return Swal.fire(title, message, type);
+  }
+  alert(message ? `${title}: ${message}` : title);
+  return Promise.resolve();
+}
+
 document.getElementById('scheduleForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('scheduleSubmitBtn');
@@ -112,15 +120,16 @@ document.getElementById('scheduleForm')?.addEventListener('submit', async (e) =>
       throw new Error(result.error || `Server returned HTTP ${res.status}`);
     }
     if (result.success) {
-      alert('Training Scheduled! Invitation sent to contractor.');
+      closeModal('scheduleModal');
+      await safetyScheduleAlert('Training Scheduled', result.message || 'Invitation sent to contractor.', 'success');
       location.reload();
     } else {
-      alert('Error: ' + result.error);
+      await safetyScheduleAlert('Scheduling Failed', result.error || 'Unable to schedule training.', 'error');
       btn.disabled = false;
       btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Training Invitation';
     }
   } catch (err) {
-    alert('Training schedule failed: ' + (err.message || 'Network error. Try again.'));
+    await safetyScheduleAlert('Scheduling Failed', err.message || 'Network error. Try again.', 'error');
     btn.disabled = false;
     btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Training Invitation';
   }
