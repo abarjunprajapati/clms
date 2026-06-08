@@ -907,19 +907,11 @@ worker4a_ensure_schema($conn);
     $workman_row['signature_doc'] = $uploaded_files['signature'];
     $workman_row['training_approval_doc'] = $uploaded_files['training_approval_doc'];
     if ($action !== 'draft') {
-        if (!empty($uploaded_files['training_approval_doc'])) {
-            $workman_row['execution_training_status'] = 'approved';
-            $workman_row['execution_training_remarks'] = 'Auto-approved because Training Attendance Approval document is attached.';
-            $workman_row['execution_training_reviewed_by'] = (int)($executingOfficer['id'] ?? 0);
-            $workman_row['execution_training_reviewed_at'] = date('Y-m-d H:i:s');
-        } else {
-            $workman_row['execution_training_status'] = 'pending_eo';
-        }
+        $workman_row['execution_training_status'] = 'pending_payment';
+        $workman_row['execution_training_remarks'] = 'Waiting for Welfare payment verification.';
     }
     if (!empty($new_uploaded_files['training_approval_doc'])) {
-        $workman_row['execution_training_remarks'] = 'Auto-approved because Training Attendance Approval document is attached.';
-        $workman_row['execution_training_reviewed_by'] = (int)($executingOfficer['id'] ?? 0);
-        $workman_row['execution_training_reviewed_at'] = date('Y-m-d H:i:s');
+        $workman_row['execution_training_remarks'] = 'Waiting for Welfare payment verification.';
     }
 
     if ($existing_workman) {
@@ -927,15 +919,6 @@ worker4a_ensure_schema($conn);
         update_table_row_by_id($conn, 'workmen', $workman_id_new, $workman_row);
     } else {
         $workman_id_new = insert_table_row($conn, 'workmen', $workman_row);
-    }
-
-    if ($action !== 'draft' && !empty($uploaded_files['training_approval_doc'])) {
-        clms_training_auto_approve_attached_document(
-            $conn,
-            $workman_id_new,
-            (int)($executingOfficer['id'] ?? 0),
-            'Auto-approved because Training Attendance Approval document is attached.'
-        );
     }
 
     $temp_id = '';
@@ -950,6 +933,14 @@ worker4a_ensure_schema($conn);
             (int)($_SESSION['user_id'] ?? 0),
             'enrolment'
         );
+        if (!$paymentRequest) {
+            update_table_row_by_id($conn, 'workmen', $workman_id_new, [
+                'status' => 'draft',
+                'execution_training_status' => 'draft',
+                'execution_training_remarks' => 'Payment link generation failed. Please submit enrolment again after payment settings are configured.'
+            ]);
+            throw new Exception('Payment link generate nahi ho pa raha. Welfare Payment Gateway me fee/QR settings check karein.');
+        }
     } else {
         update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => null]);
     }

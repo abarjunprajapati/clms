@@ -8,6 +8,7 @@ function renderContent() {
     global $conn;
     // Exclude 'contractor' role as requested
     $allRoles = db_fetch_all($conn, "SELECT role_name, description FROM roles WHERE role_name != 'contractor' ORDER BY is_system DESC, role_name ASC");
+    $copyUsers = db_fetch_all($conn, "SELECT id, contractor_id, name, role FROM users WHERE role <> 'contractor' AND status = 'active' ORDER BY role, name LIMIT 300");
     
     $roleLabels = [
         'super_admin'=>'Super Admin','welfare_admin'=>'Welfare Admin','welfare_user'=>'Welfare User',
@@ -82,6 +83,21 @@ function renderContent() {
                 <option value="<?= $r['role_name'] ?>"><?= $roleLabels[$r['role_name']] ?? ucwords(str_replace('_', ' ', $r['role_name'])) ?></option>
               <?php endforeach; ?>
             </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Copy Role From User</label>
+            <select class="form-control" id="cu-copy-role-from">
+              <option value="">-- Select existing user --</option>
+              <?php foreach($copyUsers as $cu): ?>
+                <option value="<?= htmlspecialchars($cu['role']) ?>">
+                  <?= htmlspecialchars($cu['name'] . ' (' . $cu['contractor_id'] . ') - ' . ($roleLabels[$cu['role']] ?? ucwords(str_replace('_', ' ', $cu['role'])))) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <small class="form-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;display:block;">
+              Select a user to copy their role into this new user.
+            </small>
           </div>
 
           <div class="form-group">
@@ -246,6 +262,13 @@ document.getElementById('cu-role').addEventListener('change', function() {
     const required = this.value === 'execution_officer';
     code.required = required;
     code.closest('.form-group')?.querySelector('.form-label')?.classList.toggle('required', required);
+});
+
+document.getElementById('cu-copy-role-from')?.addEventListener('change', function() {
+    if (!this.value) return;
+    const role = document.getElementById('cu-role');
+    role.value = this.value;
+    role.dispatchEvent(new Event('change'));
 });
 
 function validatePasswordRules(pwd) {

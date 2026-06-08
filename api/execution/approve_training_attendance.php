@@ -136,6 +136,21 @@ try {
         executionTrainingJson(['status' => false, 'message' => 'Worker is not assigned to this officer.'], 403);
     }
 
+    $paidPayment = db_single(
+        $conn,
+        "SELECT pr.id
+         FROM training_payment_request_workers pw
+         JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+         WHERE pw.workman_id = ?
+           AND pr.status = 'paid'
+         LIMIT 1",
+        'i',
+        [$workmanId]
+    );
+    if (!$paidPayment) {
+        executionTrainingJson(['status' => false, 'message' => 'Payment is not verified by Welfare yet.'], 400);
+    }
+
     $conn->begin_transaction();
 
     db_execute(

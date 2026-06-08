@@ -59,6 +59,31 @@ if ($accNo === '') {
     permanentPassJson(false, 'ACC number is not generated for this worker.', null, 400);
 }
 
+$aadhaarNo = preg_replace('/\D+/', '', (string)($workman['aadhaar'] ?? $workman['aadhaar_no'] ?? ''));
+if ($aadhaarNo !== '') {
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS biometric_aadhaar_map (
+        id INT NOT NULL AUTO_INCREMENT,
+        workman_id INT NOT NULL,
+        aadhaar_no VARCHAR(20) NOT NULL,
+        acc_number VARCHAR(50) NOT NULL,
+        mapped_at DATETIME NOT NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_biometric_aadhaar (aadhaar_no),
+        UNIQUE KEY uq_biometric_acc (acc_number),
+        KEY idx_biometric_workman (workman_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $mapped = db_single(
+        $conn,
+        "SELECT workman_id, acc_number FROM biometric_aadhaar_map WHERE aadhaar_no = ? LIMIT 1",
+        's',
+        [$aadhaarNo]
+    );
+    if ($mapped && (int)$mapped['workman_id'] !== $workmanId) {
+        permanentPassJson(false, 'This Aadhaar is already linked with another biometric registration.', null, 409);
+    }
+}
+
 if (($workman['status'] ?? '') === 'permanent_active') {
     permanentPassJson(true, 'Permanent pass is already active for this worker.');
 }
@@ -106,6 +131,34 @@ try {
         [$accNo, $validFrom, $validTo, $workmanId]
     );
 
+    db_execute(
+        $conn,
+        "UPDATE gate_pass_request_workers
+         SET status = 'issued',
+             gatepass_no = COALESCE(NULLIF(gatepass_no, ''), ?),
+             updated_at = NOW()
+         WHERE workman_id = ?
+           AND LOWER(COALESCE(status, '')) IN ('approved', 'issued')",
+        'si',
+        [$accNo, $workmanId]
+    );
+
+    db_execute(
+        $conn,
+        "UPDATE gate_pass_requests gpr
+         SET gpr.status = 'issued',
+             gpr.updated_at = NOW()
+         WHERE EXISTS (
+             SELECT 1
+             FROM gate_pass_request_workers gprw
+             WHERE gprw.request_id = gpr.id
+               AND gprw.workman_id = ?
+               AND LOWER(COALESCE(gprw.status, '')) = 'issued'
+         )",
+        'i',
+        [$workmanId]
+    );
+
     $nextPassId = 1;
     $maxPass = db_single($conn, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM permanent_gate_passes");
     if ($maxPass && isset($maxPass['next_id'])) {
@@ -148,6 +201,17 @@ try {
 
     if (!$savedPass) {
         permanentPassLog("Optional permanent_gate_passes save failed for worker_id=$workmanId, acc=$accNo. Worker status was still activated.");
+    }
+
+    if ($aadhaarNo !== '') {
+        db_execute(
+            $conn,
+            "INSERT INTO biometric_aadhaar_map (workman_id, aadhaar_no, acc_number, mapped_at)
+             VALUES (?, ?, ?, NOW())
+             ON DUPLICATE KEY UPDATE workman_id = VALUES(workman_id), acc_number = VALUES(acc_number), mapped_at = NOW()",
+            'iss',
+            [$workmanId, $aadhaarNo, $accNo]
+        );
     }
 } catch (Throwable $e) {
     permanentPassLog($e->getMessage());

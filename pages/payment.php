@@ -3,18 +3,83 @@ session_start();
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/payment_flow.php';
 
+function payment_sync_missing_worker_requests($conn, $contractorId, $userId = 0) {
+    if (!$contractorId) return;
+    clms_ensure_payment_flow($conn);
+    $workers = db_fetch_all(
+        $conn,
+        "SELECT w.id
+         FROM workmen w
+         WHERE w.contractor_id = ?
+           AND COALESCE(w.status, '') <> 'draft'
+           AND COALESCE(w.execution_training_status, '') = 'pending_payment'
+           AND NOT EXISTS (
+               SELECT 1
+               FROM training_payment_request_workers pw
+               JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+               WHERE pw.workman_id = w.id
+                 AND pr.status IN ('pending', 'link_sent', 'gateway_created', 'submitted', 'paid')
+           )
+         ORDER BY w.id ASC",
+        'i',
+        [(int)$contractorId]
+    );
+    foreach ($workers as $worker) {
+        clms_create_training_payment_request($conn, (int)$contractorId, [(int)$worker['id']], (int)$userId, 'payment_page_recovery');
+    }
+}
+
 $token = trim($_GET['token'] ?? '');
 $request = $token !== '' ? clms_get_training_payment_request($conn, $token) : null;
+$paymentRequests = [];
 if (!$request && !empty($_SESSION['user_id'])) {
     $contractor = db_single($conn, "SELECT id FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [(int)$_SESSION['user_id']]);
     if ($contractor) {
+        payment_sync_missing_worker_requests($conn, (int)$contractor['id'], (int)$_SESSION['user_id']);
+        $paymentRequests = db_fetch_all(
+            $conn,
+            "SELECT *
+             FROM training_payment_requests
+             WHERE contractor_id = ?
+             ORDER BY
+                FIELD(status, 'submitted', 'link_sent', 'gateway_created', 'pending', 'paid') ASC,
+                COALESCE(updated_at, created_at) DESC,
+                id DESC",
+            'i',
+            [(int)$contractor['id']]
+        );
         $request = db_single(
             $conn,
-            "SELECT * FROM training_payment_requests WHERE contractor_id = ? ORDER BY id DESC LIMIT 1",
+            "SELECT *
+             FROM training_payment_requests
+             WHERE contractor_id = ?
+             ORDER BY
+                CASE WHEN status IN ('paid', 'verified') THEN 1 ELSE 0 END ASC,
+                FIELD(status, 'submitted', 'link_sent', 'gateway_created', 'pending', 'paid') ASC,
+                COALESCE(updated_at, created_at) DESC,
+                id DESC
+             LIMIT 1",
             'i',
             [(int)$contractor['id']]
         );
         $token = $request['payment_token'] ?? '';
+    }
+} elseif (!empty($_SESSION['user_id'])) {
+    $contractor = db_single($conn, "SELECT id FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [(int)$_SESSION['user_id']]);
+    if ($contractor) {
+        payment_sync_missing_worker_requests($conn, (int)$contractor['id'], (int)$_SESSION['user_id']);
+        $paymentRequests = db_fetch_all(
+            $conn,
+            "SELECT *
+             FROM training_payment_requests
+             WHERE contractor_id = ?
+             ORDER BY
+                FIELD(status, 'submitted', 'link_sent', 'gateway_created', 'pending', 'paid') ASC,
+                COALESCE(updated_at, created_at) DESC,
+                id DESC",
+            'i',
+            [(int)$contractor['id']]
+        );
     }
 }
 
@@ -50,6 +115,12 @@ $demoDetails = clms_demo_payment_details($conn, $request);
     .worker-row small { display:block; color:#64748b; margin-top:3px; }
     .pay-alert { display:flex; gap:10px; padding:12px 14px; border-radius:8px; background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; font-size:13px; font-weight:700; margin-bottom:16px; }
     .pay-actions { display:grid; gap:10px; margin-top:16px; }
+    .request-list { display:grid; gap:10px; margin-bottom:18px; }
+    .request-item { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; padding:12px 14px; border:1px solid #dbe4ef; border-radius:8px; background:#fff; text-decoration:none; color:#111827; }
+    .request-item:hover { border-color:#94a3b8; box-shadow:0 8px 22px rgba(15,23,42,.08); }
+    .request-item.active { border-color:#2563eb; background:#eff6ff; }
+    .request-meta { font-size:12px; color:#64748b; margin-top:3px; }
+    .request-amount { font-weight:900; color:#0f766e; text-align:right; }
     .btn-full { width:100%; justify-content:center; }
     .pay-modal { display:none; position:fixed; inset:0; z-index:3000; background:rgba(15,23,42,.58); padding:18px; overflow:auto; }
     .pay-modal.is-open { display:flex; align-items:flex-start; justify-content:center; }
@@ -81,6 +152,40 @@ $demoDetails = clms_demo_payment_details($conn, $request);
       <div class="pay-alert"><i class="fas fa-circle-info"></i><span>No payment request found. Please use the payment link sent after enrolment/training request.</span></div>
     </div></div>
   <?php else: ?>
+    <?php if (count($paymentRequests) > 1): ?>
+      <section class="payment-card" style="margin-bottom:18px;">
+        <div class="payment-head">
+          <h1>All Payment Requests</h1>
+          <span style="font-size:12px;color:#64748b;font-weight:700;"><?= count($paymentRequests) ?> request(s)</span>
+        </div>
+        <div class="payment-body">
+          <div class="request-list">
+            <?php foreach ($paymentRequests as $pr): ?>
+              <?php
+                $prStatus = strtolower((string)$pr['status']);
+                $prWorkers = clms_training_payment_workers($conn, (int)$pr['id']);
+                $workerNames = array_slice(array_map(function($w) { return $w['name'] ?? 'Worker'; }, $prWorkers), 0, 3);
+                $moreWorkers = max(0, count($prWorkers) - count($workerNames));
+                $namesText = implode(', ', $workerNames) . ($moreWorkers > 0 ? " +{$moreWorkers} more" : '');
+                $isCurrent = (int)($request['id'] ?? 0) === (int)$pr['id'];
+                $prExpired = !empty($pr['link_expires_at']) && strtotime($pr['link_expires_at']) < time() && !in_array($prStatus, ['paid', 'verified'], true);
+                $prBadgeClass = $prExpired ? 'badge-expired' : ($prStatus === 'paid' ? 'badge-paid' : 'badge-pending');
+                $prBadgeText = $prExpired ? 'Expired' : ucfirst($prStatus);
+              ?>
+              <a class="request-item <?= $isCurrent ? 'active' : '' ?>" href="payment.php?token=<?= urlencode($pr['payment_token']) ?>">
+                <div>
+                  <strong><?= htmlspecialchars($pr['payment_ref']) ?></strong>
+                  <span class="badge-pay <?= $prBadgeClass ?>" style="margin-left:8px;"><?= htmlspecialchars($prBadgeText) ?></span>
+                  <div class="request-meta"><?= (int)$pr['worker_count'] ?> worker(s)<?= $namesText ? ' | ' . htmlspecialchars($namesText) : '' ?></div>
+                </div>
+                <div class="request-amount">Rs. <?= number_format((float)$pr['total_amount'], 2) ?></div>
+              </a>
+            <?php endforeach; ?>
+          </div>
+          <div style="font-size:12px;color:#64748b;">Jis worker/payment ki fee pay karni hai, us request ko select karke Pay Online karein.</div>
+        </div>
+      </section>
+    <?php endif; ?>
     <div class="payment-grid">
       <section class="payment-card">
         <div class="payment-head">

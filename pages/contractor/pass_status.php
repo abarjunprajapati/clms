@@ -31,8 +31,15 @@ function renderContent() {
             w.trade,
             w.aadhaar,
             w.temp_id,
+            w.status as workman_status,
             COALESCE(gprw.gatepass_no, '') as pass_number,
             gpr.rejection_reason,
+            EXISTS (
+                SELECT 1
+                FROM permanent_gate_passes pgp
+                WHERE pgp.worker_id = w.id
+                  AND LOWER(COALESCE(pgp.status, '')) = 'active'
+            ) AS has_permanent_pass,
             (
                 SELECT COUNT(*)
                 FROM documents d
@@ -61,7 +68,14 @@ function renderContent() {
             w.trade,
             w.aadhaar,
             w.temp_id,
+            w.status as workman_status,
             gp.pass_number,
+            EXISTS (
+                SELECT 1
+                FROM permanent_gate_passes pgp
+                WHERE pgp.worker_id = w.id
+                  AND LOWER(COALESCE(pgp.status, '')) = 'active'
+            ) AS has_permanent_pass,
             '' as rejection_reason
          FROM gate_passes gp
          JOIN workmen w ON gp.workman_id = w.id
@@ -78,10 +92,19 @@ function renderContent() {
     }
 
     foreach ($passes as &$pass) {
-        $rawStatus = $pass['status'] ?? 'pending';
-        if ((int)($pass['rejected_doc_count'] ?? 0) > 0 && !in_array($rawStatus, ['approved', 'active', 'issued'], true)) {
-            $pass['status'] = 'reupload_required';
+        $rawStatus = strtolower((string)($pass['status'] ?? 'pending'));
+        $workmanStatus = strtolower((string)($pass['workman_status'] ?? ''));
+        if (
+            in_array($rawStatus, ['issued', 'permanent_issued', 'permanent_active'], true) ||
+            in_array($workmanStatus, ['permanent_active', 'permanent_issued'], true) ||
+            (int)($pass['has_permanent_pass'] ?? 0) > 0
+        ) {
+            $rawStatus = 'active';
         }
+        if ((int)($pass['rejected_doc_count'] ?? 0) > 0 && !in_array($rawStatus, ['approved', 'active', 'issued'], true)) {
+            $rawStatus = 'reupload_required';
+        }
+        $pass['status'] = $rawStatus;
     }
     unset($pass);
 

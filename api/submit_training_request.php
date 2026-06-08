@@ -36,6 +36,7 @@ try {
     require_once '../include/config.php';
     require_once '../include/customer_portal_context.php';
     require_once '../include/payment_flow.php';
+    require_once '../include/training_type_master.php';
 
     // api_helper/include/session may replace handlers; restore JSON-safe handlers.
     set_error_handler(function($severity, $message, $file, $line) {
@@ -84,6 +85,9 @@ try {
 
     $preferredDate = trim($input['preferred_date'] ?? '');
     $trainingType = trim($input['training_type'] ?? 'Safety Induction');
+    if (!clms_training_type_is_active($conn, $trainingType)) {
+        throw new Exception('Please select an active Training Type from Welfare master.');
+    }
 
     $conn->begin_transaction();
     $created = 0;
@@ -217,22 +221,32 @@ try {
         training_upsert_workflow($conn, $applicationNo, $contractorId);
     }
 
+    $paidWorkerIds = clms_paid_training_worker_ids($conn, $paymentWorkerIds);
+    $unpaidWorkerIds = array_values(array_diff(array_map('intval', $paymentWorkerIds), $paidWorkerIds));
     $paymentRequest = clms_create_training_payment_request(
         $conn,
         $contractorId,
-        $paymentWorkerIds,
+        $unpaidWorkerIds,
         $userId,
         'training_request'
     );
+    if ($unpaidWorkerIds && !$paymentRequest) {
+        throw new Exception('Payment link generate nahi ho pa raha. Welfare Payment Gateway settings check karein ya existing pending payment link use karein.');
+    }
 
     $conn->commit();
 
+    $paymentMessage = $paymentRequest
+        ? 'Safety training request submitted successfully and payment link generated.'
+        : 'Safety training request submitted successfully. Payment is already verified for selected worker(s).';
+
     training_json([
         'success' => true,
-        'message' => 'Safety training request submitted successfully and payment link generated.',
+        'message' => $paymentMessage,
         'data' => [
             'request_id' => 'STR-' . date('Ymd') . '-' . random_int(1000, 9999),
             'worker_count' => $created,
+            'paid_worker_count' => count($paidWorkerIds),
             'payment' => $paymentRequest ? [
                 'payment_ref' => $paymentRequest['payment_ref'],
                 'amount' => $paymentRequest['total_amount'],

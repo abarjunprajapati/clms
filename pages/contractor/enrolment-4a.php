@@ -7,6 +7,7 @@ include '../../include/education_flow.php';
 include '../../include/layout.php';
 require_once '../../include/wage_settings.php';
 require_once '../../include/nationality_location_masters.php';
+require_once '../../include/age_range_mapping.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -29,6 +30,7 @@ clms_get_portal_contractor($conn);
 $educationFlow = clms_get_education_flow($conn);
 $minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
 $activeCertifiedWages = clms_get_active_certified_wage_map($conn);
+$activeAgeRange = clms_get_active_age_range($conn);
 
 function enrolment_table_exists($conn, $table) {
     $table = mysqli_real_escape_string($conn, $table);
@@ -299,12 +301,14 @@ function enrolment_get_customer_portal_contractor($conn) {
 }
 
 function renderContent() {
-    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages;
+    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages, $activeAgeRange;
     $nationalityOptions = clms_get_nationality_options($conn);
     $religionOptions = clms_get_religion_options($conn);
     $stateDistrictMap = clms_get_state_district_map($conn);
-    $dobMax = date('Y-m-d', strtotime('-18 years'));
-    $dobMin = date('Y-m-d', strtotime('-60 years'));
+    $minAge = max(0, (int)($activeAgeRange['min_age'] ?? 18));
+    $maxAge = max(1, (int)($activeAgeRange['max_age'] ?? 60));
+    $dobMax = date('Y-m-d', strtotime("-{$minAge} years"));
+    $dobMin = date('Y-m-d', strtotime("-{$maxAge} years"));
 
     // Get contractor record
     $contractor = null;
@@ -938,7 +942,7 @@ function renderContent() {
               <div class="form-group">
                 <label class="form-label required">Date of Birth</label>
                 <input type="date" class="form-control" name="dob" id="dobInput" min="<?= $dobMin ?>" max="<?= $dobMax ?>" required>
-                <small class="form-hint" id="dobHint">Age must be between 18 and 60 years.</small>
+                <small class="form-hint" id="dobHint">Age must be between <?= (int)$minAge ?> and <?= (int)$maxAge ?> years.</small>
               </div>
               <div class="form-group">
                 <label class="form-label required">Marital Status</label>
@@ -1330,6 +1334,8 @@ function renderContent() {
         const prefillAadhaar = <?= json_encode($prefillAadhaar) ?>;
         const currentContractorId = <?= $c_id ? (int)$c_id : 0 ?>;
         const dobInput = document.getElementById('dobInput');
+        const minAllowedAge = <?= json_encode((int)$minAge) ?>;
+        const maxAllowedAge = <?= json_encode((int)$maxAge) ?>;
         const minDob = dobInput ? new Date(dobInput.min + 'T00:00:00') : null;
         const maxDob = dobInput ? new Date(dobInput.max + 'T00:00:00') : null;
         const photoMaxSize = 2 * 1024 * 1024;
@@ -1398,9 +1404,9 @@ function renderContent() {
           } else {
             const dob = new Date(dobInput.value + 'T00:00:00');
             if (maxDob && dob > maxDob) {
-              dobInput.setCustomValidity('Worker age is below 18 years. Registration is not allowed.');
+              dobInput.setCustomValidity(`Worker age is below ${minAllowedAge} years. Registration is not allowed.`);
             } else if (minDob && dob < minDob) {
-              dobInput.setCustomValidity('Worker age is above 60 years. Registration is not allowed.');
+              dobInput.setCustomValidity(`Worker age is above ${maxAllowedAge} years. Registration is not allowed.`);
             } else {
               dobInput.setCustomValidity('');
             }

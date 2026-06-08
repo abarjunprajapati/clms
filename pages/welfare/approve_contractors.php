@@ -37,7 +37,7 @@ function renderContent() {
           <i class="fas fa-hard-hat" style="color:#f59e0b; font-size:18px;"></i>
           <div>
             <div style="font-size:12px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.5px;">Labour Licence Threshold</div>
-            <div style="font-size:15px; font-weight:800; color:var(--text-primary);">Mandatory when workers &gt; <span id="thresholdDisplay"><?= $threshold ?></span></div>
+            <div style="font-size:15px; font-weight:800; color:var(--text-primary);">Mandatory when workers &gt;= <span id="thresholdDisplay"><?= $threshold ?></span></div>
           </div>
         </div>
         <?php if ($can_edit_threshold): ?>
@@ -58,7 +58,7 @@ function renderContent() {
             <tr>
               <th>Vendor Code</th>
               <th>Contractor Name</th>
-              <th>PAN / GST</th>
+              <th>Contact Info</th>
               <th>License Info</th>
               <th>Submitted</th>
               <th>Status</th>
@@ -426,30 +426,34 @@ function renderContent() {
 
         // ── SECTION 1: General ──────────────────────────────────────────────────
         html += `<div class="form-section-card">
-          <div class="form-section-header"><i class="fas fa-id-card"></i> 1. General Information</div>
+          <div class="form-section-header"><i class="fas fa-id-card"></i> Annexure 2A Application</div>
           <div class="form-grid">
             <div class="form-field"><label>Vendor Code</label><div class="value-box"><code>${v(r.vendor_code)}</code></div></div>
-            <div class="form-field span-2"><label>Contractor / Vendor Name</label><div class="value-box" style="font-weight:700;color:#a5b4fc;">${v(r.display_name||r.contractor_name||r.vendor_name)}</div></div>
-            <div class="form-field"><label>Proprietor / Contact Person</label><div class="value-box">${v(r.c_contact||r.contact_person||r.proprietor_name)}</div></div>
-            <div class="form-field"><label>Mobile</label><div class="value-box">${v(r.c_mobile||r.mobile)}</div></div>
+            <div class="form-field"><label>Application No</label><div class="value-box"><code>${v(r.application_id || r.application_no)}</code></div></div>
+            <div class="form-field"><label>Status</label><div class="value-box">${v(r.workflow_status || r.status)}</div></div>
+            <div class="form-field span-2"><label>Contractor / Vendor Name</label><div class="value-box" style="font-weight:700;color:#a5b4fc;">${v(r.contractor_name||r.vendor_name||r.display_name)}</div></div>
             <div class="form-field"><label>Email</label><div class="value-box">${v(r.c_email||r.email||r.email_address)}</div></div>
-            <div class="form-field span-2"><label>Office Address</label><div class="value-box">${v(r.address||r.office_address)}</div></div>
-            <div class="form-field"><label>State / Pin</label><div class="value-box">${v(r.state||r.state_name)}  -  ${v(r.pin||r.pin_code)}</div></div>
-            <div class="form-field"><label>PAN</label><div class="value-box"><code>${v(r.pan_no||r.pan)}</code></div></div>
-            <div class="form-field"><label>GST</label><div class="value-box"><code>${v(r.gst_no||r.gst)}</code></div></div>
+            <div class="form-field"><label>Mobile</label><div class="value-box">${v(r.mobile || r.c_mobile)}</div></div>
+            <div class="form-field span-3"><label>Office Address</label><div class="value-box">${v(r.office_address||r.address)}</div></div>
           </div>
         </div>`;
 
         // ── SECTION 2: EPF / ESI ──────────────────────────────────────────────
         html += `<div class="form-section-card">
-          <div class="form-section-header"><i class="fas fa-shield-alt"></i> 2. Whether Registered under EPF / ESI</div>
+          <div class="form-section-header"><i class="fas fa-building"></i> 1. Work Awarding Dept</div>
+          <div class="form-grid">
+            <div class="form-field span-3"><label>Work Awarding Department</label><div class="value-box">${v(r.work_awarding_department||r.project_name)}</div></div>
+          </div>
+        </div>`;
+
+        html += `<div class="form-section-card">
+          <div class="form-section-header"><i class="fas fa-shield-alt"></i> 2 - 4. EPF / ESI Registration</div>
           <div class="form-grid">
             <div class="form-field"><label>Registered under EPF</label><div class="value-box">${badge(r.epf_registered||r.pf)}</div></div>
-            <div class="form-field"><label>3. EPF Establishment Code</label><div class="value-box"><code>${v(r.epf_code)}</code></div></div>
+            <div class="form-field"><label>EPF Establishment Code</label><div class="value-box"><code>${v(r.epf_code)}</code></div></div>
+            <div class="form-field"><label>EPF Account No</label><div class="value-box"><code>${v(r.epf_account_no)}</code></div></div>
             <div class="form-field"><label>Registered under ESI</label><div class="value-box">${badge(r.esi_registered||r.esic)}</div></div>
-            <div class="form-field"><label>4. ESI Establishment Code</label><div class="value-box"><code>${v(r.esi_code||r.esic_code)}</code></div></div>
-            <div class="form-field"><label>Wage Category</label><div class="value-box">${v(r.wage_category||r.wage_declaration)}</div></div>
-            <div class="form-field"><label>1. Work Awarding Dept</label><div class="value-box">${v(r.work_awarding_department||r.project_name)}</div></div>
+            <div class="form-field"><label>ESI Establishment Code</label><div class="value-box"><code>${v(r.esi_code||r.esic_code)}</code></div></div>
             <div class="form-field span-3"><label>EPF Non-Registration Reason</label><div class="value-box" style="color:#fbbf24;">${v(reasonPart(r.epf_esi_exemption_reason, 'EPF Reason') || r.epf_esi_exemption_reason)}</div></div>
             <div class="form-field span-3"><label>ESI Non-Registration Reason</label><div class="value-box" style="color:#fbbf24;">${v(reasonPart(r.epf_esi_exemption_reason, 'ESI Reason'))}</div></div>
           </div>
@@ -478,7 +482,7 @@ function renderContent() {
         const posStr  = sel.pos.length  ? sel.pos.map(p=>`<code>${p}</code>`).join(' ')  : ' - ';
         const pwosStr = sel.pwos.length ? sel.pwos.map(p=>`<code>${p}</code>`).join(' ') : ' - ';
         const soStr   = sel.sales.length? sel.sales.map(s=>`<code>${s}</code>`).join(' ')  : ' - ';
-        html += `<div class="form-section-card">
+        if (false) html += `<div class="form-section-card">
           <div class="form-section-header"><i class="fas fa-file-signature"></i> 4. Work Order & SAP Allocations</div>
           <div class="form-grid">
             <div class="form-field"><label>Work Order / Contract No</label><div class="value-box"><code>${v(r.contract_no||r.work_order_no||r.po_number||r.pwo_number)}</code></div></div>

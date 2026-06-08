@@ -132,7 +132,12 @@ function clms_training_auto_approve_attached_document($conn, $workmanId, $review
 
 function clms_training_seed_approved_queue($conn) {
     clms_training_ensure_schema($conn);
-    if (!clms_training_table_exists($conn, 'workmen') || !clms_training_table_exists($conn, 'training_requests')) return;
+    if (
+        !clms_training_table_exists($conn, 'workmen') ||
+        !clms_training_table_exists($conn, 'training_requests') ||
+        !clms_training_table_exists($conn, 'training_payment_requests') ||
+        !clms_training_table_exists($conn, 'training_payment_request_workers')
+    ) return;
 
     @mysqli_query($conn, "
         INSERT INTO training_requests
@@ -153,6 +158,13 @@ function clms_training_seed_approved_queue($conn) {
         FROM workmen w
         WHERE COALESCE(w.execution_training_status, '') = 'approved'
           AND COALESCE(w.contractor_id, 0) > 0
+          AND EXISTS (
+              SELECT 1
+              FROM training_payment_request_workers pw
+              JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+              WHERE pw.workman_id = w.id
+                AND pr.status = 'paid'
+          )
           AND LOWER(TRIM(COALESCE(w.training_status, 'pending'))) IN ('', 'pending', 'training_pending', 'training_failed', 'fail', 'failed')
           AND NOT EXISTS (
               SELECT 1 FROM training_requests tr

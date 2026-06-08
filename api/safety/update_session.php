@@ -12,20 +12,20 @@ function safetySessionJson($payload, $status = 200) {
 }
 
 function safetySessionColumnExists($conn, $table, $column) {
-    $safeTable = str_replace('`', '``', $table);
-    $safeColumn = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+    $table = str_replace('`', '``', $table);
+    $column = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
     return $res && mysqli_num_rows($res) > 0;
 }
 
-function safetySessionEnsureStatusColumn($conn) {
-    @mysqli_query($conn, "ALTER TABLE training_schedule MODIFY COLUMN session_status VARCHAR(50) DEFAULT 'open'");
-}
-
 function safetySessionNotifyContractors($conn, $sessionId, $message) {
-    foreach (['user_id', 'message', 'type', 'is_read'] as $column) {
-        if (!safetySessionColumnExists($conn, 'notifications', $column)) return;
+    if (!safetySessionColumnExists($conn, 'notifications', 'user_id') ||
+        !safetySessionColumnExists($conn, 'notifications', 'message') ||
+        !safetySessionColumnExists($conn, 'notifications', 'type') ||
+        !safetySessionColumnExists($conn, 'notifications', 'is_read')) {
+        return;
     }
+
     $rows = db_fetch_all(
         $conn,
         "SELECT DISTINCT c.user_id
@@ -37,7 +37,12 @@ function safetySessionNotifyContractors($conn, $sessionId, $message) {
         [(int)$sessionId]
     );
     foreach ($rows as $row) {
-        db_execute($conn, "INSERT INTO notifications (user_id, message, type, is_read) VALUES (?, ?, 'training_schedule_update', 0)", 'is', [(int)$row['user_id'], $message]);
+        db_execute(
+            $conn,
+            "INSERT INTO notifications (user_id, message, type, is_read) VALUES (?, ?, 'training_schedule_update', 0)",
+            'is',
+            [(int)$row['user_id'], $message]
+        );
     }
 }
 
@@ -45,151 +50,166 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     safetySessionJson(['success' => false, 'message' => 'Invalid request method.'], 405);
 }
 
-$sessionId = (int)($_POST['session_id'] ?? 0);
-$action = strtolower(trim((string)($_POST['schedule_action'] ?? 'update')));
-if (!$sessionId) {
-    safetySessionJson(['success' => false, 'message' => 'Invalid session.'], 422);
+$input = json_decode(file_get_contents('php://input'), true);
+if (!is_array($input)) $input = $_POST;
+
+$sessionId = (int)($input['session_id'] ?? 0);
+$action = strtolower(trim((string)($input['action'] ?? $input['schedule_action'] ?? '')));
+if ($action === 'update') $action = 'reschedule';
+$reason = trim((string)($input['reason'] ?? $input['change_reason'] ?? 'Updated by Safety.'));
+
+if (!$sessionId || !in_array($action, ['cancel', 'reschedule'], true)) {
+    safetySessionJson(['success' => false, 'message' => 'Session and valid action are required.'], 422);
+}
+
+foreach ([
+    'session_status' => "VARCHAR(50) DEFAULT 'open'",
+    'remarks' => 'TEXT NULL',
+    'updated_at' => 'DATETIME NULL',
+    'batch_number' => 'VARCHAR(100) NULL',
+    'capacity' => 'INT DEFAULT 30',
+    'training_type' => "VARCHAR(100) DEFAULT 'Safety Induction'",
+] as $column => $definition) {
+    if (!safetySessionColumnExists($conn, 'training_schedule', $column)) {
+        @mysqli_query($conn, "ALTER TABLE training_schedule ADD COLUMN `$column` $definition");
+    }
 }
 
 $session = db_single($conn, "SELECT * FROM training_schedule WHERE id = ? LIMIT 1", 'i', [$sessionId]);
 if (!$session) {
     safetySessionJson(['success' => false, 'message' => 'Session not found.'], 404);
 }
-if (strtolower((string)($session['session_status'] ?? 'open')) === 'completed') {
-    safetySessionJson(['success' => false, 'message' => 'Completed session cannot be changed.'], 409);
+
+$currentStatus = strtolower((string)($session['session_status'] ?? 'open'));
+if ($currentStatus === 'completed') {
+    safetySessionJson(['success' => false, 'message' => 'Completed session cannot be modified.'], 409);
 }
+
+$linked = db_fetch_all(
+    $conn,
+    "SELECT tsw.workman_id, tsw.training_request_id
+     FROM training_session_workers tsw
+     WHERE tsw.session_id = ?",
+    'i',
+    [$sessionId]
+);
 
 mysqli_begin_transaction($conn);
 try {
     if ($action === 'cancel') {
-        $reason = trim((string)($_POST['change_reason'] ?? 'Training session cancelled by Safety.'));
-        safetySessionEnsureStatusColumn($conn);
-        $updated = db_execute($conn, "UPDATE training_schedule SET session_status = 'cancelled' WHERE id = ?", 'i', [$sessionId]);
-        if (!$updated) {
-            throw new Exception('Unable to cancel session. Please check training_schedule.session_status column.');
-        }
-
-        $statusCheck = db_single($conn, "SELECT session_status FROM training_schedule WHERE id = ? LIMIT 1", 'i', [$sessionId]);
-        if (strtolower((string)($statusCheck['session_status'] ?? '')) !== 'cancelled') {
-            throw new Exception('Session status was not changed to cancelled.');
-        }
-
+        safetySessionNotifyContractors($conn, $sessionId, "Safety training session has been cancelled. Reason: $reason");
         db_execute(
             $conn,
-            "UPDATE training_requests tr
-             JOIN training_session_workers tsw ON tsw.training_request_id = tr.id
-             SET tr.status = 'pending',
-                 tr.scheduled_date = NULL,
-                 tr.scheduled_shift = NULL,
-                 tr.scheduled_venue = NULL,
-                 tr.scheduled_time = NULL,
-                 tr.safety_remarks = ?,
-                 tr.updated_at = NOW()
-             WHERE tsw.session_id = ?",
+            "UPDATE training_schedule SET session_status = 'cancelled', remarks = ?, updated_at = NOW() WHERE id = ?",
             'si',
             [$reason, $sessionId]
         );
 
-        $sessionDate = trim((string)($session['session_date'] ?? ''));
-        $sessionVenue = trim((string)($session['location'] ?? ''));
-        $sessionTime = substr((string)($session['session_time'] ?? ''), 0, 5);
-        if ($sessionDate !== '' && $sessionVenue !== '') {
-            db_execute(
-                $conn,
-                "UPDATE training_requests tr
-                 SET tr.status = 'pending',
-                     tr.scheduled_date = NULL,
-                     tr.scheduled_shift = NULL,
-                     tr.scheduled_venue = NULL,
-                     tr.scheduled_time = NULL,
-                     tr.safety_remarks = ?,
-                     tr.updated_at = NOW()
-                 WHERE tr.status IN ('scheduled', 'contractor_confirmed')
-                   AND tr.scheduled_date = ?
-                   AND LOWER(TRIM(tr.scheduled_venue)) = LOWER(TRIM(?))
-                   AND (
-                       SUBSTRING(COALESCE(tr.scheduled_time, ''), 1, 5) = ?
-                       OR (tr.scheduled_shift = 'morning' AND ? = '09:00')
-                       OR (tr.scheduled_shift = 'evening' AND ? = '14:00')
-                   )",
-                'ssssss',
-                [$reason, $sessionDate, $sessionVenue, $sessionTime, $sessionTime, $sessionTime]
-            );
-
-            db_execute(
-                $conn,
-                "UPDATE workmen w
-                 JOIN training_requests tr ON tr.workman_id = w.id
-                 SET w.training_status = 'training_pending',
-                     w.safety_training_status = 'PENDING_TRAINING'
-                 WHERE tr.status = 'pending'
-                   AND tr.safety_remarks = ?
-                   AND tr.updated_at >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)",
-                's',
-                [$reason]
-            );
+        foreach ($linked as $row) {
+            $requestId = (int)($row['training_request_id'] ?? 0);
+            $workmanId = (int)($row['workman_id'] ?? 0);
+            if ($requestId > 0) {
+                db_execute(
+                    $conn,
+                    "UPDATE training_requests
+                     SET status = 'pending',
+                         contractor_confirmed = 0,
+                         scheduled_session_id = NULL,
+                         scheduled_date = NULL,
+                         scheduled_shift = NULL,
+                         scheduled_venue = NULL,
+                         scheduled_time = NULL,
+                         safety_remarks = ?,
+                         updated_at = NOW()
+                     WHERE id = ?",
+                    'si',
+                    [$reason, $requestId]
+                );
+            }
+            if ($workmanId > 0) {
+                db_execute(
+                    $conn,
+                    "UPDATE workmen
+                     SET training_status = 'training_pending',
+                         safety_training_status = 'PENDING_TRAINING'
+                     WHERE id = ?",
+                    'i',
+                    [$workmanId]
+                );
+            }
         }
-
-        db_execute(
-            $conn,
-            "UPDATE workmen w
-             JOIN training_session_workers tsw ON tsw.workman_id = w.id
-             SET w.training_status = 'training_pending',
-                 w.safety_training_status = 'PENDING_TRAINING'
-             WHERE tsw.session_id = ?",
-            'i',
-            [$sessionId]
-        );
-        safetySessionNotifyContractors($conn, $sessionId, "Safety training session has been cancelled. Reason: $reason");
+        db_execute($conn, "DELETE FROM training_session_workers WHERE session_id = ?", 'i', [$sessionId]);
         mysqli_commit($conn);
-        safetySessionJson(['success' => true, 'message' => 'Session cancelled and workers returned to scheduling queue.']);
+        safetySessionJson(['success' => true, 'message' => 'Training session cancelled. Workers returned to scheduling queue.']);
     }
 
-    $date = trim((string)($_POST['session_date'] ?? ''));
-    $time = trim((string)($_POST['session_time'] ?? ''));
-    $location = trim((string)($_POST['location'] ?? ''));
-    $capacity = max(1, (int)($_POST['capacity'] ?? 30));
-    $trainer = trim((string)($_POST['trainer_name'] ?? ''));
-    $batch = trim((string)($_POST['batch_number'] ?? ''));
-    $type = trim((string)($_POST['training_type'] ?? 'induction'));
-    $remarks = trim((string)($_POST['change_reason'] ?? 'Training schedule updated by Safety.'));
+    $date = trim((string)($input['session_date'] ?? ''));
+    $time = trim((string)($input['session_time'] ?? ''));
+    $location = trim((string)($input['location'] ?? ''));
+    $trainer = trim((string)($input['trainer_name'] ?? ($session['trainer_name'] ?? '')));
+    $batch = trim((string)($input['batch_number'] ?? ($session['batch_number'] ?? '')));
+    $capacity = max(1, (int)($input['capacity'] ?? ($session['capacity'] ?? 30)));
+    $trainingType = trim((string)($input['training_type'] ?? ($session['training_type'] ?? 'Safety Induction')));
 
-    if ($date === '' || $time === '' || $location === '') {
-        throw new Exception('Training date, time and venue are required.');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $time) || $location === '') {
+        throw new Exception('Training date, time and venue are required for reschedule.');
     }
-
-    $shift = ((int)substr($time, 0, 2) >= 14) ? 'evening' : 'morning';
+    if (strlen($time) === 5) $time .= ':00';
+    $shift = ((int)substr($time, 0, 2) < 12) ? 'morning' : 'evening';
 
     db_execute(
         $conn,
         "UPDATE training_schedule
-         SET session_date = ?, session_time = ?, location = ?, capacity = ?, trainer_name = ?, batch_number = ?, training_type = ?, session_status = 'open'
+         SET session_date = ?, session_time = ?, location = ?, capacity = ?, trainer_name = ?, batch_number = ?, training_type = ?,
+             session_status = 'open', remarks = ?, updated_at = NOW()
          WHERE id = ?",
-        'sssisssi',
-        [$date, $time, $location, $capacity, $trainer, $batch, $type, $sessionId]
+        'sssissssi',
+        [$date, $time, $location, $capacity, $trainer, $batch, $trainingType, $reason, $sessionId]
     );
 
-    db_execute(
-        $conn,
-        "UPDATE training_requests tr
-         JOIN training_session_workers tsw ON tsw.training_request_id = tr.id
-         SET tr.scheduled_date = ?,
-             tr.scheduled_shift = ?,
-             tr.scheduled_venue = ?,
-             tr.scheduled_time = ?,
-             tr.batch_number = ?,
-             tr.instructor = ?,
-             tr.safety_remarks = ?,
-             tr.status = 'scheduled',
-             tr.updated_at = NOW()
-         WHERE tsw.session_id = ?",
-        'sssssssi',
-        [$date, $shift, $location, $time, $batch, $trainer, $remarks, $sessionId]
-    );
+    foreach ($linked as $row) {
+        $requestId = (int)($row['training_request_id'] ?? 0);
+        $workmanId = (int)($row['workman_id'] ?? 0);
+        if ($requestId > 0) {
+            db_execute(
+                $conn,
+                "UPDATE training_requests
+                 SET status = 'scheduled',
+                     contractor_confirmed = 0,
+                     scheduled_session_id = ?,
+                     scheduled_date = ?,
+                     scheduled_shift = ?,
+                     scheduled_venue = ?,
+                     scheduled_time = ?,
+                     safety_remarks = ?,
+                     updated_at = NOW()
+                 WHERE id = ?",
+                'isssssi',
+                [$sessionId, $date, $shift, $location, $time, $reason, $requestId]
+            );
+        }
+        if ($workmanId > 0) {
+            db_execute(
+                $conn,
+                "UPDATE workmen
+                 SET training_status = 'scheduled',
+                     safety_training_status = 'TRAINING_SCHEDULED'
+                 WHERE id = ?",
+                'i',
+                [$workmanId]
+            );
+        }
+    }
 
-    safetySessionNotifyContractors($conn, $sessionId, "Safety training schedule updated: " . date('d M Y', strtotime($date)) . " at $time, venue: $location.");
+    // Require contractor reconfirmation after a date/time/venue change.
+    db_execute($conn, "DELETE FROM training_session_workers WHERE session_id = ?", 'i', [$sessionId]);
+    if (safetySessionColumnExists($conn, 'training_schedule', 'enrolled_count')) {
+        db_execute($conn, "UPDATE training_schedule SET enrolled_count = 0 WHERE id = ?", 'i', [$sessionId]);
+    }
+
+    safetySessionNotifyContractors($conn, $sessionId, "Safety training schedule updated: " . date('d M Y', strtotime($date)) . " at " . substr($time, 0, 5) . ", venue: $location.");
     mysqli_commit($conn);
-    safetySessionJson(['success' => true, 'message' => 'Training schedule updated and contractors notified.']);
+    safetySessionJson(['success' => true, 'message' => 'Training session rescheduled. Contractors must confirm the updated schedule.']);
 } catch (Throwable $e) {
     mysqli_rollback($conn);
     safetySessionJson(['success' => false, 'message' => $e->getMessage()], 500);

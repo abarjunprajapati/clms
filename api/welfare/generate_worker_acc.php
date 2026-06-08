@@ -21,6 +21,24 @@ function sendJson($data) {
     exit;
 }
 
+function generateEightDigitAcc($conn, $seedId) {
+    $candidate = str_pad((string)max(1, (int)$seedId), 8, '0', STR_PAD_LEFT);
+    $exists = db_single($conn, "SELECT id FROM workmen WHERE (acc_number = ? OR acc_card_number = ?) LIMIT 1", 'ss', [$candidate, $candidate]);
+    if (!$exists) {
+        return $candidate;
+    }
+
+    for ($i = 0; $i < 25; $i++) {
+        $candidate = str_pad((string)random_int(1, 99999999), 8, '0', STR_PAD_LEFT);
+        $exists = db_single($conn, "SELECT id FROM workmen WHERE (acc_number = ? OR acc_card_number = ?) LIMIT 1", 'ss', [$candidate, $candidate]);
+        if (!$exists) {
+            return $candidate;
+        }
+    }
+
+    throw new Exception('Unable to generate unique 8-digit ACC number.');
+}
+
 if (!$workmanId) {
     sendJson(['success' => false, 'message' => 'Workman ID required']);
 }
@@ -47,7 +65,7 @@ try {
     // Generate ACC Number if not already present
     $acc = $row['acc_number'];
     if (empty($acc)) {
-        $acc = 'ACC-' . date('Y') . '-' . str_pad((string)$row['id'], 6, '0', STR_PAD_LEFT);
+        $acc = generateEightDigitAcc($conn, $row['id']);
     }
     $accSql = mysqli_real_escape_string($conn, $acc);
     

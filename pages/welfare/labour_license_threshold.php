@@ -28,7 +28,7 @@ function renderContent() {
     <span>Current Active Threshold</span>
     <strong><?= (int)$currentThreshold ?> workmen</strong>
   </div>
-  <div class="threshold-note">Labour Licence becomes mandatory when proposed/approved workmen count is greater than this active threshold.</div>
+  <div class="threshold-note">Labour Licence becomes mandatory when proposed/approved workmen count is equal to or greater than this active threshold.</div>
 </div>
 
 <div class="card glass threshold-form-panel" id="thresholdFormPanel" style="display:none;">

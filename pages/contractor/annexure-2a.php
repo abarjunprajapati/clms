@@ -637,7 +637,7 @@ function renderContent() {
                 <div class="registration-card" id="section7Card">
                     <div class="registration-section-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
                         <span>9. Labour License Details</span>
-                        <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &gt; <?= $licence_threshold ?>)</span>
+                        <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &gt;= <?= $licence_threshold ?>)</span>
                     </div>
                     <div class="d-flex justify-content-end mb-3"><button type="button" class="btn btn-sm btn-reg-draft" onclick="addLicenseRow()" <?= $limited_edit_disabled_attr ?>>Add Row</button></div>
                     <div class="table-responsive">
@@ -835,7 +835,7 @@ function renderContent() {
                         <div class="d-flex align-items-center gap-3">
                             <h5 class="mb-0 fw-bold" style="color: #334155; font-size: 1.1rem;">7. Labour Licence Certificate</h5>
                             <span id="licenceMandatoryBadge" class="badge" style="font-size:11px; display:none; background:#fef3c7; color:#92400e; border:1px solid #fcd34d; padding:4px 10px; border-radius:20px;">
-                                <i class="fas fa-exclamation-circle me-1"></i> Mandatory (Workers &gt; <?= $licence_threshold ?>)
+                                <i class="fas fa-exclamation-circle me-1"></i> Mandatory (Workers &gt;= <?= $licence_threshold ?>)
                             </span>
                         </div>
                         <button type="button" class="btn btn-sm rounded-pill fw-bold" style="background-color: #f1f5f9; color: #3b82f6; border: 1px solid #cbd5e1; padding: 6px 16px; transition: all 0.2s;" onclick="addLicenseRow()" onmouseover="this.style.backgroundColor='#e2e8f0'" onmouseout="this.style.backgroundColor='#f1f5f9'">
@@ -929,8 +929,17 @@ function renderContent() {
     const ANNEXURE_IS_READONLY = <?= $is_readonly ? 'true' : 'false' ?>;
     const ANNEXURE2A_LIMITED_EDIT = <?= $is_limited_update_mode ? 'true' : 'false' ?>;
 
+    function showAnnexure2AFeedback(message, type = 'info', title = '') {
+        if (typeof window.notifyUser === 'function') {
+            return window.notifyUser(message, type, title);
+        }
+        alert((title ? title + ': ' : '') + message);
+        return Promise.resolve();
+    }
+
     function showTab(id) {
         const tabEl = document.querySelector(`a[href="#${id}"]`);
+        if (!tabEl) return;
         const tab = new bootstrap.Tab(tabEl);
         tab.show();
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -942,8 +951,8 @@ function renderContent() {
         const warning = document.getElementById('esi-ec-warning');
         const invalid = esi === 'NO' && ecp !== 'YES';
         if (warning) warning.classList.toggle('d-none', !invalid);
-        if (invalid && showPopup && typeof window.notifyUser === 'function') {
-            window.notifyUser('Either ESI or EC Policy is mandatory', 'warning', 'Either ESI or EC Policy is mandatory');
+        if (invalid && showPopup) {
+            showAnnexure2AFeedback('Either ESI or EC Policy is mandatory', 'warning', 'Either ESI or EC Policy is mandatory');
         }
         return !invalid;
     }
@@ -1272,7 +1281,7 @@ function renderContent() {
         e.preventDefault();
 
         if (ANNEXURE_IS_READONLY && !ANNEXURE2A_LIMITED_EDIT) {
-            window.notifyUser('This registration is locked while it is pending Welfare action.', 'warning', 'Locked');
+            showAnnexure2AFeedback('This registration is locked while it is pending Welfare action.', 'warning', 'Locked');
             return;
         }
         
@@ -1284,20 +1293,25 @@ function renderContent() {
         if ((!ANNEXURE2A_LIMITED_EDIT && !form.checkValidity()) || !isDateValid || !isWorkerCatValid || !isEPFESIValid) {
             e.stopPropagation();
             form.classList.add('was-validated');
-            if (form.querySelector('#registrationDetails .form-control:invalid') || !isDateValid || !isWorkerCatValid || !isEPFESIValid) {
+            const invalidField = form.querySelector('input:invalid, select:invalid, textarea:invalid');
+            if (form.querySelector('#registrationDetails input:invalid, #registrationDetails select:invalid, #registrationDetails textarea:invalid') || !isDateValid || !isWorkerCatValid || !isEPFESIValid) {
                 showTab('registrationDetails');
             } else {
                 showTab('basicDetails');
             }
+            setTimeout(() => invalidField?.focus({ preventScroll: false }), 250);
+            showAnnexure2AFeedback('Please complete the highlighted mandatory fields before submitting.', 'warning', 'Validation required');
             return;
         }
 
         syncLicenseIssuedFields();
         if (!ANNEXURE2A_LIMITED_EDIT) collectData();
-        const btn = document.getElementById('submitBtn');
-        const originalText = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> PROCESSING...';
+        const btn = e.submitter || form.querySelector('.btn-reg-submit[type="submit"]') || document.getElementById('submitBtn');
+        const originalText = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> PROCESSING...';
+        }
         
         const formData = new FormData(form);
         formData.append('action', ANNEXURE2A_LIMITED_EDIT ? 'resubmit' : 'submit');
@@ -1312,23 +1326,27 @@ function renderContent() {
                 throw new Error(raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || 'Invalid server response');
             }
             if (res.success) {
-                await window.notifyUser('Your application is now under Welfare review.', 'success', 'Registration submitted successfully');
+                await showAnnexure2AFeedback('Your application is now under Welfare review.', 'success', 'Registration submitted successfully');
                 window.location.href = 'dashboard.php';
             } else {
-                await window.notifyUser(res.message || res.error || 'Error submitting registration', 'error', 'Submission failed');
+                await showAnnexure2AFeedback(res.message || res.error || 'Error submitting registration', 'error', 'Submission failed');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            }
+        } catch (err) {
+            await showAnnexure2AFeedback(err.message || 'Please try again.', 'error', 'Submit failed');
+            if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = originalText;
             }
-        } catch (err) {
-            await window.notifyUser(err.message || 'Please try again.', 'error', 'Submit failed');
-            btn.disabled = false;
-            btn.innerHTML = originalText;
         }
     });
 
     async function saveDraft() {
         if (ANNEXURE_IS_READONLY) {
-            window.notifyUser('This registration is locked while it is pending Welfare action.', 'warning', 'Locked');
+            showAnnexure2AFeedback('This registration is locked while it is pending Welfare action.', 'warning', 'Locked');
             return;
         }
         syncLicenseIssuedFields();
@@ -1350,9 +1368,9 @@ function renderContent() {
             } catch (parseErr) {
                 throw new Error(raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || 'Invalid server response');
             }
-            await window.notifyUser(res.message || res.error || 'Draft saved successfully.', res.success ? 'success' : 'error', res.success ? 'Draft saved' : 'Draft save failed');
+            await showAnnexure2AFeedback(res.message || res.error || 'Draft saved successfully.', res.success ? 'success' : 'error', res.success ? 'Draft saved' : 'Draft save failed');
         } catch (err) {
-            await window.notifyUser(err.message || 'Please try again.', 'error', 'Error saving draft');
+            await showAnnexure2AFeedback(err.message || 'Please try again.', 'error', 'Error saving draft');
         } finally {
             if (draftBtn) {
                 draftBtn.disabled = false;
@@ -1365,7 +1383,7 @@ function renderContent() {
 
     function toggleLicenceMandatory() {
         const workers = parseInt(document.querySelector('[name="workers_proposed_to_be_engaged"]')?.value || '0', 10) || 0;
-        const mandatory = workers > LICENCE_THRESHOLD;
+        const mandatory = workers >= LICENCE_THRESHOLD;
         const badge = document.getElementById('licenceMandatoryBadge');
         const card = document.getElementById('section7Card');
         const licInputs = document.querySelectorAll('#licenseTableBody input[type="text"], #licenseTableBody input[type="date"]');

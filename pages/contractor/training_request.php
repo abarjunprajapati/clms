@@ -5,6 +5,7 @@ include '../../include/config.php';
 include '../../include/customer_portal_context.php';
 include '../../include/layout.php';
 require_once '../../include/payment_flow.php';
+require_once '../../include/training_type_master.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -28,6 +29,7 @@ function contractorTrainingColumnExists($conn, $table, $column) {
 function renderContent() {
     global $conn, $user_id;
     clms_ensure_payment_flow($conn);
+    $trainingTypes = clms_get_training_type_rows($conn, true);
 
     $contractor = db_single($conn, "SELECT id, contractor_name FROM contractors WHERE user_id = ?", 'i', [$user_id]);
     $c_id = $contractor['id'] ?? null;
@@ -100,7 +102,7 @@ function renderContent() {
 
     // All training requests for this contractor with full details
     $my_requests = $c_id ? db_fetch_all($conn,
-        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade,
+        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade, w.temp_id AS worker_temp_id,
                 $workerTrainingValidExpr AS training_valid_till,
                 COALESCE(w.execution_training_status, 'pending') AS execution_training_status,
                 COALESCE(w.execution_training_reviewed_by, 0) AS execution_training_reviewed_by,
@@ -233,14 +235,9 @@ function renderContent() {
               <label class="form-label required">Training Type</label>
               <select class="form-control" name="training_type" required>
                 <option value="">Select Training Type</option>
-                <option value="Safety Induction">Safety Induction (Mandatory)</option>
-                <option value="Fire Safety">Fire Safety Training</option>
-                <option value="First Aid">First Aid Training</option>
-                <option value="Permit to Work">Permit to Work (PTW)</option>
-                <option value="Working at Height">Working at Height</option>
-                <option value="Electrical Safety">Electrical Safety</option>
-                <option value="Chemical Handling">Chemical Handling</option>
-                <option value="PPE Usage">PPE Usage Training</option>
+                <?php foreach ($trainingTypes as $type): ?>
+                <option value="<?= htmlspecialchars($type['type_name']) ?>"><?= htmlspecialchars($type['type_name']) ?></option>
+                <?php endforeach; ?>
               </select>
             </div>
 
@@ -341,7 +338,8 @@ function renderContent() {
             <tr style="<?= $st === 'scheduled' ? 'background:rgba(99,102,241,0.06);' : '' ?>">
               <td>
                 <div style="font-weight:600;"><?= htmlspecialchars($r['worker_name'] ?? '—') ?></div>
-                <div style="font-size:11px;color:var(--text-muted);"><?= htmlspecialchars($r['worker_trade'] ?? '') ?></div>
+                <div style="font-size:11px;color:var(--text-muted);"><?= htmlspecialchars($r['worker_trade'] ?? '') ?><?= !empty($r['worker_temp_id']) ? ' | ' . htmlspecialchars($r['worker_temp_id']) : '' ?></div>
+                <div style="font-size:10px;color:var(--text-muted);">Req #<?= (int)$r['id'] ?></div>
               </td>
               <td><?= htmlspecialchars($r['training_type'] ?? '—') ?></td>
               <td>
@@ -352,11 +350,15 @@ function renderContent() {
               </td>
               <td>
                 <?php if ($r['scheduled_date']): ?>
-                  <div style="font-weight:600;"><?= date('d M Y', strtotime($r['scheduled_date'])) ?></div>
-                  <div style="font-size:11px;">
+                  <div style="font-weight:700;color:var(--primary);"><?= htmlspecialchars($r['batch_number'] ?: 'Batch Pending') ?></div>
+                  <div style="font-size:11px;margin-top:2px;"><strong><?= date('d M Y', strtotime($r['scheduled_date'])) ?></strong><?= !empty($r['scheduled_time']) ? ' | ' . htmlspecialchars($r['scheduled_time']) : '' ?></div>
+                  <div style="font-size:11px;margin-top:2px;">
                     <i class="fas <?= $r['scheduled_shift'] === 'morning' ? 'fa-sun' : 'fa-moon' ?>" style="color:<?= $r['scheduled_shift'] === 'morning' ? '#f59e0b' : '#818cf8' ?>;"></i>
                     <?= ucfirst($r['scheduled_shift']) ?> • <?= htmlspecialchars($r['scheduled_venue']) ?>
                   </div>
+                  <?php if (!empty($r['instructor'])): ?>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:2px;"><i class="fas fa-user-tie"></i> <?= htmlspecialchars($r['instructor']) ?></div>
+                  <?php endif; ?>
                   <?php if ($r['safety_remarks']): ?>
                   <div style="font-size:11px; color:var(--text-muted); margin-top:3px;"><i class="fas fa-comment-alt"></i> <?= htmlspecialchars($r['safety_remarks']) ?></div>
                   <?php endif; ?>
@@ -402,10 +404,15 @@ function renderContent() {
                 <button class="btn btn-sm btn-primary" onclick='openConfirmModal(<?= json_encode([
                   "id" => $r['id'],
                   "worker" => $r['worker_name'],
+                  "trade" => $r['worker_trade'] ?? '',
+                  "temp_id" => $r['worker_temp_id'] ?? '',
+                  "training_type" => $r['training_type'] ?? '',
+                  "batch_number" => $r['batch_number'] ?? '',
                   "date" => date('d M Y', strtotime($r['scheduled_date'])),
                   "shift" => $r['scheduled_shift'],
                   "venue" => $r['scheduled_venue'],
                   "time" => $r['scheduled_time'] ?? '',
+                  "instructor" => $r['instructor'] ?? '',
                   "remarks" => $r['safety_remarks'] ?? ''
                 ]) ?>)'>
                   <i class="fas fa-check"></i> Confirm
@@ -554,6 +561,8 @@ function renderContent() {
     </style>
 
     <script>
+    const contractorTrainingTypes = <?= json_encode(array_values(array_map(function($row) { return $row['type_name']; }, $trainingTypes)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+
     function showToast(msg, type='success') {
       let t = document.createElement('div');
       t.className = 'toast-msg toast-' + type;
@@ -629,10 +638,10 @@ function renderContent() {
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             workman_ids: [workmanId],
-            training_type: 'Safety Induction',
+            training_type: contractorTrainingTypes[0] || 'Safety Induction',
             preferred_shift: 'morning',
             preferred_date: '',
-            remarks: 'Re-training requested after failed Safety Induction.'
+            remarks: 'Re-training requested after failed training.'
           })
         });
         const result = await res.json();
@@ -648,18 +657,27 @@ function renderContent() {
     }
 
     // Confirm training modal
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+      }[ch]));
+    }
+
     function openConfirmModal(data) {
       document.getElementById('confirmRequestId').value = data.id;
       document.getElementById('contractorRemarks').value = '';
       const shiftLabel = data.shift === 'morning' ? '☀️ Morning (8 AM – 12 PM)' : '🌙 Evening (2 PM – 6 PM)';
       document.getElementById('scheduleInfoBox').innerHTML = `
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-          <div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Worker</div><div style="font-weight:600;">${data.worker}</div></div>
-          <div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Date</div><div style="font-weight:600;">${data.date}</div></div>
+          <div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Worker</div><div style="font-weight:600;">${escapeHtml(data.worker)}</div><small>${escapeHtml([data.trade, data.temp_id].filter(Boolean).join(' | '))}</small></div>
+          <div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Training Type</div><div style="font-weight:600;">${escapeHtml(data.training_type || '—')}</div></div>
+          <div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Batch Number</div><div style="font-weight:600;">${escapeHtml(data.batch_number || '—')}</div></div>
+          <div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Date</div><div style="font-weight:600;">${escapeHtml(data.date)}</div></div>
           <div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Shift</div><div style="font-weight:600;">${shiftLabel}</div></div>
-          <div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Venue</div><div style="font-weight:600;">${data.venue}</div></div>
-          ${data.time ? `<div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Time</div><div style="font-weight:600;">${data.time}</div></div>` : ''}
-          ${data.remarks ? `<div style="grid-column:span 2;"><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Safety Remarks</div><div style="font-weight:500; color:var(--text-muted);">${data.remarks}</div></div>` : ''}
+          <div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Venue</div><div style="font-weight:600;">${escapeHtml(data.venue)}</div></div>
+          ${data.time ? `<div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Time</div><div style="font-weight:600;">${escapeHtml(data.time)}</div></div>` : ''}
+          ${data.instructor ? `<div><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Instructor</div><div style="font-weight:600;">${escapeHtml(data.instructor)}</div></div>` : ''}
+          ${data.remarks ? `<div style="grid-column:span 2;"><div style="font-size:11px; font-weight:700; opacity:.6; text-transform:uppercase;">Safety Remarks</div><div style="font-weight:500; color:var(--text-muted);">${escapeHtml(data.remarks)}</div></div>` : ''}
         </div>
       `;
       document.getElementById('confirmModal').classList.remove('hidden');

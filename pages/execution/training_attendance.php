@@ -4,6 +4,7 @@ checkAuth(['execution_officer', 'execution', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/execution_context.php';
 include __DIR__ . '/../../include/training_flow.php';
+include __DIR__ . '/../../include/payment_flow.php';
 include __DIR__ . '/../../include/layout.php';
 
 $role = $_SESSION['role'];
@@ -45,20 +46,9 @@ function executionTrainingDocUrl($path) {
 function renderContent() {
     global $conn, $officerId, $userId;
     clms_training_ensure_schema($conn);
+    clms_ensure_payment_flow($conn);
     $ctx = executionTrainingDeskContext($conn, $officerId, $userId);
 
-    $autoRows = db_fetch_all($conn, "
-        SELECT w.id
-        FROM workmen w
-        WHERE COALESCE(w.training_approval_doc, '') <> ''
-          AND COALESCE(w.contractor_id, 0) > 0
-          AND COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo', 'pending')
-          AND {$ctx['where']}
-        LIMIT 100
-    ", $ctx['types'], $ctx['params']);
-    foreach ($autoRows as $row) {
-        clms_training_auto_approve_attached_document($conn, (int)$row['id'], (int)$officerId);
-    }
     clms_training_seed_approved_queue($conn);
 
     $rows = db_fetch_all($conn, "
@@ -68,10 +58,14 @@ function renderContent() {
                w.executing_officer_code, w.executing_officer_name, c.contractor_name
         FROM workmen w
         LEFT JOIN contractors c ON c.id = w.contractor_id
-        WHERE (
-            COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending')
-            OR (COALESCE(w.training_approval_doc, '') <> '' AND COALESCE(w.execution_training_status, '') = 'approved')
-        )
+        WHERE COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending','approved')
+          AND EXISTS (
+              SELECT 1
+              FROM training_payment_request_workers pw
+              JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+              WHERE pw.workman_id = w.id
+                AND pr.status = 'paid'
+          )
           AND {$ctx['where']}
         ORDER BY COALESCE(w.execution_training_reviewed_at, w.created_at) DESC
         LIMIT 100
@@ -143,7 +137,8 @@ function renderContent() {
                 <td>
                   <?php if ($hasDoc): ?>
                     <a class="btn btn-sm btn-outline" target="_blank" href="<?= htmlspecialchars($docUrl) ?>"><i class="fas fa-eye"></i> View</a>
-                  <?php else: ?>
+                  <?php endif; ?>
+                  <?php if (!$approved): ?>
                     <button class="btn btn-sm btn-success" onclick="reviewTraining(<?= (int)$r['id'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>
                     <button class="btn btn-sm btn-danger" onclick="reviewTraining(<?= (int)$r['id'] ?>, 'rejected')"><i class="fas fa-times"></i> Reject</button>
                   <?php endif; ?>

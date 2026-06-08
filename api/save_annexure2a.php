@@ -503,8 +503,8 @@ if ($is_final_submit) {
                 annexure2a_json_response(['success' => false, 'message' => 'Labour License Expiry Date must be later than Issue Date.'], 400);
             }
         }
-        if ($workers_proposed_to_be_engaged > $labour_license_threshold && (empty($license_no) || empty($license_file_path))) {
-            annexure2a_json_response(['success' => false, 'message' => "Labour License is mandatory when proposed workmen are more than {$labour_license_threshold}."], 400);
+        if ($workers_proposed_to_be_engaged >= $labour_license_threshold && (empty($license_no) || empty($license_file_path))) {
+            annexure2a_json_response(['success' => false, 'message' => "Labour License is mandatory when proposed workmen are {$labour_license_threshold} or more."], 400);
         }
         goto annexure2a_validation_complete;
     }
@@ -551,8 +551,8 @@ if ($is_final_submit) {
             annexure2a_json_response(['success' => false, 'message' => 'Labour License Expiry Date must be later than Issue Date.'], 400);
         }
     }
-    if ($workers_proposed_to_be_engaged > $labour_license_threshold && (empty($license_no) || empty($license_file_path))) {
-        annexure2a_json_response(['success' => false, 'message' => "Labour License is mandatory when proposed workmen are more than {$labour_license_threshold}."], 400);
+    if ($workers_proposed_to_be_engaged >= $labour_license_threshold && (empty($license_no) || empty($license_file_path))) {
+        annexure2a_json_response(['success' => false, 'message' => "Labour License is mandatory when proposed workmen are {$labour_license_threshold} or more."], 400);
     }
 
     if (empty($contact_person)) {

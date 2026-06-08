@@ -43,6 +43,7 @@ function safety_training_page_ensure_schema($conn) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
     foreach ([
+        'training_type' => "VARCHAR(100) DEFAULT 'Safety Induction'",
         'scheduled_date' => 'DATE NULL',
         'scheduled_shift' => 'VARCHAR(20) NULL',
         'scheduled_venue' => 'VARCHAR(300) NULL',
@@ -62,6 +63,7 @@ function safety_training_page_ensure_schema($conn) {
         safety_training_page_ensure_column($conn, 'training_requests', $column, $definition);
     }
     @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
 
     if (safety_training_page_table_exists($conn, 'workmen')) {
         safety_training_page_ensure_column($conn, 'workmen', 'safety_training_status', "VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
@@ -82,7 +84,7 @@ function safety_training_page_ensure_schema($conn) {
         enrolled_count INT DEFAULT 0,
         trainer_name VARCHAR(100) NULL,
         batch_number VARCHAR(50) NULL,
-        training_type VARCHAR(50) DEFAULT 'induction',
+        training_type VARCHAR(100) DEFAULT 'Safety Induction',
         session_status VARCHAR(50) DEFAULT 'open',
         created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id)
@@ -757,17 +759,113 @@ function renderContent() {
     }
 
 
-    function openScheduleModal(r) {
-        document.getElementById('scheduleReqId').value = r.request_id || r.id || '';
-        document.getElementById('scheduleWorkerInfo').innerHTML = `
-           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-             <div><small>WORKER</small><br><b>${r.worker_name}</b> (Req #${r.id || 'N/A'})</div>
-             <div><small>TRADE</small><br><b>${r.trade}</b></div>
-             <div><small>CONTRACTOR</small><br><b>${r.contractor_name}</b></div>
-             <div><small>PREFERRED</small><br><b>${r.preferred_display || 'Flexible'}</b></div>
-           </div>
+    function scheduleEscape(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        }[ch]));
+    }
+
+    async function openScheduleModal(r) {
+        const venues = Array.isArray(window.safetyTrainingVenues) ? window.safetyTrainingVenues : [];
+        const trainingTypes = Array.isArray(window.safetyTrainingTypes) ? window.safetyTrainingTypes : [];
+        if (!venues.length) {
+            await safetyScheduleAlert('Venue Master Empty', 'Please add an active Training Hall / Venue from Welfare master first.', 'warning');
+            return;
+        }
+        if (!trainingTypes.length) {
+            await safetyScheduleAlert('Training Type Master Empty', 'Please add an active Training Type from Welfare master first.', 'warning');
+            return;
+        }
+
+        const today = new Date().toISOString().slice(0, 10);
+        const venueOptions = venues.map(v => `<option value="${scheduleEscape(v)}">${scheduleEscape(v)}</option>`).join('');
+        const currentType = String(r.training_type || 'Safety Induction');
+        const typeOptions = trainingTypes.map(t => `<option value="${scheduleEscape(t)}" ${t === currentType ? 'selected' : ''}>${scheduleEscape(t)}</option>`).join('');
+        const html = `
+          <div class="schedule-swal-html">
+            <div class="schedule-worker-box">
+              <div><small>Worker</small><b>${scheduleEscape(r.worker_name)} (Req #${scheduleEscape(r.request_id || r.id || 'N/A')})</b></div>
+              <div><small>Trade</small><b>${scheduleEscape(r.trade || '-')}</b></div>
+              <div><small>Contractor</small><b>${scheduleEscape(r.contractor_name || '-')}</b></div>
+              <div><small>Preferred</small><b>${scheduleEscape(r.preferred_display || 'Flexible')}</b></div>
+            </div>
+            <form id="swalScheduleForm">
+              <input type="hidden" name="request_id" value="${scheduleEscape(r.request_id || r.id || '')}">
+              <div class="schedule-form-grid">
+                <div class="schedule-form-group">
+                  <label class="required">Training Type</label>
+                  <select name="training_type" required>
+                    <option value="">Select training type</option>
+                    ${typeOptions}
+                  </select>
+                </div>
+                <div class="schedule-form-group">
+                  <label class="required">Training Date</label>
+                  <input type="date" name="scheduled_date" min="${today}" required>
+                </div>
+                <div class="schedule-form-group">
+                  <label class="required">Training Hall / Venue</label>
+                  <select name="scheduled_venue" required>
+                    <option value="">Select venue</option>
+                    ${venueOptions}
+                  </select>
+                </div>
+                <div class="schedule-form-group">
+                  <label class="required">Batch Number</label>
+                  <input type="text" name="batch_number" placeholder="e.g. BATCH-2026-05" required>
+                </div>
+                <div class="schedule-form-group">
+                  <label>Assigned Instructor</label>
+                  <input type="text" name="instructor" placeholder="Optional">
+                </div>
+              </div>
+              <div class="schedule-form-group">
+                <label class="required">Select Session Slot</label>
+                <div class="schedule-slot-grid">
+                  <label class="schedule-slot"><input type="radio" name="scheduled_shift" value="morning" checked required><span><b>Morning Batch</b><br><small>09:00 AM - 01:00 PM</small></span></label>
+                  <label class="schedule-slot"><input type="radio" name="scheduled_shift" value="evening" required><span><b>Evening Batch</b><br><small>02:00 PM - 06:00 PM</small></span></label>
+                </div>
+              </div>
+              <div class="schedule-form-group">
+                <label>Invitation Remarks</label>
+                <textarea name="safety_remarks" rows="3" placeholder="Special instructions for the batch..."></textarea>
+              </div>
+            </form>
+          </div>
         `;
-        document.getElementById('scheduleModal').classList.remove('hidden');
+
+        if (!window.Swal || !Swal.fire) {
+            await safetyScheduleAlert('SweetAlert Missing', 'SweetAlert is not loaded on this page.', 'error');
+            return;
+        }
+
+        const result = await Swal.fire({
+            title: 'Assign Training Batch',
+            html,
+            customClass: { popup: 'schedule-swal-popup' },
+            showCancelButton: true,
+            confirmButtonText: 'Send Training Invitation',
+            cancelButtonText: 'Cancel',
+            focusConfirm: false,
+            preConfirm: async () => {
+                const form = document.getElementById('swalScheduleForm');
+                if (!form.reportValidity()) return false;
+                const data = Object.fromEntries(new FormData(form).entries());
+                try {
+                    Swal.showLoading();
+                    return await submitSafetySchedule(data);
+                } catch (err) {
+                    Swal.showValidationMessage(err.message || 'Unable to schedule training.');
+                    return false;
+                }
+            },
+            allowOutsideClick: () => !Swal.isLoading()
+        });
+
+        if (result.isConfirmed) {
+            await safetyScheduleAlert('Training Scheduled', result.value?.message || 'Invitation sent to contractor.', 'success');
+            location.reload();
+        }
     }
     </script>
 

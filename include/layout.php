@@ -393,6 +393,8 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'nationality_master.php" class="sidebar-item"><i class="fas fa-globe"></i> Nationality Masters</a>';
             echo '<a href="'.$wb.'age_range_mapping.php" class="sidebar-item"><i class="fas fa-user-clock"></i> Age Range Mapping</a>';
             echo '<a href="'.$wb.'gate_pass_document_master.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Gate Pass Document Master</a>';
+            echo '<a href="'.$wb.'training_type_master.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Training Type Master</a>';
+            echo '<a href="'.$wb.'training_venue_master.php" class="sidebar-item"><i class="fas fa-location-dot"></i> Training Venue Master</a>';
             echo '<a href="'.$wb.'payment_gateway.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment Gateway / QR</a>';
             echo '<a href="'.$wb.'temp_pass_control.php" class="sidebar-item"><i class="fas fa-clock"></i> Temp Pass Control</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Monitoring & Oversight</div>';

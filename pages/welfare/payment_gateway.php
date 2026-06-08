@@ -11,6 +11,7 @@ $name = $_SESSION['name'] ?? 'Welfare Admin';
 function renderContent() {
     global $conn;
     clms_ensure_payment_flow($conn);
+    clms_release_all_paid_training_payments($conn, (int)($_SESSION['user_id'] ?? 0));
     $demo = clms_demo_payment_details($conn);
     $payments = db_fetch_all(
         $conn,

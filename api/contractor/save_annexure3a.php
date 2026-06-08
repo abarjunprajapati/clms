@@ -578,10 +578,10 @@ if (!empty($licenses)) {
 if ($is_final_submit && !empty($labour_license_issue_date) && !empty($labour_license_expiry_date) && strtotime($labour_license_expiry_date) <= strtotime($labour_license_issue_date)) {
     failJson('Labour License Expiry Date must be later than Issue Date.');
 }
-if ($is_final_submit && $workers_proposed_to_be_engaged > $labour_license_threshold) {
+if ($is_final_submit && $workers_proposed_to_be_engaged >= $labour_license_threshold) {
     $licenseFilePath = $licenses[0]['file_path'] ?? '';
     if (empty($labour_license_no) || empty($licenseFilePath)) {
-        failJson("Labour License is mandatory when proposed workmen are more than {$labour_license_threshold}.");
+        failJson("Labour License is mandatory when proposed workmen are {$labour_license_threshold} or more.");
     }
 }
 

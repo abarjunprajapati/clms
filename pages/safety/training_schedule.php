@@ -133,6 +133,21 @@ function renderContent() {
                   <a href="manage_session.php?id=<?= $sess['id'] ?>" class="btn btn-sm btn-outline">
                     <i class="fas fa-cog"></i> Manage
                   </a>
+                  <?php if($sessionStatus !== 'completed' && $sessionStatus !== 'cancelled'): ?>
+                    <button type="button" class="btn btn-sm btn-outline" onclick='openRescheduleSession(<?= json_encode([
+                        'id' => (int)$sess['id'],
+                        'date' => $sess['session_date'],
+                        'time' => substr((string)$sess['session_time'], 0, 5),
+                        'location' => $sess['location'],
+                        'trainer' => $sess['trainer_name'],
+                        'batch' => $sess['batch_number'] ?? '',
+                    ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                      <i class="fas fa-clock"></i> Reschedule
+                    </button>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="cancelSession(<?= (int)$sess['id'] ?>)">
+                      <i class="fas fa-ban"></i> Cancel
+                    </button>
+                  <?php endif; ?>
                 </td>
               </tr>
               <?php endforeach; if(empty($sessions)): ?>
@@ -149,6 +164,69 @@ function renderContent() {
     .progress-fill { height: 100%; background: var(--primary); }
     .btn-block { width: 100%; display: block; }
     </style>
+    <script>
+    async function postSessionAction(payload) {
+      const res = await fetch('../../api/safety/update_session.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || 'Unable to update session.');
+      return data;
+    }
+
+    async function cancelSession(id) {
+      const reason = prompt('Reason for cancelling this training session:');
+      if (reason === null) return;
+      if (!reason.trim()) {
+        alert('Cancellation reason is required.');
+        return;
+      }
+      if (!confirm('Cancel this session and return workers to scheduling queue?')) return;
+      try {
+        const data = await postSessionAction({ action: 'cancel', session_id: id, reason });
+        alert(data.message || 'Session cancelled.');
+        location.reload();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function openRescheduleSession(session) {
+      const date = prompt('New training date (YYYY-MM-DD):', session.date || '');
+      if (date === null) return;
+      const time = prompt('New training time (HH:MM):', session.time || '');
+      if (time === null) return;
+      const location = prompt('Training Hall / Venue:', session.location || '');
+      if (location === null) return;
+      const trainer = prompt('Instructor (optional):', session.trainer || '');
+      if (trainer === null) return;
+      const reason = prompt('Reason / remarks for reschedule:', 'Training schedule updated by Safety.');
+      if (reason === null) return;
+      if (!date.trim() || !time.trim() || !location.trim()) {
+        alert('Date, time and venue are required.');
+        return;
+      }
+      if (!confirm('Reschedule this session? Contractors will need to confirm again.')) return;
+      try {
+        const data = await postSessionAction({
+          action: 'reschedule',
+          session_id: session.id,
+          session_date: date.trim(),
+          session_time: time.trim(),
+          location: location.trim(),
+          trainer_name: trainer.trim(),
+          batch_number: session.batch || '',
+          reason: reason.trim()
+        });
+        alert(data.message || 'Session rescheduled.');
+        location.reload();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+    </script>
     <?php
 }
 

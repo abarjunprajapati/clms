@@ -5,6 +5,8 @@ ob_start();
 require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['safety_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/training_venue_master.php';
+require_once __DIR__ . '/../../include/training_type_master.php';
 header('Content-Type: application/json; charset=utf-8');
 
 function safety_schedule_json($payload, $statusCode = 200) {
@@ -42,6 +44,7 @@ if (!is_array($data)) {
     safety_schedule_json(['success' => false, 'error' => 'Invalid JSON input']);
 }
 $req_id        = (int)($data['request_id'] ?? 0);
+$training_type = trim((string)($data['training_type'] ?? ''));
 $scheduled_date  = $data['scheduled_date'] ?? '';
 $scheduled_shift = $data['scheduled_shift'] ?? '';
 $scheduled_venue = $data['scheduled_venue'] ?? '';
@@ -50,9 +53,10 @@ $safety_remarks  = $data['safety_remarks'] ?? '';
 $batch_number    = $data['batch_number'] ?? '';
 $instructor      = $data['instructor'] ?? '';
 
-if (!$req_id || !$scheduled_date || !$scheduled_shift || !$scheduled_venue) {
+if (!$req_id || !$training_type || !$scheduled_date || !$scheduled_shift || !$scheduled_venue) {
     $missing = [];
     if (!$req_id) $missing[] = 'request_id';
+    if (!$training_type) $missing[] = 'training_type';
     if (!$scheduled_date) $missing[] = 'scheduled_date';
     if (!$scheduled_shift) $missing[] = 'scheduled_shift';
     if (!$scheduled_venue) $missing[] = 'scheduled_venue';
@@ -62,6 +66,13 @@ if (!$req_id || !$scheduled_date || !$scheduled_shift || !$scheduled_venue) {
     safety_schedule_json(['success' => false, 'error' => 'Required fields missing: ' . implode(', ', $missing)]);
 }
 
+if (!clms_training_venue_is_active($conn, $scheduled_venue)) {
+    safety_schedule_json(['success' => false, 'error' => 'Please select an active Training Hall / Venue from Welfare master.']);
+}
+if (!clms_training_type_is_active($conn, $training_type)) {
+    safety_schedule_json(['success' => false, 'error' => 'Please select an active Training Type from Welfare master.']);
+}
+
 $safety_user_id = $_SESSION['user_id'] ?? 0;
 
 $conn->begin_transaction();
@@ -69,11 +80,11 @@ try {
     // 1. Update training request
     db_execute($conn,
         "UPDATE training_requests SET
-            scheduled_date=?, scheduled_shift=?, scheduled_venue=?, scheduled_time=?,
+            training_type=?, scheduled_date=?, scheduled_shift=?, scheduled_venue=?, scheduled_time=?,
             safety_remarks=?, batch_number=?, instructor=?, scheduled_by=?, status='scheduled', updated_at=NOW()
         WHERE id=?",
-        'sssssssii',
-        [$scheduled_date, $scheduled_shift, $scheduled_venue, $scheduled_time, $safety_remarks, $batch_number, $instructor, $safety_user_id, $req_id]
+        'ssssssssii',
+        [$training_type, $scheduled_date, $scheduled_shift, $scheduled_venue, $scheduled_time, $safety_remarks, $batch_number, $instructor, $safety_user_id, $req_id]
     );
 
     // 1b. Update workmen table status (PDF Synchronization)
@@ -89,14 +100,16 @@ try {
     // Normalize venue/instructor to prevent duplicates due to whitespace
     $scheduled_venue = trim($scheduled_venue);
     $instructor = trim($instructor);
+    $training_type = trim($training_type);
 
     $session = db_single($conn, 
         "SELECT id FROM training_schedule
          WHERE session_date = ?
            AND LOWER(TRIM(location)) = LOWER(TRIM(?))
            AND session_time = ?
+           AND LOWER(TRIM(training_type)) = LOWER(TRIM(?))
            AND LOWER(COALESCE(session_status, 'open')) <> 'cancelled'", 
-        'sss', [$scheduled_date, $scheduled_venue, $final_time]
+        'ssss', [$scheduled_date, $scheduled_venue, $final_time, $training_type]
     );
 
     if (!$session) {
@@ -108,14 +121,14 @@ try {
             'capacity' => 30,
             'trainer_name' => $instructor,
             'batch_number' => $batch_number,
-            'training_type' => 'induction',
+            'training_type' => $training_type,
             'session_status' => 'open',
             'created_at' => date('Y-m-d H:i:s'),
         ]);
     } else {
         $session_id = $session['id'];
         // Update existing session batch/instructor if changed
-        db_execute($conn, "UPDATE training_schedule SET batch_number = ?, trainer_name = ? WHERE id = ?", 'ssi', [$batch_number, $instructor, $session_id]);
+        db_execute($conn, "UPDATE training_schedule SET batch_number = ?, trainer_name = ?, training_type = ? WHERE id = ?", 'sssi', [$batch_number, $instructor, $training_type, $session_id]);
     }
 
     if (!$session_id) {
@@ -148,7 +161,7 @@ try {
     $req = db_single($conn, "SELECT tr.*, w.name as worker_name, c.user_id as contractor_user_id FROM training_requests tr JOIN workmen w ON tr.workman_id = w.id LEFT JOIN contractors c ON tr.contractor_id = c.id WHERE tr.id=?", 'i', [$req_id]);
     if ($req && $req['contractor_user_id'] && safety_schedule_table_exists($conn, 'notifications')) {
         $shift_label = $scheduled_shift === 'morning' ? 'Morning (8 AM – 12 PM)' : 'Evening (2 PM – 6 PM)';
-        $msg = "Training for {$req['worker_name']} has been scheduled on " . date('d M Y', strtotime($scheduled_date)) . " ({$shift_label}) at {$scheduled_venue}. Please confirm your attendance.";
+        $msg = "{$training_type} training for {$req['worker_name']} has been scheduled on " . date('d M Y', strtotime($scheduled_date)) . " ({$shift_label}) at {$scheduled_venue}. Please confirm your attendance.";
         try {
             db_execute($conn, "INSERT INTO notifications (user_id, message, type, is_read) VALUES (?,?,'training_scheduled',0)", 'is', [$req['contractor_user_id'], $msg]);
         } catch (Exception $ignored) {
@@ -202,7 +215,7 @@ function safety_schedule_ensure_schema($conn) {
         enrolled_count INT DEFAULT 0,
         trainer_name VARCHAR(100) NULL,
         batch_number VARCHAR(50) NULL,
-        training_type VARCHAR(50) DEFAULT 'induction',
+        training_type VARCHAR(100) DEFAULT 'Safety Induction',
         session_status VARCHAR(50) DEFAULT 'open',
         created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id)
@@ -220,6 +233,7 @@ function safety_schedule_ensure_schema($conn) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
     foreach ([
+        'training_type' => "VARCHAR(100) DEFAULT 'Safety Induction'",
         'scheduled_date' => 'DATE NULL',
         'scheduled_shift' => 'VARCHAR(20) NULL',
         'scheduled_venue' => 'VARCHAR(300) NULL',
@@ -244,7 +258,7 @@ function safety_schedule_ensure_schema($conn) {
         'enrolled_count' => 'INT DEFAULT 0',
         'trainer_name' => 'VARCHAR(100) NULL',
         'batch_number' => 'VARCHAR(50) NULL',
-        'training_type' => "VARCHAR(50) DEFAULT 'induction'",
+        'training_type' => "VARCHAR(100) DEFAULT 'Safety Induction'",
         'session_status' => "VARCHAR(50) DEFAULT 'open'",
         'created_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
     ] as $column => $definition) {
@@ -273,6 +287,9 @@ function safety_schedule_ensure_schema($conn) {
         safety_schedule_ensure_column($conn, 'workmen', 'safety_training_status', "VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
         safety_schedule_ensure_column($conn, 'workmen', 'training_status', "VARCHAR(50) DEFAULT 'pending'");
     }
+
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
+    @mysqli_query($conn, "ALTER TABLE training_schedule MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
 }
 
 function safety_schedule_filter_row($conn, $table, $row) {

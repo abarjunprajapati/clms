@@ -313,6 +313,25 @@ function clms_filter_workers_without_training_payment($conn, array $workerIds) {
     }));
 }
 
+function clms_paid_training_worker_ids($conn, array $workerIds) {
+    clms_ensure_payment_flow($conn);
+    $workerIds = array_values(array_unique(array_filter(array_map('intval', $workerIds))));
+    if (!$workerIds) return [];
+    $placeholders = implode(',', array_fill(0, count($workerIds), '?'));
+    $types = str_repeat('i', count($workerIds));
+    $rows = db_fetch_all(
+        $conn,
+        "SELECT DISTINCT pw.workman_id
+         FROM training_payment_request_workers pw
+         JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+         WHERE pw.workman_id IN ($placeholders)
+           AND pr.status = 'paid'",
+        $types,
+        $workerIds
+    );
+    return array_map(function($row) { return (int)$row['workman_id']; }, $rows);
+}
+
 function clms_get_contractor_user_for_payment($conn, $contractorId) {
     $contractor = db_single($conn, "SELECT id, user_id, email, contractor_name, vendor_name, application_no FROM contractors WHERE id = ? LIMIT 1", 'i', [(int)$contractorId]);
     if (!$contractor) return null;
@@ -329,11 +348,12 @@ function clms_create_training_payment_request($conn, $contractorId, array $worke
     clms_ensure_payment_flow($conn);
     $workerIds = array_values(array_unique(array_filter(array_map('intval', $workerIds))));
     if (!$contractorId || !$workerIds) return null;
-    $workerIds = clms_filter_workers_without_training_payment($conn, $workerIds);
-    if (!$workerIds) return null;
 
     $existing = clms_find_pending_training_payment($conn, $contractorId, $workerIds);
     if ($existing) return $existing;
+
+    $workerIds = clms_filter_workers_without_training_payment($conn, $workerIds);
+    if (!$workerIds) return null;
 
     $workerCount = count($workerIds);
     $fee = clms_training_fee_per_worker($conn);
@@ -454,6 +474,7 @@ function clms_mark_training_payment_paid($conn, $paymentRequestId, $gatewayPayme
         'i',
         [(int)$paymentRequestId]
     );
+    clms_release_workers_after_training_payment($conn, (int)$paymentRequestId, 0);
 }
 
 function clms_submit_demo_training_payment($conn, $paymentRequestId, $payerReference, $note = '') {
@@ -479,6 +500,18 @@ function clms_submit_demo_training_payment($conn, $paymentRequestId, $payerRefer
 
 function clms_verify_demo_training_payment($conn, $paymentRequestId, $approved, $remarks = '', $userId = 0) {
     clms_ensure_payment_flow($conn);
+    $request = clms_get_training_payment_request($conn, (int)$paymentRequestId);
+    if (!$request) {
+        throw new InvalidArgumentException('Payment request not found.');
+    }
+    $currentStatus = strtolower(trim((string)($request['status'] ?? '')));
+    if ($approved && $currentStatus === 'paid') {
+        clms_release_workers_after_training_payment($conn, (int)$paymentRequestId, (int)$userId);
+        return;
+    }
+    if (!$approved && !in_array($currentStatus, ['submitted', 'gateway_created', 'pending', 'link_sent'], true)) {
+        throw new InvalidArgumentException('This payment cannot be rejected in current status.');
+    }
     if ($approved) {
         db_execute(
             $conn,
@@ -504,6 +537,7 @@ function clms_verify_demo_training_payment($conn, $paymentRequestId, $approved, 
             'i',
             [(int)$paymentRequestId]
         );
+        clms_release_workers_after_training_payment($conn, (int)$paymentRequestId, (int)$userId);
         return;
     }
 
@@ -519,4 +553,113 @@ function clms_verify_demo_training_payment($conn, $paymentRequestId, $approved, 
         'isi',
         [(int)$userId, trim((string)$remarks), (int)$paymentRequestId]
     );
+    db_execute(
+        $conn,
+        "UPDATE workmen w
+         JOIN training_payment_request_workers pw ON pw.workman_id = w.id
+         SET w.execution_training_status = 'pending_payment',
+             w.execution_training_remarks = 'Payment rejected by Welfare. Waiting for corrected payment reference.',
+             w.updated_at = NOW()
+         WHERE pw.payment_request_id = ?",
+        'i',
+        [(int)$paymentRequestId]
+    );
+}
+
+function clms_release_workers_after_training_payment($conn, $paymentRequestId, $userId = 0) {
+    require_once __DIR__ . '/training_flow.php';
+    clms_training_ensure_schema($conn);
+
+    $workers = db_fetch_all(
+        $conn,
+        "SELECT w.id, w.contractor_id, w.training_approval_doc, w.executing_officer_id, w.execution_training_status,
+                COALESCE(w.execution_training_reviewed_by, 0) AS execution_training_reviewed_by
+         FROM workmen w
+         JOIN training_payment_request_workers pw ON pw.workman_id = w.id
+         JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+         WHERE pw.payment_request_id = ?
+           AND pr.status = 'paid'",
+        'i',
+        [(int)$paymentRequestId]
+    );
+
+    foreach ($workers as $worker) {
+        $workmanId = (int)$worker['id'];
+        $contractorId = (int)$worker['contractor_id'];
+        $hasAttachment = trim((string)($worker['training_approval_doc'] ?? '')) !== '';
+        $executionStatus = strtolower(trim((string)($worker['execution_training_status'] ?? '')));
+        $reviewedBy = (int)($worker['execution_training_reviewed_by'] ?? 0);
+        $autoReviewedBy = (int)($worker['executing_officer_id'] ?? 0);
+        if ($autoReviewedBy <= 0) {
+            $autoReviewedBy = (int)$userId;
+        }
+
+        if ($hasAttachment) {
+            if ($executionStatus !== 'approved' || $reviewedBy <= 0) {
+                db_execute(
+                    $conn,
+                    "UPDATE workmen
+                     SET execution_training_status = 'approved',
+                         execution_training_remarks = 'Payment verified by Welfare. Training approval attachment available, forwarded to Safety Training.',
+                         execution_training_reviewed_by = ?,
+                         execution_training_reviewed_at = NOW(),
+                         updated_at = NOW()
+                     WHERE id = ?",
+                    'ii',
+                    [$autoReviewedBy, $workmanId]
+                );
+            }
+            clms_training_ensure_request(
+                $conn,
+                $workmanId,
+                $contractorId,
+                (int)$userId,
+                'payment_verified_attachment',
+                'Payment verified by Welfare. Training approval attachment available, forwarded to Safety Training.'
+            );
+            continue;
+        }
+
+        if (!in_array($executionStatus, ['', 'pending', 'pending_payment', 'link_sent'], true)) {
+            continue;
+        }
+        db_execute(
+            $conn,
+            "UPDATE workmen
+             SET execution_training_status = 'pending_eo',
+                 execution_training_remarks = 'Payment verified by Welfare. Waiting for Executing Officer approval.',
+                 execution_training_reviewed_by = NULL,
+                 execution_training_reviewed_at = NULL,
+                 updated_at = NOW()
+             WHERE id = ?",
+            'i',
+            [$workmanId]
+        );
+    }
+}
+
+function clms_release_all_paid_training_payments($conn, $userId = 0) {
+    clms_ensure_payment_flow($conn);
+    $rows = db_fetch_all(
+        $conn,
+        "SELECT DISTINCT pr.id
+         FROM training_payment_requests pr
+         JOIN training_payment_request_workers pw ON pw.payment_request_id = pr.id
+         JOIN workmen w ON w.id = pw.workman_id
+         WHERE pr.status = 'paid'
+           AND (
+                COALESCE(w.execution_training_status, '') IN ('', 'pending', 'pending_payment', 'link_sent')
+                OR (
+                    COALESCE(w.training_approval_doc, '') <> ''
+                    AND (
+                        COALESCE(w.execution_training_status, '') <> 'approved'
+                        OR COALESCE(w.execution_training_reviewed_by, 0) = 0
+                    )
+                )
+           )
+         ORDER BY pr.id ASC"
+    );
+    foreach ($rows as $row) {
+        clms_release_workers_after_training_payment($conn, (int)$row['id'], (int)$userId);
+    }
 }

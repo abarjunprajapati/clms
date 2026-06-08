@@ -4,6 +4,7 @@ checkAuth(['welfare_admin', 'super_admin', 'welfare_user']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
 include __DIR__ . '/../../include/training_flow.php';
+include __DIR__ . '/../../include/payment_flow.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Welfare Admin';
@@ -90,7 +91,12 @@ function welfareTrainingDocUrl($path) {
 }
 
 function welfareTrainingSeedApprovedQueue($conn) {
-    if (!welfareTrainingTableExists($conn, 'workmen') || !welfareTrainingTableExists($conn, 'training_requests')) {
+    if (
+        !welfareTrainingTableExists($conn, 'workmen') ||
+        !welfareTrainingTableExists($conn, 'training_requests') ||
+        !welfareTrainingTableExists($conn, 'training_payment_requests') ||
+        !welfareTrainingTableExists($conn, 'training_payment_request_workers')
+    ) {
         return;
     }
 
@@ -114,6 +120,13 @@ function welfareTrainingSeedApprovedQueue($conn) {
         WHERE COALESCE(w.execution_training_status, '') = 'approved'
           AND COALESCE(w.execution_training_reviewed_by, 0) > 0
           AND COALESCE(w.contractor_id, 0) > 0
+          AND EXISTS (
+              SELECT 1
+              FROM training_payment_request_workers pw
+              JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+              WHERE pw.workman_id = w.id
+                AND pr.status = 'paid'
+          )
           AND LOWER(TRIM(COALESCE(w.training_status, 'pending'))) IN ('', 'pending', 'training_pending', 'training_failed', 'fail', 'failed')
           AND NOT EXISTS (
               SELECT 1
@@ -140,6 +153,13 @@ function welfareTrainingSeedApprovedQueue($conn) {
         WHERE LOWER(TRIM(COALESCE(tr.status, ''))) IN ('', 'pending')
           AND COALESCE(w.execution_training_status, '') = 'approved'
           AND COALESCE(w.execution_training_reviewed_by, 0) > 0
+          AND EXISTS (
+              SELECT 1
+              FROM training_payment_request_workers pw
+              JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+              WHERE pw.workman_id = w.id
+                AND pr.status = 'paid'
+          )
           AND tr.welfare_reviewed_at IS NULL
           AND LOWER(TRIM(COALESCE(w.training_status, 'pending'))) IN ('', 'pending', 'training_pending', 'training_failed', 'fail', 'failed')
           AND NOT EXISTS (
@@ -176,6 +196,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
 function renderContent() {
     global $conn;
     welfareTrainingEnsureSchema($conn);
+    clms_release_all_paid_training_payments($conn, (int)($_SESSION['user_id'] ?? 0));
     clms_training_seed_approved_queue($conn);
     welfareTrainingSeedApprovedQueue($conn);
 
