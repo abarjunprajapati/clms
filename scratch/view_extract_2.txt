@@ -1,0 +1,41 @@
+Created At: 2026-05-20T16:51:07Z
+Completed At: 2026-05-20T16:51:07Z
+File Path: `file:///c:/xampp/htdocs/clms/pages/welfare/approve_contractors.php`
+Total Lines: 577
+Total Bytes: 32838
+Showing lines 360 to 455
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+360:         const r = { ...c, ...(sel.contractor || {}) };
+361:         const v = (val) => (val && val !== 'null' && val !== 'N/A' && String(val).trim() !== '') ? String(val) : '<span style="font-style:italic;color:var(--text-muted);font-weight:normal;"> - </span>';
+362:         const fmtDate = (d) => { try { return d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : ' - '; } catch{ return d||' - '; } };
+363:         const badge = (val, yes='YES') => val === yes
+364:             ? `<span style="background:#d1fae5;color:#065f46;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;">${val}</span>`
+365:             : `<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;">${val||' - '}</span>`;
+366: 
+367:         let html = `<div class="form-container">`;
+368: 
+369:         // â”€â”€ SECTION 1: General â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+370:         html += `<div class="form-section-card">
+371:           <div class="form-section-header"><i class="fas fa-id-card"></i> 1. General Information</div>
+372:           <div class="form-grid">
+373:             <div class="form-field"><label
+<truncated 8491 bytes>
+tration_no)}</code></div></div>
+439:             <div class="form-field"><label>Labour Identification No (LIN)</label><div class="value-box"><code>${v(r.labour_identification_no)}</code></div></div>
+440:           </div>
+441:         </div>`;
+442: 
+443:         // â”€â”€ SECTION 6: Banking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+444:         html += `<div class="form-section-card">
+445:           <div class="form-section-header"><i class="fas fa-university"></i> 6. Banking Details</div>
+446:           <div class="form-grid">
+447:             <div class="form-field"><label>Bank Name</label><div class="value-box">${v(r.bank_name)}</div></div>
+448:             <div class="form-field"><label>Account Number</label><div class="value-box"><code>${v(r.bank_account)}</code></div></div>
+449:             <div class="form-field"><label>IFSC Code</label><div class="value-box"><code>${v(r.ifsc)}</code></div></div>
+450:           </div>
+451:         </div>`;
+452: 
+453:         // â”€â”€ SECTION 7: Remarks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+454:         if (r.remarks) {
+455:             html += `<div class="form-section-card">
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

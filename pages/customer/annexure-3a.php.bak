@@ -1,0 +1,407 @@
+<?php
+/**
+ * Customer Registration & Deployment Form
+ * This is the customer's OWN registration form
+ */
+
+require_once '../../include/auth.php';
+checkAuth(['customer', 'super_admin']);
+include '../../include/config.php';
+include '../../include/layout.php';
+
+$role = $_SESSION['role'];
+$name = $_SESSION['customer_name'] ?? $_SESSION['name'] ?? 'Customer';
+$customer_code = $_SESSION['customer_code'] ?? '';
+$user_id = $_SESSION['user_id'] ?? 0;
+
+if (empty($customer_code)) {
+    die('<div class="alert alert-danger m-5">Invalid Session. Please login as a customer.</div>');
+}
+
+// Handle form submission
+$message = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+    
+    if ($action === 'save') {
+        // Prepare data
+        $customer_id = db_scalar($conn, "SELECT id FROM sap_customer_master WHERE customer_code = ?", 's', [$customer_code]);
+        
+        $total_strength = (int)($_POST['total_deployed_strength'] ?? 0);
+        $skilled = (int)($_POST['skilled_workers'] ?? 0);
+        $semi_skilled = (int)($_POST['semi_skilled_workers'] ?? 0);
+        $unskilled = (int)($_POST['unskilled_workers'] ?? 0);
+        $helpers = (int)($_POST['helpers'] ?? 0);
+        
+        $insurance_policy = $_POST['insurance_policy_no'] ?? '';
+        $insurance_provider = $_POST['insurance_provider'] ?? '';
+        $insurance_from = $_POST['insurance_valid_from'] ?? null;
+        $insurance_to = $_POST['insurance_valid_to'] ?? null;
+        $ecp_covered = $_POST['ecp_covered'] ?? 'NO';
+        
+        $epf_code = $_POST['epf_code'] ?? '';
+        $epf_registered = $_POST['epf_registered'] ?? 'YES';
+        $epf_reason = $_POST['epf_non_registration_reason'] ?? '';
+        
+        $esi_code = $_POST['esi_code'] ?? '';
+        $esi_registered = $_POST['esi_registered'] ?? 'YES';
+        $esi_reason = $_POST['esi_non_registration_reason'] ?? '';
+        
+        $klwf_registered = $_POST['klwf_registered'] ?? 'YES';
+        $klwf_reason = $_POST['klwf_non_registration_reason'] ?? '';
+        
+        $training_cert = $_POST['safety_training_certificate'] ?? '';
+        $training_expiry = $_POST['training_expiry_date'] ?? null;
+        $gate_pass = $_POST['gate_pass_approved'] ?? 'NO';
+        
+        // Check if record exists
+        $existing = db_single($conn, "SELECT id FROM customer_annexure3a WHERE customer_code = ?", 's', [$customer_code]);
+        
+        if ($existing) {
+            // Update
+            $sql = "UPDATE customer_annexure3a SET 
+                total_deployed_strength = ?,
+                skilled_workers = ?,
+                semi_skilled_workers = ?,
+                unskilled_workers = ?,
+                helpers = ?,
+                insurance_policy_no = ?,
+                insurance_provider = ?,
+                insurance_valid_from = ?,
+                insurance_valid_to = ?,
+                ecp_covered = ?,
+                epf_code = ?,
+                epf_registered = ?,
+                epf_non_registration_reason = ?,
+                esi_code = ?,
+                esi_registered = ?,
+                esi_non_registration_reason = ?,
+                klwf_registered = ?,
+                klwf_non_registration_reason = ?,
+                safety_training_certificate = ?,
+                training_expiry_date = ?,
+                gate_pass_approved = ?,
+                updated_by = ?,
+                status = 'draft'
+                WHERE customer_code = ?";
+            
+            db_execute($conn, $sql, 'iiiiisssssssssssssssi', [
+                $total_strength, $skilled, $semi_skilled, $unskilled, $helpers,
+                $insurance_policy, $insurance_provider, $insurance_from, $insurance_to,
+                $ecp_covered,
+                $epf_code, $epf_registered, $epf_reason,
+                $esi_code, $esi_registered, $esi_reason,
+                $klwf_registered, $klwf_reason,
+                $training_cert, $training_expiry, $gate_pass,
+                $user_id,
+                $customer_code
+            ]);
+            $message = '<div class="alert alert-success"><i class="fas fa-check-circle"></i> Registration updated successfully!</div>';
+        } else {
+            // Insert
+            $sql = "INSERT INTO customer_annexure3a (
+                customer_id, customer_code, customer_name,
+                total_deployed_strength, skilled_workers, semi_skilled_workers, unskilled_workers, helpers,
+                insurance_policy_no, insurance_provider, insurance_valid_from, insurance_valid_to, ecp_covered,
+                epf_code, epf_registered, epf_non_registration_reason,
+                esi_code, esi_registered, esi_non_registration_reason,
+                klwf_registered, klwf_non_registration_reason,
+                safety_training_certificate, training_expiry_date, gate_pass_approved,
+                status, created_by, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+            
+            db_execute($conn, $sql, 'issiiiiiissssssssssssss', [
+                $customer_id, $customer_code, $name,
+                $total_strength, $skilled, $semi_skilled, $unskilled, $helpers,
+                $insurance_policy, $insurance_provider, $insurance_from, $insurance_to, $ecp_covered,
+                $epf_code, $epf_registered, $epf_reason,
+                $esi_code, $esi_registered, $esi_reason,
+                $klwf_registered, $klwf_reason,
+                $training_cert, $training_expiry, $gate_pass,
+                'draft', $user_id
+            ]);
+            $message = '<div class="alert alert-success"><i class="fas fa-check-circle"></i> Registration created successfully!</div>';
+        }
+    } elseif ($action === 'submit') {
+        // Submit for approval
+        db_execute($conn, "UPDATE customer_annexure3a SET status = ?, submitted_at = NOW(), updated_by = ? WHERE customer_code = ?", 'sis', ['under_review', $user_id, $customer_code]);
+        $message = '<div class="alert alert-success"><i class="fas fa-check-circle"></i> Registration submitted for review!</div>';
+    }
+}
+
+// Fetch existing data
+$existing = db_single($conn, "SELECT * FROM customer_annexure3a WHERE customer_code = ?", 's', [$customer_code]);
+$customer_info = db_single($conn, "SELECT * FROM sap_customer_master WHERE customer_code = ?", 's', [$customer_code]);
+
+function renderContent() {
+    global $conn, $customer_code, $existing, $customer_info, $message;
+    
+    ?>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border: none; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 12px; }
+        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px 12px 0 0; }
+        .form-label { font-weight: 600; color: #333; margin-top: 12px; }
+        .btn-submit { padding: 12px 32px; font-weight: 600; border-radius: 8px; }
+        .section-title { color: #667eea; font-weight: 700; margin-top: 24px; margin-bottom: 16px; }
+        .status-badge { padding: 8px 16px; border-radius: 20px; font-weight: 600; font-size: 12px; }
+        .status-draft { background: #fff3cd; color: #856404; }
+        .status-under-review { background: #d1ecf1; color: #0c5460; }
+        .status-approved { background: #d4edda; color: #155724; }
+        .status-rejected { background: #f8d7da; color: #721c24; }
+    </style>
+
+    <div class="container-lg py-5">
+        <div class="row mb-4">
+            <div class="col">
+                <h2><i class="fas fa-file-alt"></i> Customer Registration Form</h2>
+                <p class="text-muted">Complete your deployment & compliance details</p>
+            </div>
+            <div class="col-auto">
+                <?php if ($existing): ?>
+                    <span class="status-badge status-<?= strtolower(str_replace('_', '-', $existing['status'])) ?>">
+                        <?= strtoupper(str_replace('_', ' ', $existing['status'])) ?>
+                    </span>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <?php echo $message; ?>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-building"></i> Customer Details</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <label class="form-label">Customer Code</label>
+                        <input type="text" class="form-control" value="<?= htmlspecialchars($customer_code) ?>" readonly>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Customer Name</label>
+                        <input type="text" class="form-control" value="<?= htmlspecialchars($customer_info['customer_name'] ?? $name) ?>" readonly>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" value="<?= htmlspecialchars($customer_info['EMAIL_ADDRESS'] ?? '') ?>" readonly>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Mobile</label>
+                        <input type="text" class="form-control" value="<?= htmlspecialchars($customer_info['Customer_MOB1'] ?? '') ?>" readonly>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <form method="POST" id="annexure3aForm">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-users"></i> Deployed Workers Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label class="form-label">Total Deployed Strength</label>
+                            <input type="number" name="total_deployed_strength" class="form-control" value="<?= $existing['total_deployed_strength'] ?? '' ?>" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Skilled Workers</label>
+                            <input type="number" name="skilled_workers" class="form-control" value="<?= $existing['skilled_workers'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Semi-Skilled Workers</label>
+                            <input type="number" name="semi_skilled_workers" class="form-control" value="<?= $existing['semi_skilled_workers'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Unskilled Workers</label>
+                            <input type="number" name="unskilled_workers" class="form-control" value="<?= $existing['unskilled_workers'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-3 mt-3">
+                            <label class="form-label">Helpers</label>
+                            <input type="number" name="helpers" class="form-control" value="<?= $existing['helpers'] ?? '' ?>">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-shield-alt"></i> Insurance & Compliance</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Insurance Policy No</label>
+                            <input type="text" name="insurance_policy_no" class="form-control" value="<?= $existing['insurance_policy_no'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Insurance Provider</label>
+                            <input type="text" name="insurance_provider" class="form-control" value="<?= $existing['insurance_provider'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-3 mt-3">
+                            <label class="form-label">Insurance Valid From</label>
+                            <input type="date" name="insurance_valid_from" class="form-control" value="<?= $existing['insurance_valid_from'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-3 mt-3">
+                            <label class="form-label">Insurance Valid To</label>
+                            <input type="date" name="insurance_valid_to" class="form-control" value="<?= $existing['insurance_valid_to'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-6 mt-3">
+                            <label class="form-label">ECP Covered</label>
+                            <div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_yes" value="YES" <?= ($existing['ecp_covered'] ?? 'NO') === 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="ecp_yes">YES</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_no" value="NO" <?= ($existing['ecp_covered'] ?? 'NO') !== 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="ecp_no">NO</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-file-contract"></i> EPF / ESI / KLWF Registration</h5>
+                </div>
+                <div class="card-body">
+                    <div class="section-title">EPF Registration</div>
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">EPF Code</label>
+                            <input type="text" name="epf_code" class="form-control" value="<?= $existing['epf_code'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-9">
+                            <label class="form-label">Registered under EPF</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="epf_registered" id="epf_yes" value="YES" <?= ($existing['epf_registered'] ?? 'YES') === 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="epf_yes">YES</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="epf_registered" id="epf_no" value="NO" <?= ($existing['epf_registered'] ?? 'YES') !== 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="epf_no">NO</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label class="form-label">Reason for Non-Registration (if NO)</label>
+                            <textarea name="epf_non_registration_reason" class="form-control" rows="2"><?= $existing['epf_non_registration_reason'] ?? '' ?></textarea>
+                        </div>
+                    </div>
+
+                    <div class="section-title">ESI Registration</div>
+                    <div class="row mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">ESI Code</label>
+                            <input type="text" name="esi_code" class="form-control" value="<?= $existing['esi_code'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-9">
+                            <label class="form-label">Registered under ESI</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="esi_registered" id="esi_yes" value="YES" <?= ($existing['esi_registered'] ?? 'YES') === 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="esi_yes">YES</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="esi_registered" id="esi_no" value="NO" <?= ($existing['esi_registered'] ?? 'YES') !== 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="esi_no">NO</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label class="form-label">Reason for Non-Registration (if NO)</label>
+                            <textarea name="esi_non_registration_reason" class="form-control" rows="2"><?= $existing['esi_non_registration_reason'] ?? '' ?></textarea>
+                        </div>
+                    </div>
+
+                    <div class="section-title">KLWF Registration</div>
+                    <div class="row mb-3">
+                        <div class="col-md-9">
+                            <label class="form-label">Registered under KLWF</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="klwf_registered" id="klwf_yes" value="YES" <?= ($existing['klwf_registered'] ?? 'YES') === 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="klwf_yes">YES</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="klwf_registered" id="klwf_no" value="NO" <?= ($existing['klwf_registered'] ?? 'YES') !== 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="klwf_no">NO</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label class="form-label">Reason for Non-Registration (if NO)</label>
+                            <textarea name="klwf_non_registration_reason" class="form-control" rows="2"><?= $existing['klwf_non_registration_reason'] ?? '' ?></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-certificate"></i> Safety & Gate Pass</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Safety Training Certificate</label>
+                            <input type="text" name="safety_training_certificate" class="form-control" value="<?= $existing['safety_training_certificate'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Training Expiry Date</label>
+                            <input type="date" name="training_expiry_date" class="form-control" value="<?= $existing['training_expiry_date'] ?? '' ?>">
+                        </div>
+                        <div class="col-md-6 mt-3">
+                            <label class="form-label">Gate Pass Approved</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="gate_pass_approved" id="gp_yes" value="YES" <?= ($existing['gate_pass_approved'] ?? 'NO') === 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="gp_yes">YES</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="gate_pass_approved" id="gp_no" value="NO" <?= ($existing['gate_pass_approved'] ?? 'NO') !== 'YES' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="gp_no">NO</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col">
+                    <button type="submit" name="action" value="save" class="btn btn-primary btn-submit">
+                        <i class="fas fa-save"></i> Save as Draft
+                    </button>
+                    <?php if ($existing && $existing['status'] === 'draft'): ?>
+                        <button type="submit" name="action" value="submit" class="btn btn-success btn-submit ms-2">
+                            <i class="fas fa-paper-plane"></i> Submit for Review
+                        </button>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <?php
+}
+
+renderLayout(
+    ['title' => 'Customer Registration', 'active_menu' => 'annexure-3a'],
+    'renderContent',
+    $role,
+    $name
+);
+?>

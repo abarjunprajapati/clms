@@ -1,0 +1,291 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║             ANNEXURE 5/A - QUICK REFERENCE CARD (Print Me!)               ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ PASS LIMIT RULES AT A GLANCE                                             ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+┌─────────────────┬──────────────┬──────────────────────────────────┐
+│ Pass Type       │ Limit        │ Rule Type                        │
+├─────────────────┼──────────────┼──────────────────────────────────┤
+│ Contractor      │ 2 per firm   │ Fixed (Hard limit)               │
+│ Representative  │ 1 per firm   │ Fixed (No flexibility)           │
+│ Supervisor      │ Dynamic      │ 1 per 10 workmen + 1 additional │
+│ Workman         │ Unlimited    │ No fixed limit                   │
+└─────────────────┴──────────────┴──────────────────────────────────┘
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ SUPERVISOR CALCULATION QUICK TABLE                                       ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+  Workmen → Allowed Supervisors (1 + floor(workmen/10))
+  ─────────────────────────────────────────────────────
+  1-9      → 1
+  10-19    → 2
+  20-29    → 3
+  30-39    → 4
+  40-49    → 5
+  50-59    → 6
+  100      → 11
+  1000     → 101
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ CODE SNIPPETS FOR COMMON SCENARIOS                                       ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+BACKEND - Check if can add supervisor:
+─────────────────────────────────────
+require_once 'include/pass_limit_validator.php';
+
+try {
+    validatePassLimit($conn, $contractor_id, 'Supervisor', 2, false);
+    // No exception = valid
+    echo "✅ Can add 2 supervisors";
+} catch (Exception $e) {
+    // Exception thrown = invalid
+    echo "❌ " . $e->getMessage();
+}
+
+
+BACKEND - With override:
+───────────────────────
+try {
+    validatePassLimit($conn, $contractor_id, 'Supervisor', 2, true);
+    // With override flag = allows override
+    echo "✅ Added with override";
+} catch (Exception $e) {
+    echo "❌ Cannot override: " . $e->getMessage();
+}
+
+
+FRONTEND - Real-time validation:
+────────────────────────────────
+<script src="/js/annexure5a_validator.js"></script>
+
+<input type="number" id="supervisorCount" oninput="validateInput()">
+
+<script>
+function validateInput() {
+    const result = PassLimitValidator.validate({
+        pass_type: 'Supervisor',
+        requested: parseInt(document.getElementById('supervisorCount').value),
+        workmen_count: 35,
+        current_count: 1
+    });
+    
+    const message = result.valid 
+        ? `✅ ${result.message}` 
+        : `❌ ${result.message}`;
+    
+    document.getElementById('message').textContent = message;
+}
+</script>
+
+
+FRONTEND - Summary display:
+──────────────────────────
+<script>
+const summary = PassLimitValidator.generateSummary();
+console.table(summary.rules);
+
+// Output table:
+// Pass Type      | Type  | Rule             | Max Allowed | Ratio
+// Contractor     | Fixed | Fixed            | 2          | N/A
+// Representative | Fixed | Fixed            | 1          | N/A
+// Supervisor     | Ratio | Ratio            | Unlimited  | 1:10
+// Workman        | Limit | NoLimit          | Unlimited  | N/A
+</script>
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ VALIDATION FLOWCHART                                                     ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+User submits form
+        │
+        ▼
+Is type in pass_limits?
+    ├─ NO  → Use default (usually unlimited)
+    └─ YES ▼
+    
+Is rule type "Fixed"?
+    ├─ NO  → Jump to Step 3
+    └─ YES ▼
+    
+Query current count
+    │
+    ├─ current + requested <= max_allowed?
+    │   ├─ YES ✅ → Allow
+    │   └─ NO  ❌ → Check override
+    │
+    └─ Continue...
+    
+Is rule type "Ratio"?
+    ├─ NO  → Jump to Step 4
+    └─ YES ▼
+    
+Calculate: allowed = 1 + floor(workmen_count / 10)
+    │
+    ├─ current + requested <= allowed?
+    │   ├─ YES ✅ → Allow
+    │   └─ NO  ❌ → Check override
+    │
+    └─ Continue...
+    
+Is override_flag = true?
+    ├─ NO  → BLOCK (throw exception)
+    └─ YES ▼
+    
+Is override_allowed in rule?
+    ├─ NO  → BLOCK (cannot override this rule)
+    └─ YES ▼
+    
+✅ ALLOW with override flag
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ DATABASE QUERIES (Copy & Paste)                                          ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+View all rules:
+  SELECT * FROM pass_limits WHERE contractor_id = 0;
+
+Check contractor count:
+  SELECT COUNT(*) FROM contractors WHERE firm_id = 1;
+
+Check representative count:
+  SELECT COUNT(*) FROM annexure3a WHERE contractor_id = 1 AND type = 'Representative';
+
+Check supervisor count:
+  SELECT COUNT(*) FROM annexure3a WHERE contractor_id = 1 AND type = 'Supervisor';
+
+Check workmen count:
+  SELECT COUNT(*) FROM workmen WHERE contractor_id = 1 AND status = 'active';
+
+Initialize database:
+  php api/annexure5a/init_pass_limits.php
+
+Check override logs:
+  SELECT * FROM audit_log WHERE action = 'pass_limit_override' ORDER BY created_at DESC;
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ FILE LOCATIONS                                                           ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Backend Validation:
+  include/pass_limit_validator.php
+
+Frontend Validation:
+  js/annexure5a_validator.js
+
+Setup Script:
+  api/annexure5a/init_pass_limits.php
+
+Full Documentation:
+  api/annexure5a/README.md
+
+This Card:
+  api/annexure5a/QUICK_REFERENCE.txt
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ FUNCTION SIGNATURES                                                      ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Backend Functions (PHP):
+────────────────────────
+
+// Main validation function
+validatePassLimit(
+    $conn,              // Database connection
+    $contractor_id,     // Contractor ID
+    $pass_type,         // 'Contractor'|'Representative'|'Supervisor'|'Workman'
+    $adding = 1,        // How many to add (default 1)
+    $is_override = false // Welfare admin override? (default false)
+)
+Returns: array with 'valid', 'current', 'allowed', 'rule'
+Throws: Exception if validation fails
+
+// Get pass limit rule
+getPassLimit($conn, $contractor_id, $pass_type)
+Returns: Database row with limit details
+
+// Get current count for a type
+getCurrentPassCount($conn, $contractor_id, $pass_type)
+Returns: integer count
+
+// Get workmen count (for supervisor calculation)
+getWorkmenCount($conn, $contractor_id)
+Returns: integer count
+
+// Calculate allowed amount
+calculateAllowed($conn, $contractor_id, $pass_type)
+Returns: array with 'allowed', 'rule', 'override'
+
+
+Frontend Functions (JavaScript):
+─────────────────────────────────
+
+PassLimitValidator.validate(params)
+  params = {
+    pass_type,        // String: 'Supervisor', 'Contractor', etc.
+    requested = 1,    // Number: how many to add
+    workmen_count = 0,// Number: total workmen (for supervisor ratio)
+    current_count = 0,// Number: current count of this type
+    allow_override    // Boolean: is override allowed?
+  }
+  Returns: { valid, message, current, allowed, rule, ... }
+
+PassLimitValidator.validateSupervisor(workmen_count, supervisor_count)
+  Returns: { valid, message, allowed, supervisors_allowed }
+
+PassLimitValidator.calculateAllowed(pass_type, workmen_count)
+  Returns: { allowed, message, calculation }
+
+PassLimitValidator.generateSummary()
+  Returns: { title, timestamp, rules[] }
+
+PassLimitValidator.getUIMessage(pass_type, current, requested, workmen_count)
+  Returns: { text, valid, class, icon }
+
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ COMMON ERRORS & SOLUTIONS                                                ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+❌ "Table 'pass_limits' not found"
+   → Run: php api/annexure5a/init_pass_limits.php
+
+❌ "Annexure 5/A Limit Exceeded: Representative limit is 1"
+   → Try to add 2nd representative (not allowed)
+   → Solution: Update existing or request override
+
+❌ "Only 1 representative allowed (current: 1)"
+   → Same as above - limit already reached
+
+❌ "Cannot add 5 more. Limit is 4"
+   → Supervisor limit for workmen count is 4
+   → Cannot add 5 at once
+   → Add fewer, or override
+
+✅ "Supervisor limit for 35 workmen is 4 (1 + floor(35/10))"
+   → Correct calculation
+   → Can add up to 4 total supervisors
+
+✅ "Workman pass type has no fixed limit"
+   → Unlimited workmen can be added
+
+
+════════════════════════════════════════════════════════════════════════════
+
+                    🎯 KEEP THIS CARD HANDY! 🎯
+
+════════════════════════════════════════════════════════════════════════════
+

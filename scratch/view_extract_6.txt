@@ -1,0 +1,94 @@
+Created At: 2026-05-20T16:52:18Z
+Completed At: 2026-05-20T16:52:18Z
+File Path: `file:///c:/xampp/htdocs/clms/pages/welfare/approve_contractors.php`
+Total Lines: 712
+Total Bytes: 30303
+Showing lines 250 to 365
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+250:         min-height: 44px;
+251:         word-break: break-word;
+252:         display: flex;
+253:         align-items: center;
+254:       }
+255:       
+256:       /* Documents Styling */
+257:       .document-grid {
+258:         display: grid;
+259:         grid-template-columns: repeat(2, 1fr);
+260:         gap: 16px;
+261:       }
+262:       @media (max-width: 768px) {
+263:         .document-grid {
+264:           grid-template-columns: 1fr;
+265:         }
+266:       }
+267:       .doc-card {
+268:         display: flex;
+269:         align-items: center;
+270:         justify-content: space-between;
+271:         background: rgba(99, 102, 241, 0.04);
+272:         border: 1px solid rgba(99, 102, 241, 0.12);
+273:         border-radius: 10px;
+274:         padding: 14px 18px;
+275:         transition: all 0.2s ease;
+276:       }
+277:       .doc-card:hover {
+278:         background: rgba(99, 102, 241, 0.08);
+279:         border-color: rgba(99, 102, 241, 0.25);
+280:         transform: translateY(-1px);
+281:       }
+282:       .doc-info {
+283:         display: flex;
+284:         align-items: center;
+285:         gap: 14px;
+286:         min-width: 0; /* allows text truncation */
+287:       }
+288:       .doc-icon {
+289:         font-size: 26px;
+290:         color: #f87171;
+291:         flex-shrink: 0;
+292:       }
+293:       .doc-meta {
+294:         display: flex;
+295:         flex-direction: column;
+296:         min-width: 0;
+297:       }
+298:       .doc-type {
+299:         font-size: 10px;
+300:         font-weight: 700;
+301:       
+<truncated 1062 bytes>
+ rgba(99, 102, 241, 0.3);
+334:       }
+335:       .no-docs {
+336:         grid-column: span 2;
+337:         text-align: center;
+338:         padding: 24px;
+339:         color: var(--text-muted);
+340:         font-style: italic;
+341:         background: rgba(255, 255, 255, 0.01);
+342:         border: 1px dashed rgba(255, 255, 255, 0.08);
+343:         border-radius: 10px;
+344:       }
+345:     </style>
+346: 
+347:     <script>
+348:     async function viewDetails(c) {
+349:         document.getElementById('detailsBody').innerHTML = `<div style="text-align:center;padding:40px;"><i class="fas fa-spinner fa-spin fa-3x" style="color:#6366f1;margin-bottom:15px;"></i><br><span style="color:var(--text-muted);font-weight:600;">Loading full profile...</span></div>`;
+350:         document.getElementById('detailsModal').classList.remove('hidden');
+351: 
+352:         let sel = { pos:[], pwos:[], sales:[], docs:[], contractor:{}, threshold:20 };
+353:         try {
+354:             const resp = await fetch(`../../api/welfare/get_contractor_selections.php?id=${c.cid}`);
+355:             const d = await resp.json();
+356:             if (d.success) sel = { ...sel, ...d };
+357:         } catch(e) { console.error(e); }
+358: 
+359:         // Merge API contractor data with row data (API wins for fields it has)
+360:         const r = { ...c, ...(sel.contractor || {}) };
+361:         const v = (val) => (val && val !== 'null' && val !== 'N/A' && String(val).trim() !== '') ? String(val) : '<span style="font-style:italic;color:var(--text-muted);font-weight:normal;"> - </span>';
+362:     </div>
+363: 
+364:     <style>
+365:       .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 1100; }
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

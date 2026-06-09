@@ -1,0 +1,674 @@
+/* ==========================================================================
+   CLMS ENTERPRISE STYLES - COMPONENT SYSTEM
+   ========================================================================== */
+
+/* 1. Premium Glassmorphic Cards */
+.auth-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--card-border);
+  padding: 40px;
+  border-radius: var(--border-radius-card);
+  box-shadow: var(--shadow-premium);
+  position: relative;
+  overflow: hidden;
+  transition: var(--transition-smooth);
+}
+
+.auth-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 6px;
+  background: var(--primary-gradient);
+}
+
+.auth-card-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.auth-card-logo-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  background: #ffffff;
+  border-radius: 20px;
+  margin-bottom: 18px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(229, 231, 235, 0.5);
+  padding: 10px;
+  transition: var(--transition-smooth);
+}
+
+.auth-card-logo-wrapper:hover {
+  transform: scale(1.05);
+  box-shadow: 0 15px 30px -5px rgba(37, 99, 235, 0.1);
+}
+
+.auth-card-logo-wrapper img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.auth-card-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+  margin-bottom: 6px;
+}
+
+.auth-card-subtitle {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* 2. Premium Form Inputs & Animated Floating Labels */
+.form-group {
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.form-control {
+  width: 100%;
+  height: 52px;
+  border-radius: var(--border-radius-input);
+  border: 1.5px solid #d1d5db;
+  padding: 12px 16px 12px 48px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: #ffffff;
+  transition: var(--transition-smooth);
+  font-family: inherit;
+}
+
+/* Placeholder visibility handler for floating labels */
+.form-control::placeholder {
+  color: transparent;
+  transition: color 0.2s ease;
+}
+
+.form-control:focus::placeholder {
+  color: #9ca3af;
+}
+
+/* Floating Label Positioning */
+.form-label {
+  position: absolute;
+  left: 48px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  pointer-events: none;
+  transition: var(--transition-smooth);
+  transform-origin: left top;
+  z-index: 5;
+}
+
+/* State transformation triggers for floating label */
+.form-control:focus ~ .form-label,
+.form-control:not(:placeholder-shown) ~ .form-label {
+  transform: translateY(-245%) scale(0.85);
+  color: var(--primary-color);
+  font-weight: 600;
+  left: 12px;
+  padding: 0 6px;
+  background: #ffffff;
+  border-radius: 4px;
+}
+
+/* Input Icons */
+.input-icon {
+  position: absolute;
+  left: 16px;
+  color: var(--text-light);
+  font-size: 1.05rem;
+  transition: var(--transition-smooth);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.toggle-pwd {
+  position: absolute;
+  right: 16px;
+  color: var(--text-light);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  z-index: 6;
+}
+
+.toggle-pwd:hover {
+  color: var(--primary-color);
+}
+
+/* 3. Input Custom States */
+.form-control:hover {
+  border-color: #9ca3af;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-glow);
+}
+
+.form-control:focus + .input-icon {
+  color: var(--primary-color);
+}
+
+/* Success Validation state */
+.form-group.state-success .form-control {
+  border-color: var(--success-color);
+  background-color: var(--success-bg);
+}
+.form-group.state-success .input-icon,
+.form-group.state-success .form-label {
+  color: var(--success-color);
+}
+.form-group.state-success .form-control:focus {
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.15);
+}
+
+/* Error Validation state */
+.form-group.state-error .form-control {
+  border-color: var(--error-color);
+  background-color: var(--error-bg);
+}
+.form-group.state-error .input-icon,
+.form-group.state-error .form-label {
+  color: var(--error-color);
+}
+.form-group.state-error .form-control:focus {
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
+}
+
+/* Disabled input state */
+.form-control:disabled {
+  background-color: #f3f4f6;
+  border-color: #e5e7eb;
+  color: var(--text-light);
+  cursor: not-allowed;
+}
+
+/* 4. Captcha Container Redesign */
+.captcha-row {
+  display: grid;
+  grid-template-columns: 1fr auto 52px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+}
+
+.captcha-img-container {
+  height: 52px;
+  background: #f9fafb;
+  border: 1.5px solid #d1d5db;
+  border-radius: var(--border-radius-input);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.captcha-img-container:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.captcha-img-container img {
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.btn-captcha-refresh {
+  width: 52px;
+  height: 52px;
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  border-radius: var(--border-radius-input);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.btn-captcha-refresh:hover {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.btn-captcha-refresh i {
+  transition: transform 0.4s ease;
+}
+
+.btn-captcha-refresh:active i {
+  transform: rotate(360deg);
+}
+
+/* 5. Centralized Error Alerts & Status Cards */
+.form-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: var(--error-bg);
+  border: 1.5px solid var(--error-border);
+  padding: 14px 18px;
+  border-radius: var(--border-radius-input);
+  color: var(--error-color);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 20px;
+  animation: fadeInDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.form-error i {
+  font-size: 1.1rem;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* Dynamic error shake micro-interaction */
+.error-shake {
+  animation: shakeAlert 0.4s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+@keyframes shakeAlert {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Status Info Cards */
+.status-card {
+  padding: 16px 20px;
+  border-radius: var(--border-radius-input);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 24px;
+  border: 1.5px solid transparent;
+}
+
+.status-card-warning {
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+  color: #92400e;
+}
+.status-card-warning i { color: var(--warning-color); font-size: 1.3rem; }
+
+.status-card-success {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: #065f46;
+}
+.status-card-success i { color: var(--success-color); font-size: 1.3rem; }
+
+/* 6. Stepper Component for Activation Screen */
+.progress-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 35px;
+  position: relative;
+  padding: 0 10px;
+}
+
+.progress-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 10;
+  cursor: default;
+}
+
+.step-num {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #d1d5db;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  transition: var(--transition-smooth);
+  box-shadow: 0 0 0 4px #ffffff;
+}
+
+.step-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: var(--transition-smooth);
+}
+
+/* Stepper connectors */
+.progress-line {
+  flex: 1;
+  height: 2px;
+  background: #cbd5e1;
+  margin: 0 12px;
+  transform: translateY(-13px);
+  position: relative;
+  z-index: 5;
+  transition: var(--transition-smooth);
+}
+
+/* Active and Completed Stepper States */
+.progress-step.active .step-num {
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+  color: #ffffff;
+  box-shadow: 0 0 0 4px #ffffff, 0 0 0 8px rgba(37, 99, 235, 0.15);
+}
+
+.progress-step.active .step-label {
+  color: var(--primary-color);
+}
+
+.progress-step.completed .step-num {
+  border-color: var(--success-color);
+  background: var(--success-color);
+  color: #ffffff;
+}
+
+.progress-step.completed .step-label {
+  color: var(--success-color);
+}
+
+.progress-line.completed {
+  background: var(--success-color);
+}
+
+/* 7. Reusable Premium Button Classes */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 52px;
+  border-radius: var(--border-radius-input);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: var(--transition-smooth);
+  text-decoration: none;
+  font-family: inherit;
+}
+
+.btn-primary {
+  background: var(--primary-gradient);
+  color: #ffffff;
+  box-shadow: 0 8px 20px -6px rgba(37, 99, 235, 0.4);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 25px -5px rgba(37, 99, 235, 0.5);
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-outline {
+  background: #ffffff;
+  border: 1.5px solid #d1d5db;
+  color: var(--text-primary);
+}
+
+.btn-outline:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: rgba(37, 99, 235, 0.03);
+}
+
+.btn:disabled {
+  background: #e5e7eb !important;
+  color: var(--text-light) !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+  border-color: #e5e7eb !important;
+}
+
+/* Loading Spinners inside buttons */
+.btn .spinner-icon {
+  display: none;
+  animation: spinnerRotate 0.8s linear infinite;
+}
+
+.btn.submitting .spinner-icon {
+  display: inline-block;
+}
+
+.btn.submitting {
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+@keyframes spinnerRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 8. Reusable OTP Box layout */
+.otp-container {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 25px;
+  width: 100%;
+}
+
+.otp-box {
+  width: 52px;
+  height: 58px;
+  border: 2px solid #d1d5db;
+  border-radius: var(--border-radius-input);
+  background: #ffffff;
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  transition: var(--transition-smooth);
+  font-family: inherit;
+}
+
+.otp-box:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-glow);
+}
+
+.otp-box:disabled {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
+/* Resend Countdown block styles */
+.otp-resend-wrapper {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.otp-resend-text {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.otp-resend-link {
+  color: var(--primary-color);
+  text-decoration: none;
+  font-weight: 700;
+  margin-left: 4px;
+  transition: var(--transition-smooth);
+}
+
+.otp-resend-link.disabled {
+  color: var(--text-light);
+  pointer-events: none;
+  font-weight: 500;
+}
+
+/* Premium Info Card for Vendor Details during Activation */
+.premium-info-card {
+  background: rgba(37, 99, 235, 0.04);
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  border-radius: var(--border-radius-input);
+  padding: 18px;
+  margin-bottom: 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-item-full {
+  grid-column: span 2;
+}
+
+.info-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.info-value {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* Security Visual Feedback elements */
+.pwd-strength-container {
+  height: 4px;
+  background: #e5e7eb;
+  border-radius: 2px;
+  margin-top: 6px;
+  overflow: hidden;
+  display: flex;
+  gap: 3px;
+}
+
+.pwd-strength-bar {
+  flex: 1;
+  height: 100%;
+  background: transparent;
+  transition: var(--transition-smooth);
+}
+
+.pwd-strength-container.strength-weak .pwd-strength-bar:nth-child(1) { background: var(--error-color); }
+.pwd-strength-container.strength-medium .pwd-strength-bar:nth-child(1),
+.pwd-strength-container.strength-medium .pwd-strength-bar:nth-child(2) { background: var(--warning-color); }
+.pwd-strength-container.strength-strong .pwd-strength-bar { background: var(--success-color); }
+
+.caps-warning {
+  position: absolute;
+  top: -34px;
+  right: 0;
+  background: #1f2937;
+  color: #ffffff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  z-index: 10;
+  animation: fadeInDown 0.2s ease-out;
+}
+
+.caps-warning::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  right: 15px;
+  border-width: 4px 4px 0;
+  border-style: solid;
+  border-color: #1f2937 transparent;
+}
+
+/* 9. Premium Modal Overlays */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.modal-overlay.show {
+  display: flex;
+  opacity: 1;
+}
+
+.modal-overlay .auth-card {
+  transform: translateY(20px) scale(0.95);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+}
+
+.modal-overlay.show .auth-card {
+  transform: translateY(0) scale(1);
+}

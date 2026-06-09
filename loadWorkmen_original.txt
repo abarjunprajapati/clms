@@ -1,0 +1,27 @@
+async function loadWorkmen() {
+  const appId = getAppId();
+  console.log('[loadWorkmen] Loading with application_id:', appId);
+  if (!appId) {
+    console.warn('[loadWorkmen] No application_id available. Submit Contractor Registration first.');
+    workmenData = [];
+    updateStats();
+    renderWorkmenTable();
+    return;
+  }
+  try {
+    const result = await apiFetch('get_workmen.php?application_id=' + encodeURIComponent(appId));
+    console.log('[loadWorkmen] API response:', result);
+    const data = (result && result.success && Array.isArray(result.data)) ? result.data : [];
+    workmenData = data;
+    updateStats();
+    renderWorkmenTable();
+  } catch (error) {
+    console.error('[loadWorkmen] Error:', error);
+    workmenData = [];
+    updateStats();
+    renderWorkmenTable();
+  }
+}
+
+
+

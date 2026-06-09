@@ -1,0 +1,208 @@
+/* ==========================================================================
+   CLMS ENTERPRISE AUTHENTICATION SYSTEM - STYLES FOUNDATION
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  /* Color Tokens */
+  --primary-gradient: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-rgb: 37, 99, 235;
+  
+  --bg-color: #f5f7fb;
+  --card-bg: rgba(255, 255, 255, 0.92);
+  --card-border: rgba(255, 255, 255, 0.4);
+  
+  /* Neutral Typography colors */
+  --text-primary: #1f2937;
+  --text-muted: #6b7280;
+  --text-light: #9ca3af;
+  
+  /* Status Colors */
+  --success-color: #10b981;
+  --success-bg: #ecfdf5;
+  --success-border: #a7f3d0;
+  --success-rgb: 16, 185, 129;
+  
+  --error-color: #ef4444;
+  --error-bg: #fef2f2;
+  --error-border: #fca5a5;
+  --error-rgb: 239, 68, 68;
+  
+  --warning-color: #f59e0b;
+  --warning-bg: #fffbeb;
+  --warning-border: #fde68a;
+  --warning-rgb: 245, 158, 11;
+  
+  /* Border & Radii */
+  --border-color: #e5e7eb;
+  --border-radius-card: 24px;
+  --border-radius-input: 12px;
+  
+  /* Shadow Systems */
+  --shadow-premium: 
+    0 10px 40px rgba(15, 23, 42, 0.06), 
+    0 2px 10px rgba(15, 23, 42, 0.04), 
+    0 0 1px 0 rgba(15, 23, 42, 0.1);
+  --shadow-glow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+  
+  /* Micro Interactions & Animations */
+  --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --animation-curve: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Base resets */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: 
+    linear-gradient(135deg, rgba(245, 247, 251, 0.94) 0%, rgba(245, 247, 251, 0.94) 100%),
+    url('../uploads/bg/shipyard.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ==========================================================================
+   SPLIT LAYOUT ARCHITECTURE
+   ========================================================================== */
+
+.auth-split-wrapper {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  min-height: 100vh;
+  width: 100vw;
+  position: relative;
+}
+
+/* Left Brand Panel */
+.auth-left-pane {
+  background: linear-gradient(135deg, rgba(30, 58, 138, 0.9) 0%, rgba(29, 78, 216, 0.8) 50%, rgba(37, 99, 235, 0.75) 100%), url('../uploads/bg/shipyard.png');
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 5rem;
+  color: #ffffff;
+  overflow: hidden;
+  z-index: 1;
+}
+
+/* Modern mesh gradients and vectors on background */
+.auth-left-pane::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+              radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
+  z-index: -1;
+}
+
+.auth-left-pane::after {
+  content: '';
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 70%);
+  top: -150px;
+  left: -150px;
+  z-index: -1;
+}
+
+.left-brand-content {
+  position: relative;
+  z-index: 10;
+  max-width: 580px;
+  width: 100%;
+}
+
+.left-brand-content h1 {
+  font-size: 2.85rem;
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 1.25rem;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+  text-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+}
+
+.left-brand-content p {
+  font-size: 1.15rem;
+  font-weight: 400;
+  opacity: 0.9;
+  line-height: 1.6;
+  color: #bfdbfe;
+  margin-bottom: 3.5rem;
+}
+
+/* Dynamic SVG Illustration wrapper */
+.brand-illustration {
+  width: 100%;
+  max-width: 440px;
+  height: auto;
+  margin-bottom: 2.5rem;
+  filter: drop-shadow(0 15px 30px rgba(15, 23, 42, 0.25));
+  animation: floatIllustration 6s ease-in-out infinite;
+}
+
+@keyframes floatIllustration {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+.left-security-tagline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 12px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.left-security-tagline i {
+  color: #60a5fa;
+  font-size: 1.1rem;
+}
+
+/* Right Content Panel */
+.auth-right-pane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  position: relative;
+  overflow-y: auto;
+  background: transparent;
+}
+
+.auth-card-container {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}

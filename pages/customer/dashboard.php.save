@@ -1,0 +1,492 @@
+ <?php
+// Temporary debugging: show all errors to identify HTTP 500 cause
+error_reporting(E_ALL);
+ini_set('log_errors', '1');
+
+// Load core config/session first so helper functions (e.g. get_normalized_role)
+// and error logging are available before auth middleware runs.
+include __DIR__ . '/../../include/config.php';
+
+// Ensure errors are displayed after config may reset ini
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+
+require_once __DIR__ . '/../../include/auth.php';
+checkAuth(['customer']);
+include __DIR__ . '/../../include/layout.php';
+
+$role = $_SESSION['role'];
+$name = $_SESSION['customer_name'] ?? $_SESSION['name'] ?? 'Customer';
+$customer_code = $_SESSION['customer_code'] ?? '';
+$customer_name = $_SESSION['customer_name'] ?? 'Your Company';
+
+if (!empty($customer_code)) {
+		$cust = db_single($conn, "SELECT customer_name FROM sap_customer_master WHERE customer_code = ?", 's', [$customer_code]);
+		if ($cust) {
+				$customer_name = $cust['customer_name'] ?? $customer_name;
+				$_SESSION['customer_name'] = $customer_name;
+		}
+}
+
+function customerDashboardCount(mysqli $conn, string $sql, string $types = '', array $params = []): int {
+		try {
+				return db_count($conn, $sql, $types, $params);
+		} catch (Throwable $e) {
+				return 0;
+		}
+}
+
+function customerDashboardRows(mysqli $conn, string $sql, string $types = '', array $params = []): array {
+		try {
+				return db_fetch_all($conn, $sql, $types, $params);
+		} catch (Throwable $e) {
+				return [];
+		}
+}
+
+function customerDashboardSingle(mysqli $conn, string $sql, string $types = '', array $params = []): ?array {
+		try {
+				return db_single($conn, $sql, $types, $params);
+		} catch (Throwable $e) {
+				return null;
+		}
+}
+
+function customerBadgeClass(string $status): string {
+		$status = strtolower($status);
+		if (in_array($status, ['approved', 'verified', 'active', 'pass', 'passed', 'completed'], true)) return 'success';
+		if (in_array($status, ['rejected', 'expired', 'blocked', 'failed', 'fail'], true)) return 'danger';
+		if (in_array($status, ['correction_required', 'resubmit_required', 'reupload_required'], true)) return 'warning';
+		return 'info';
+}
+
+function renderContent() {
+		global $conn, $customer_code, $customer_name;
+
+		$contractorJoin = "
+				FROM work_orders wo
+				LEFT JOIN contractors c ON c.vendor_code = wo.vendor_code
+				WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE'
+		";
+		$workerJoin = "
+				FROM workmen w
+				JOIN contractors c ON c.id = w.contractor_id
+				JOIN work_orders wo ON wo.vendor_code = c.vendor_code
+				WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE'
+		";
+
+		$totalContractors = customerDashboardCount($conn, "SELECT COUNT(DISTINCT wo.vendor_code) c {$contractorJoin}", 's', [$customer_code]);
+		$totalWorkers = customerDashboardCount($conn, "SELECT COUNT(*) c {$workerJoin}", 's', [$customer_code]);
+		$pendingAnnexure3a = customerDashboardCount($conn, "
+				SELECT COUNT(*) c
+				FROM work_orders wo
+				LEFT JOIN contractor_annexure3a a ON a.customer_code = wo.customer_code AND a.work_order_no = wo.work_order_no
+				WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE'
+					AND COALESCE(a.status, 'pending') IN ('pending','submitted','under_review','correction_required','resubmit_required')
+		", 's', [$customer_code]);
+		$pendingAnnexure4a = customerDashboardCount($conn, "SELECT COUNT(*) c {$workerJoin} AND COALESCE(w.welfare_user_verified,0)=0", 's', [$customer_code]);
+		$pendingGatePass = customerDashboardCount($conn, "
+				SELECT COUNT(*) c
+				FROM gate_passes gp
+				JOIN workmen w ON w.id = gp.workman_id
+				JOIN contractors c ON c.id = w.contractor_id
+				JOIN work_orders wo ON wo.vendor_code = c.vendor_code
+				WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE' AND gp.status='pending'
+		", 's', [$customer_code]);
+		$safetyPending = customerDashboardCount($conn, "SELECT COUNT(*) c {$workerJoin} AND COALESCE(w.training_status,'pending') IN ('pending','training_pending','training_scheduled','fail','failed','training_failed')", 's', [$customer_code]);
+		$compliancePending = customerDashboardCount($conn, "
+				SELECT COUNT(*) c
+				FROM compliance comp
+				JOIN contractors c ON c.id = comp.contractor_id
+				JOIN work_orders wo ON wo.vendor_code = c.vendor_code
+				WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE' AND COALESCE(comp.status,'pending') IN ('pending','reupload_required','rejected')
+		", 's', [$customer_code]);
+		$expiredDocuments = customerDashboardCount($conn, "
+				SELECT COUNT(*) c
+				FROM contractor_annexure3a a
+				WHERE a.customer_code = ?
+					AND (
+						(a.insurance_validity IS NOT NULL AND a.insurance_validity < CURDATE())
+						OR (a.labour_license_expiry_date IS NOT NULL AND a.labour_license_expiry_date < CURDATE())
+					)
+		", 's', [$customer_code]);
+		$liveAttendance = customerDashboardCount($conn, "
+				SELECT COUNT(DISTINCT a.workman_id) c
+				FROM attendance a
+				JOIN workmen w ON w.id = a.workman_id
+				JOIN contractors c ON c.id = w.contractor_id
+				JOIN work_orders wo ON wo.vendor_code = c.vendor_code
+				WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE' AND DATE(a.check_in)=CURDATE()
+		", 's', [$customer_code]);
+		$workersInside = customerDashboardCount($conn, "
+				SELECT COUNT(DISTINCT a.workman_id) c
+				FROM attendance a
+				JOIN workmen w ON w.id = a.workman_id
+				JOIN contractors c ON c.id = w.contractor_id
+				JOIN work_orders wo ON wo.vendor_code = c.vendor_code
+				WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE' AND DATE(a.check_in)=CURDATE() AND a.check_out IS NULL
+		", 's', [$customer_code]);
+		$approvedAnnexure3a = customerDashboardCount($conn, "SELECT COUNT(*) c FROM contractor_annexure3a WHERE customer_code = ? AND status='approved'", 's', [$customer_code]);
+		$rejectedAnnexure3a = customerDashboardCount($conn, "SELECT COUNT(*) c FROM contractor_annexure3a WHERE customer_code = ? AND status='rejected'", 's', [$customer_code]);
+		$blockedWorkers = customerDashboardCount($conn, "SELECT COUNT(*) c {$workerJoin} AND COALESCE(w.is_blocked,0)=1", 's', [$customer_code]);
+
+		$recentAnnexure3a = customerDashboardRows($conn, "
+				SELECT a.id, a.vendor_code, a.work_order_no, a.status, a.updated_at, a.created_at,
+							 COALESCE(v.vendor_name, c.contractor_name, a.contractor_name, a.vendor_code) contractor_name,
+							 COALESCE(a.esi_code, v.esi_no, c.esi_code) esi,
+							 COALESCE(a.epf_code, v.pf_no, c.epf_code) pf,
+							 COALESCE(a.labour_license_expiry_date, c.expiry_date) license_validity
+				FROM contractor_annexure3a a
+				LEFT JOIN sap_vendor_master v ON v.vendor_code = a.vendor_code
+				LEFT JOIN contractors c ON c.vendor_code = a.vendor_code
+				WHERE a.customer_code = ?
+				ORDER BY a.id DESC
+				LIMIT 8
+		", 's', [$customer_code]);
+
+		$pendingWorkers = customerDashboardRows($conn, "
+				SELECT w.id, w.name worker_name, w.aadhaar, w.skill_category, w.training_status, w.status,
+							 COALESCE(v.vendor_name, c.contractor_name, c.vendor_code) contractor_name
+				FROM workmen w
+				JOIN contractors c ON c.id = w.contractor_id
+				JOIN work_orders wo ON wo.vendor_code = c.vendor_code
+				LEFT JOIN sap_vendor_master v ON v.vendor_code = c.vendor_code
+				WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE'
+				ORDER BY w.id DESC
+				LIMIT 6
+		", 's', [$customer_code]);
+
+		$attendanceTrend = customerDashboardRows($conn, "
+				SELECT DATE(a.check_in) date, COUNT(DISTINCT a.workman_id) count
+				FROM attendance a
+				JOIN workmen w ON w.id = a.workman_id
+				JOIN contractors c ON c.id = w.contractor_id
+				JOIN work_orders wo ON wo.vendor_code = c.vendor_code
+				WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE' AND a.check_in >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+				GROUP BY DATE(a.check_in)
+				ORDER BY date ASC
+		", 's', [$customer_code]);
+
+		$statusStats = [
+				['label' => 'Pending', 'value' => $pendingAnnexure3a],
+				['label' => 'Approved', 'value' => $approvedAnnexure3a],
+				['label' => 'Rejected', 'value' => $rejectedAnnexure3a],
+		];
+
+		$kpis = [
+				['Total Contractors', $totalContractors, 'Mapped active vendors', 'fa-building', '#0369a1', '#e0f2fe'],
+				['Total Workers', $totalWorkers, 'Workers under mapped contractors', 'fa-users', '#059669', '#dcfce7'],
+				['Pending Customer Registration', $pendingAnnexure3a, 'Contractor statutory verification', 'fa-file-contract', '#d97706', '#fef3c7'],
+				['Pending Annexure 4A', $pendingAnnexure4a, 'Worker enrollment verification', 'fa-user-check', '#7c3aed', '#ede9fe'],
+				['Pending Gate Pass', $pendingGatePass, 'Temporary/permanent pass queue', 'fa-id-badge', '#2563eb', '#dbeafe'],
+				['Safety Pending', $safetyPending, 'Training or re-test pending', 'fa-helmet-safety', '#ca8a04', '#fef9c3'],
+				['Compliance Pending', $compliancePending, 'ESI/PF/KLUWF verification queue', 'fa-shield-halved', '#be123c', '#ffe4e6'],
+				['Expired Documents', $expiredDocuments, 'Insurance/license date alerts', 'fa-file-circle-exclamation', '#dc2626', '#fee2e2'],
+				['Live Attendance', $liveAttendance, 'Present today', 'fa-calendar-check', '#0ea5e9', '#cffafe'],
+				['Workers Inside', $workersInside, 'Open IN punches', 'fa-location-dot', '#0891b2', '#ccfbf1'],
+				['Blocked Workers', $blockedWorkers, 'Access restricted workers', 'fa-user-slash', '#9f1239', '#ffe4e6'],
+				['Approved 3A', $approvedAnnexure3a, 'Cleared contractor requests', 'fa-circle-check', '#047857', '#d1fae5'],
+		];
+
+		$modules = [
+				['Customer Registration', 'Verify contractor requests, GST/PF/ESI, license validity, remarks and PDF.', 'annexure-3a.php', 'fa-file-contract', $pendingAnnexure3a . ' pending', 'warning'],
+				['Annexure 4A', 'Approve worker enrollment, Aadhaar, face, skill, safety and temp pass readiness.', 'workers.php', 'fa-users-gear', $pendingAnnexure4a . ' pending', 'warning'],
+				['Gate Pass', 'Approve temporary/permanent passes, QR pass, print and expiry alerts.', 'passes.php', 'fa-id-card-clip', $pendingGatePass . ' pending', 'info'],
+				['Safety', 'Monitor training status, failed workers, safety pass approval, PPE compliance.', 'safety.php', 'fa-helmet-safety', $safetyPending . ' pending', 'warning'],
+				['Compliance', 'Verify ESI, PF, labour license, insurance and expiry alerts.', 'compliance.php', 'fa-shield-check', $compliancePending . ' pending', 'danger'],
+				['Attendance', 'Live, department-wise, contractor-wise IN/OUT and productivity monitoring.', 'attendance.php', 'fa-fingerprint', $liveAttendance . ' today', 'success'],
+				['Reports', 'Contractor, worker, annexure, compliance, attendance and safety reports.', 'reports.php', 'fa-chart-column', 'Export', 'info'],
+				['Notifications', 'Approval alerts, expiry reminders, real-time activity and audit trail.', 'welfare-actions.php', 'fa-bell', 'Logs', 'primary'],
+		];
+		?>
+
+		<style>
+			.customer-command { display:flex; flex-direction:column; gap:18px; }
+			.customer-header { display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+			.customer-title h2 { margin:0; font-size:26px; color:#0f172a; display:flex; align-items:center; gap:10px; }
+			.customer-title p { margin:4px 0 0; color:#64748b; font-size:13px; }
+			.customer-actions { display:flex; gap:10px; flex-wrap:wrap; }
+			.kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+			.customer-kpi { background:#fff; border:1px solid #dbeafe; border-radius:8px; padding:16px; min-height:122px; position:relative; overflow:hidden; box-shadow:0 8px 20px rgba(15,23,42,.04); }
+			.customer-kpi:before { content:''; position:absolute; inset:0 auto 0 0; width:4px; background:var(--kpi-color); }
+			.kpi-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+			.kpi-icon { width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:var(--kpi-bg); color:var(--kpi-color); }
+			.kpi-label { font-size:12px; color:#475569; font-weight:800; }
+			.kpi-note { font-size:11px; color:#94a3b8; margin-top:4px; line-height:1.35; }
+			.kpi-value { margin-top:16px; font-size:28px; line-height:1; font-weight:900; color:#0f172a; }
+			.grid-2 { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(340px,.8fr); gap:18px; align-items:start; }
+			.grid-3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+			.verify-panel { background:#fff; border:1px solid #dbeafe; border-radius:8px; overflow:hidden; box-shadow:0 8px 20px rgba(15,23,42,.04); }
+			.verify-head { padding:15px 16px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+			.verify-title { font-size:14px; font-weight:900; color:#0f172a; display:flex; align-items:center; gap:8px; }
+			.verify-body { padding:16px; }
+			.module-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+			.module-card { min-height:142px; border:1px solid #e2e8f0; border-radius:8px; padding:14px; text-decoration:none; color:inherit; display:flex; flex-direction:column; background:#fff; transition:.18s; }
+			.module-card:hover { transform:translateY(-2px); border-color:#0ea5e9; box-shadow:0 10px 24px rgba(14,165,233,.09); }
+			.module-card i { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:#e0f2fe; color:#0369a1; margin-bottom:12px; }
+			.module-card strong { font-size:13px; color:#0f172a; }
+			.module-card span.desc { color:#64748b; font-size:11.5px; line-height:1.45; margin-top:6px; flex:1; }
+			.module-foot { margin-top:12px; display:flex; justify-content:space-between; align-items:center; }
+			.approval-table { width:100%; border-collapse:collapse; }
+			.approval-table th { background:#f8fafc; color:#64748b; text-transform:uppercase; font-size:11px; letter-spacing:.04em; padding:10px 12px; text-align:left; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
+			.approval-table td { padding:11px 12px; border-bottom:1px solid #f1f5f9; font-size:12.5px; vertical-align:middle; }
+			.approval-table tr:hover td { background:#f8fafc; }
+			.quick-approve { display:flex; gap:6px; flex-wrap:wrap; }
+			.quick-approve .btn { padding:6px 9px; font-size:11px; }
+			.chart-box { height:250px; position:relative; }
+			.timeline-list { display:flex; flex-direction:column; gap:10px; }
+			.timeline-item-lite { display:grid; grid-template-columns:34px minmax(0,1fr) auto; gap:10px; align-items:center; padding:10px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc; }
+			.timeline-dot-lite { width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:#e0f2fe; color:#0369a1; }
+			.timeline-title-lite { font-weight:850; font-size:12.5px; color:#0f172a; }
+			.timeline-meta-lite { color:#64748b; font-size:11px; margin-top:2px; }
+			.worker-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid #e2e8f0; }
+			.worker-row:last-child { border-bottom:0; }
+			.status-progress { height:8px; border-radius:999px; background:#e2e8f0; overflow:hidden; }
+			.status-progress span { display:block; height:100%; background:#0ea5e9; border-radius:999px; }
+			@media (max-width:1200px) { .kpi-grid, .module-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .grid-3 { grid-template-columns:1fr; } }
+			@media (max-width:900px) { .grid-2 { grid-template-columns:1fr; } }
+			@media (max-width:640px) { .kpi-grid, .module-grid { grid-template-columns:1fr; } .customer-actions { width:100%; } .customer-actions .btn { flex:1; justify-content:center; } }
+		</style>
+
+		<div class="customer-command">
+			<div class="customer-header">
+				<div class="customer-title">
+					<h2><i class="fas fa-clipboard-check" style="color:#0ea5e9;"></i> Customer Verification Dashboard</h2>
+					<p><?= htmlspecialchars($customer_name) ?> | Customer Code: <strong><?= htmlspecialchars($customer_code) ?></strong> | Approval, monitoring and audit-focused workflow.</p>
+				</div>
+				<div class="customer-actions">
+					<a href="annexure-3a.php" class="btn btn-primary"><i class="fas fa-file-contract"></i> Review Customer Registration</a>
+					<a href="reports.php" class="btn btn-outline"><i class="fas fa-file-export"></i> Reports</a>
+				</div>
+			</div>
+
+			<div class="kpi-grid">
+				<?php foreach ($kpis as $kpi): ?>
+					<div class="customer-kpi" style="--kpi-color:<?= $kpi[4] ?>;--kpi-bg:<?= $kpi[5] ?>;">
+						<div class="kpi-top">
+							<div>
+								<div class="kpi-label"><?= htmlspecialchars($kpi[0]) ?></div>
+								<div class="kpi-note"><?= htmlspecialchars($kpi[2]) ?></div>
+							</div>
+							<div class="kpi-icon"><i class="fas <?= htmlspecialchars($kpi[3]) ?>"></i></div>
+						</div>
+						<div class="kpi-value"><?= number_format((float)$kpi[1]) ?></div>
+					</div>
+				<?php endforeach; ?>
+			</div>
+
+			<div class="verify-panel">
+				<div class="verify-head">
+					<div class="verify-title"><i class="fas fa-layer-group"></i> Main Modules For Customer</div>
+					<span class="badge badge-info">Verification / Approval / Monitoring</span>
+				</div>
+				<div class="verify-body">
+					<div class="module-grid">
+						<?php foreach ($modules as $module): ?>
+							<a class="module-card" href="<?= htmlspecialchars($module[2]) ?>">
+								<i class="fas <?= htmlspecialchars($module[3]) ?>"></i>
+								<strong><?= htmlspecialchars($module[0]) ?></strong>
+								<span class="desc"><?= htmlspecialchars($module[1]) ?></span>
+								<div class="module-foot">
+									<span class="badge badge-<?= htmlspecialchars($module[5]) ?>"><?= htmlspecialchars($module[4]) ?></span>
+									<span style="color:#94a3b8;"><i class="fas fa-arrow-right" style="display:inline;background:transparent;color:inherit;width:auto;height:auto;margin:0;"></i></span>
+								</div>
+							</a>
+						<?php endforeach; ?>
+					</div>
+				</div>
+			</div>
+
+			<div class="grid-2">
+				<div class="verify-panel">
+					<div class="verify-head">
+						<div class="verify-title"><i class="fas fa-file-contract"></i> Customer Registration Verification Queue</div>
+						<div class="quick-approve">
+							<button class="btn btn-sm btn-success" type="button"><i class="fas fa-check"></i> Bulk Approve</button>
+							<button class="btn btn-sm btn-outline" type="button"><i class="fas fa-filter"></i> Filters</button>
+						</div>
+					</div>
+					<div class="verify-body" style="overflow:auto;">
+						<table class="approval-table">
+							<thead>
+								<tr>
+									<th>Contractor Name</th>
+									<th>Vendor Code</th>
+									<th>Work Order</th>
+									<th>ESI</th>
+									<th>PF</th>
+									<th>License Validity</th>
+									<th>Status</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								<?php if (empty($recentAnnexure3a)): ?>
+									<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px;">No Customer Registration requests found yet.</td></tr>
+								<?php else: foreach ($recentAnnexure3a as $row):
+									$status = strtolower($row['status'] ?? 'pending');
+									$badge = customerBadgeClass($status);
+								?>
+									<tr>
+										<td><strong><?= htmlspecialchars($row['contractor_name'] ?? '-') ?></strong></td>
+										<td><code><?= htmlspecialchars($row['vendor_code'] ?? '-') ?></code></td>
+										<td><?= htmlspecialchars($row['work_order_no'] ?? '-') ?></td>
+										<td><?= htmlspecialchars($row['esi'] ?: 'Pending') ?></td>
+										<td><?= htmlspecialchars($row['pf'] ?: 'Pending') ?></td>
+										<td><?= htmlspecialchars($row['license_validity'] ?: 'N/A') ?></td>
+										<td><span class="badge badge-<?= $badge ?>"><?= htmlspecialchars($status) ?></span></td>
+										<td>
+											<div class="quick-approve">
+												<a class="btn btn-sm btn-outline" href="annexure-3a.php?edit_id=<?= (int)$row['id'] ?>"><i class="fas fa-eye"></i></a>
+												<button class="btn btn-sm btn-success" type="button" title="One-click approve" onclick="updateAnnexure3AStatus(<?= (int)$row['id'] ?>, 'approved')"><i class="fas fa-check"></i></button>
+												<button class="btn btn-sm btn-danger" type="button" title="Reject with remarks" onclick="updateAnnexure3AStatus(<?= (int)$row['id'] ?>, 'rejected')"><i class="fas fa-times"></i></button>
+											</div>
+										</td>
+									</tr>
+								<?php endforeach; endif; ?>
+							</tbody>
+						</table>
+					</div>
+				</div>
+
+				<div class="verify-panel">
+					<div class="verify-head"><div class="verify-title"><i class="fas fa-bell"></i> Alerts & Notifications</div></div>
+					<div class="verify-body">
+						<div class="timeline-list">
+							<div class="timeline-item-lite"><div class="timeline-dot-lite"><i class="fas fa-file-circle-exclamation"></i></div><div><div class="timeline-title-lite">Expired Documents</div><div class="timeline-meta-lite">Insurance/license expiry needs action.</div></div><strong><?= $expiredDocuments ?></strong></div>
+							<div class="timeline-item-lite"><div class="timeline-dot-lite"><i class="fas fa-id-badge"></i></div><div><div class="timeline-title-lite">Gate Pass Pending</div><div class="timeline-meta-lite">Approve temporary/permanent requests.</div></div><strong><?= $pendingGatePass ?></strong></div>
+							<div class="timeline-item-lite"><div class="timeline-dot-lite"><i class="fas fa-helmet-safety"></i></div><div><div class="timeline-title-lite">Safety Pending</div><div class="timeline-meta-lite">Training failed or not completed.</div></div><strong><?= $safetyPending ?></strong></div>
+							<div class="timeline-item-lite"><div class="timeline-dot-lite"><i class="fas fa-location-dot"></i></div><div><div class="timeline-title-lite">Workers Inside Plant</div><div class="timeline-meta-lite">Live IN/OUT monitoring.</div></div><strong><?= $workersInside ?></strong></div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="grid-3">
+				<div class="verify-panel">
+					<div class="verify-head"><div class="verify-title"><i class="fas fa-chart-line"></i> Live Attendance</div></div>
+					<div class="verify-body"><div class="chart-box"><canvas id="attendanceChart"></canvas></div></div>
+				</div>
+				<div class="verify-panel">
+					<div class="verify-head"><div class="verify-title"><i class="fas fa-chart-pie"></i> Customer Registration Status</div></div>
+					<div class="verify-body"><div class="chart-box"><canvas id="statusChart"></canvas></div></div>
+				</div>
+				<div class="verify-panel">
+					<div class="verify-head"><div class="verify-title"><i class="fas fa-users-gear"></i> Annexure 4A Worker Queue</div></div>
+					<div class="verify-body">
+						<?php if (empty($pendingWorkers)): ?>
+							<div style="text-align:center;color:#64748b;padding:20px;">No worker records found.</div>
+						<?php else: foreach ($pendingWorkers as $worker):
+							$wStatus = strtolower($worker['status'] ?? 'pending');
+						?>
+							<div class="worker-row">
+								<div>
+									<div style="font-weight:850;font-size:12.5px;"><?= htmlspecialchars($worker['worker_name'] ?? 'Worker') ?></div>
+									<div style="font-size:11px;color:#64748b;"><?= htmlspecialchars($worker['contractor_name'] ?? '-') ?> | <?= htmlspecialchars($worker['skill_category'] ?? 'Unskilled') ?></div>
+								</div>
+								<span class="badge badge-<?= customerBadgeClass($wStatus) ?>"><?= htmlspecialchars($wStatus) ?></span>
+							</div>
+						<?php endforeach; endif; ?>
+					</div>
+				</div>
+			</div>
+
+			<div class="verify-panel">
+				<div class="verify-head"><div class="verify-title"><i class="fas fa-timeline"></i> Verification Timeline</div></div>
+				<div class="verify-body">
+					<div class="grid-3">
+						<div>
+							<div style="display:flex;justify-content:space-between;font-weight:800;font-size:12px;margin-bottom:7px;"><span>Customer Registration</span><span><?= $approvedAnnexure3a ?>/<?= max(1, $totalContractors) ?></span></div>
+							<div class="status-progress"><span style="width:<?= min(100, round(($approvedAnnexure3a / max(1, $totalContractors)) * 100)) ?>%"></span></div>
+						</div>
+						<div>
+							<div style="display:flex;justify-content:space-between;font-weight:800;font-size:12px;margin-bottom:7px;"><span>Safety Clear</span><span><?= max(0, $totalWorkers - $safetyPending) ?>/<?= max(1, $totalWorkers) ?></span></div>
+							<div class="status-progress"><span style="width:<?= min(100, round(((max(0, $totalWorkers - $safetyPending)) / max(1, $totalWorkers)) * 100)) ?>%;background:#22c55e;"></span></div>
+						</div>
+						<div>
+							<div style="display:flex;justify-content:space-between;font-weight:800;font-size:12px;margin-bottom:7px;"><span>Compliance Clear</span><span><?= max(0, $totalContractors - $compliancePending) ?>/<?= max(1, $totalContractors) ?></span></div>
+							<div class="status-progress"><span style="width:<?= min(100, round(((max(0, $totalContractors - $compliancePending)) / max(1, $totalContractors)) * 100)) ?>%;background:#0ea5e9;"></span></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			async function updateAnnexure3AStatus(id, status) {
+				let remarks = '';
+				if (status !== 'approved') {
+					remarks = prompt('Enter remarks for this action:') || '';
+					if (!remarks.trim()) return;
+				}
+
+				const formData = new FormData();
+				formData.append('id', id);
+				formData.append('status', status);
+				formData.append('remarks', remarks);
+
+				try {
+					const response = await fetch('../../api/customer/update_3a_status.php', {
+						method: 'POST',
+						body: formData
+					});
+					const result = await response.json();
+					if (result.success) {
+						if (typeof window.notifyUser === 'function') {
+							await window.notifyUser('Customer Registration status updated.', 'success', 'Updated');
+						}
+						window.location.reload();
+					} else {
+						const message = result.message || 'Status update failed.';
+						if (typeof window.notifyUser === 'function') {
+							window.notifyUser(message, 'error', 'Failed');
+						} else {
+							alert(message);
+						}
+					}
+				} catch (error) {
+					alert(error.message || 'Unable to update status.');
+				}
+			}
+
+			document.addEventListener('DOMContentLoaded', function () {
+				const attendanceData = <?= json_encode($attendanceTrend) ?>;
+				const statusData = <?= json_encode($statusStats) ?>;
+				const palette = ['#f59e0b', '#22c55e', '#ef4444', '#0ea5e9'];
+				const chartText = '#475569';
+
+				new Chart(document.getElementById('attendanceChart'), {
+					type: 'bar',
+					data: {
+						labels: attendanceData.map(item => item.date),
+						datasets: [{ data: attendanceData.map(item => Number(item.count || 0)), backgroundColor: '#0ea5e9', borderRadius: 6 }]
+					},
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						plugins: { legend: { display: false } },
+						scales: {
+							y: { beginAtZero: true, grid: { color: 'rgba(148,163,184,.22)' }, ticks: { color: chartText } },
+							x: { grid: { display: false }, ticks: { color: chartText } }
+						}
+					}
+				});
+
+				new Chart(document.getElementById('statusChart'), {
+					type: 'doughnut',
+					data: {
+						labels: statusData.map(item => item.label),
+						datasets: [{ data: statusData.map(item => Number(item.value || 0)), backgroundColor: palette, borderWidth: 0 }]
+					},
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						plugins: { legend: { position: 'bottom', labels: { color: chartText, boxWidth: 12, font: { size: 11 } } } }
+					}
+				});
+			});
+		</script>
+		<?php
+}
+
+renderLayout("Customer Dashboard", 'renderContent', $role, $name);

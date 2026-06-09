@@ -1,0 +1,120 @@
+Created At: 2026-05-20T16:51:56Z
+Completed At: 2026-05-20T16:51:56Z
+File Path: `file:///c:/xampp/htdocs/clms/pages/welfare/approve_contractors.php`
+Total Lines: 712
+Total Bytes: 30303
+Showing lines 300 to 520
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+300:         font-weight: 700;
+301:         color: #a5b4fc;
+302:         text-transform: uppercase;
+303:         letter-spacing: 0.5px;
+304:         margin-bottom: 2px;
+305:       }
+306:       .doc-name {
+307:         font-size: 13px;
+308:         font-weight: 600;
+309:         color: var(--text-primary);
+310:         white-space: nowrap;
+311:         overflow: hidden;
+312:         text-overflow: ellipsis;
+313:       }
+314:       .doc-btn {
+315:         font-size: 12px;
+316:         font-weight: 700;
+317:         color: #a5b4fc;
+318:         text-decoration: none;
+319:         display: flex;
+320:         align-items: center;
+321:         gap: 8px;
+322:         background: rgba(99, 102, 241, 0.15);
+323:         padding: 8px 16px;
+324:         border-radius: 6px;
+325:         transition: all 0.2s ease;
+326:         flex-shrink: 0;
+327:         border: 1px solid rgba(99, 102, 241, 0.2);
+328:       }
+329:       .doc-btn:hover {
+330:         background: #6366f1;
+331:         color: #ffffff;
+332:         border-color: #6366f1;
+333:         box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+334:       }
+335:       .no-docs {
+336:         grid-column: span 2;
+337:         text-align: center;
+338:         padding: 24px;
+339:         color: var(--text-muted);
+340:         font-style: italic;
+341:         background: rgba(255, 255, 255, 0.01);
+342:         border: 1px dashed rgba(255, 255, 255, 0.08);
+343:         border-radius: 10px;
+344:       }
+345:     </style>
+346: 
+347:     <script>
+348:     async function viewDetails(c) {
+349:   
+<truncated 4607 bytes>
+      }
+461:       }
+462:       .doc-card {
+463:         display: flex;
+464:         align-items: center;
+465:         justify-content: space-between;
+466:         background: rgba(99, 102, 241, 0.04);
+467:         border: 1px solid rgba(99, 102, 241, 0.12);
+468:         border-radius: 10px;
+469:         padding: 14px 18px;
+470:         transition: all 0.2s ease;
+471:       }
+472:       .doc-card:hover {
+473:         background: rgba(99, 102, 241, 0.08);
+474:         border-color: rgba(99, 102, 241, 0.25);
+475:         transform: translateY(-1px);
+476:       }
+477:       .doc-info {
+478:         display: flex;
+479:         align-items: center;
+480:         gap: 14px;
+481:         min-width: 0; /* allows text truncation */
+482:       }
+483:       .doc-icon {
+484:         font-size: 26px;
+485:         color: #f87171;
+486:         flex-shrink: 0;
+487:       }
+488:       .doc-meta {
+489:         display: flex;
+490:         flex-direction: column;
+491:         min-width: 0;
+492:       }
+493:       .doc-type {
+494:         font-size: 10px;
+495:         font-weight: 700;
+496:         color: #a5b4fc;
+497:         text-transform: uppercase;
+498:         letter-spacing: 0.5px;
+499:         margin-bottom: 2px;
+500:       }
+501:       .doc-name {
+502:         font-size: 13px;
+503:         font-weight: 600;
+504:         color: var(--text-primary);
+505:         white-space: nowrap;
+506:         overflow: hidden;
+507:         text-overflow: ellipsis;
+508:       }
+509:       .doc-btn {
+510:         font-size: 12px;
+511:         font-weight: 700;
+512:         color: #a5b4fc;
+513:         text-decoration: none;
+514:         display: flex;
+515:         align-items: center;
+516:         gap: 8px;
+517:         background: rgba(99, 102, 241, 0.15);
+518:         padding: 8px 16px;
+519:         border-radius: 6px;
+520:         transition: all 0.2s ease;
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

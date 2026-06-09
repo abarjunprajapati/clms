@@ -1,0 +1,368 @@
+ANNEXURE 5/A - COMPLETE DATA MAPPING & ACTIVITIES GUIDE
+══════════════════════════════════════════════════════════════════════════════
+
+📊 PART 1: DATA SOURCES & MAPPING
+──────────────────────────────────────────────────────────────────────────────
+
+PASS TYPE: CONTRACTOR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+What: Individual contractors under a firm
+Rule: Maximum 2 per firm
+Type: Fixed limit (no calculation)
+
+Data Sources:
+─────────────
+  Field                  Source Table      Source Column     Purpose
+  ────────────────────────────────────────────────────────────────────
+  contractor_id          users/auth        contractor_id     Identify which firm?
+  current_count          contractors       COUNT(*)          How many exist?
+  max_allowed            pass_limits       max_allowed       Rule: 2
+
+Example Flow:
+─────────────
+  1. User logged in with contractor_id = 5
+  2. Query: SELECT COUNT(*) FROM contractors WHERE firm_id = (firm of contractor_id 5)
+  3. Result: current_count = 1
+  4. Check: 1 + 1 (new) <= 2 (limit)?
+     YES → Allow registration
+     NO  → Block with message: "Maximum 2 contractors already registered"
+
+SQL Query:
+──────────
+  SELECT COUNT(*) as current FROM contractors 
+  WHERE firm_id = (
+    SELECT firm_id FROM contractors WHERE id = ?
+  ) AND status != 'inactive';
+
+
+PASS TYPE: REPRESENTATIVE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+What: Official representative of the firm (only 1 allowed)
+Rule: Maximum 1 per firm
+Type: Fixed limit (strict, NO FLEXIBILITY)
+
+Data Sources:
+─────────────
+  Field                  Source Table      Source Column     Purpose
+  ────────────────────────────────────────────────────────────────────
+  contractor_id          users/auth        contractor_id     Identify firm
+  current_count          annexure3a        COUNT(*)          Representatives exist?
+  max_allowed            pass_limits       max_allowed       Rule: 1
+
+Example Flow:
+─────────────
+  1. Contractor tries to add representative in Annexure 3A
+  2. Query: SELECT COUNT(DISTINCT rep_name) FROM annexure3a 
+            WHERE contractor_id = ? AND rep_name IS NOT NULL
+  3. Result: current_count = 1 (already exists)
+  4. Check: 1 + 1 (new) <= 1 (limit)?
+     NO  → BLOCK: "Only 1 representative per firm allowed"
+           Show: "Current representative: [NAME]"
+           Option: Override (if Welfare Admin)
+
+SQL Query:
+──────────
+  SELECT COUNT(*) as current FROM annexure3a 
+  WHERE contractor_id = ? 
+  AND pass_type = 'Representative' 
+  AND rep_name IS NOT NULL;
+
+
+PASS TYPE: SUPERVISOR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+What: Supervises workmen (dynamic calculation based on workforce)
+Rule: 1 supervisor per 10 workmen + 1 additional (minimum 1)
+Type: Ratio-based (DYNAMIC - changes as workmen count changes)
+
+Data Sources:
+─────────────
+  Field                  Source Table      Source Column     Purpose
+  ────────────────────────────────────────────────────────────────────
+  contractor_id          users/auth        contractor_id     Identify firm
+  workmen_count          workmen           COUNT(*)          Total workmen employed
+  current_count          annexure3a        COUNT(*)          Current supervisors
+  ratio                  pass_limits       ratio_per_workmen Rule: 10
+
+Calculation:
+────────────
+  allowed_supervisors = 1 + FLOOR(total_workmen / 10)
+  
+  Example 1: 5 workmen   → 1 + floor(5/10)  = 1 + 0 = 1 max supervisor
+  Example 2: 10 workmen  → 1 + floor(10/10) = 1 + 1 = 2 max supervisors
+  Example 3: 25 workmen  → 1 + floor(25/10) = 1 + 2 = 3 max supervisors
+  Example 4: 35 workmen  → 1 + floor(35/10) = 1 + 3 = 4 max supervisors
+  Example 5: 100 workmen → 1 + floor(100/10)= 1 + 10 = 11 max supervisors
+
+Example Flow:
+─────────────
+  1. Contractor adding 2 supervisors for 35 workmen
+  2. Query A: SELECT COUNT(*) FROM workmen WHERE contractor_id = ? AND status = 'active'
+     Result: workmen_count = 35
+  3. Query B: SELECT COUNT(*) FROM annexure3a WHERE contractor_id = ? AND type = 'Supervisor'
+     Result: current_count = 1
+  4. Calculate: allowed = 1 + floor(35/10) = 4
+  5. Check: 1 + 2 (new) <= 4 (allowed)?
+     YES → Allow: "Adding 2 supervisors. Total: 3 (Max allowed: 4)"
+     NO  → Block: "Can add maximum 1 more supervisor (Total allowed: 4, Current: 3)"
+
+SQL Queries:
+────────────
+  -- Get workmen count
+  SELECT COUNT(*) as total_workmen FROM workmen 
+  WHERE contractor_id = ? AND status IN ('active', 'deployed');
+  
+  -- Get current supervisor count
+  SELECT COUNT(*) as current_supervisors FROM annexure3a 
+  WHERE contractor_id = ? AND type = 'Supervisor' AND status = 'active';
+  
+  -- Get supervisor limit rule
+  SELECT ratio_per_workmen FROM pass_limits 
+  WHERE pass_type = 'Supervisor' AND contractor_id = 0;
+
+
+PASS TYPE: WORKMAN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+What: Labour/skilled/unskilled workers employed by contractor
+Rule: NO FIXED LIMIT (unlimited)
+Type: NoLimit (depends on project work order)
+
+Data Sources:
+─────────────
+  Field                  Source Table      Source Column     Purpose
+  ────────────────────────────────────────────────────────────────────
+  contractor_id          users/auth        contractor_id     Identify firm
+  work_order_qty         work_orders       quantity          Max from project
+  current_count          workmen           COUNT(*)          Currently enrolled
+  max_allowed            pass_limits       max_allowed       Rule: NULL (unlimited)
+
+Example Flow:
+─────────────
+  1. Contractor wants to add 50 workmen in Annexure 4A
+  2. Check work order quantity limit (if specified)
+     Query: SELECT MAX(quantity) FROM work_orders WHERE contractor_id = ?
+     Result: work_order_qty = 100
+  3. Query: SELECT COUNT(*) FROM workmen WHERE contractor_id = ? AND status != 'removed'
+     Result: current_count = 30
+  4. Check: 30 + 50 <= 100?
+     YES → Allow: "Can enroll 50 more workmen (Total: 80, Work order limit: 100)"
+     NO  → Warn: "Only 70 slots available in work order. Can add 70, not 50"
+  5. Annexure 5/A says: No fixed pass type limit
+     So enrollment is only restricted by work order quantity, NOT pass limit
+
+SQL Query:
+──────────
+  SELECT COUNT(*) as current FROM workmen 
+  WHERE contractor_id = ? AND status IN ('active', 'deployed', 'enrolled');
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+⚙️ PART 2: ACTIVITIES & WORKFLOW ORCHESTRATION
+──────────────────────────────────────────────────────────────────────────────
+
+ACTIVITY 1: PRE-ENROLLMENT VALIDATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Trigger: User tries to add person of any type (contractor, representative, supervisor, workman)
+
+Process:
+  Step 1: Identify the type being added
+          Type ← from form dropdown / request body
+  
+  Step 2: Get contractor_id from session
+          contractor_id ← $_SESSION['contractor_id']
+  
+  Step 3: Query pass_limits for this type
+          Rule ← pass_limits WHERE pass_type = Type
+  
+  Step 4a: If Type = 'Contractor' or 'Representative'
+           → Query current count from contractors/annexure3a table
+           → Compare: current + 1 <= max_allowed?
+           → Decision: ALLOW or BLOCK
+  
+  Step 4b: If Type = 'Supervisor'
+           → Query: workmen_count from workmen table
+           → Calculate: allowed = 1 + floor(workmen_count / 10)
+           → Query: current supervisors from annexure3a
+           → Compare: current + requested <= allowed?
+           → Decision: ALLOW or BLOCK
+  
+  Step 4c: If Type = 'Workman'
+           → Query: work_order quantity from work_orders
+           → Query: current workmen from workmen table
+           → Compare: current + requested <= work_order_qty?
+           → Decision: ALLOW or BLOCK
+  
+  Step 5: If ALLOW → Proceed to insert
+          If BLOCK → Show error, ask for override (if Welfare Admin)
+
+Code Location: 
+  Backend: api/generate_pass.php (after getApiInput)
+  Frontend: js/annexure5a_validator.js → validatePass()
+
+
+ACTIVITY 2: DURING FORM SUBMISSION (ANNEXURE 3A/4A)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Scenario A: Adding Representative
+──────────────────────────────────
+  1. User fills Representative Name, Address, etc.
+  2. Clicks "Save Representative"
+  3. Frontend: validatePassLimit('Representative', 1, current_representatives)
+  4. If valid → Send POST request
+  5. Backend receives request
+  6. Backend: validatePassLimit($conn, $contractor_id, 'Representative', 1, false)
+  7. Backend Check: SELECT COUNT(*) FROM annexure3a WHERE contractor_id = ?
+  8. If current >= 1 → Throw Exception: "Only 1 representative allowed"
+  9. If valid → INSERT INTO annexure3a (...) 
+     UPDATE workflow_status = 'representative_added'
+  10. Return: { success: true, message: 'Representative added' }
+
+Scenario B: Adding Supervisors
+───────────────────────────────
+  1. User enters "Add 2 supervisors" in form
+  2. Form shows: "Calculated limit: 4 supervisors for 35 workmen"
+  3. Frontend: real-time validation as they type
+     validatePassLimit('Supervisor', input_value, 35)
+  4. Show: "Can add 2 more. Total will be: 3/4"
+  5. Clicks "Submit"
+  6. Backend: validatePassLimit($conn, $contractor_id, 'Supervisor', 2)
+  7. Backend Calculate:
+     - workmen_count = 35
+     - allowed = 1 + floor(35/10) = 4
+     - current = 1
+     - new_total = 1 + 2 = 3
+     - 3 <= 4? YES
+  8. INSERT INTO annexure3a (type='Supervisor', count=2, ...)
+  9. Return: success with message
+
+Code Location:
+  Backend: api/save_annexure3a.php
+  Frontend: Inline form validation
+
+
+ACTIVITY 3: GATE PASS GENERATION (FINAL CHECK)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Trigger: Welfare Admin clicks "Generate Passes" button
+
+Process:
+  1. User selects: Generate passes for workmen (25 person)
+  2. Button click → POST /api/generate_permanent_pass.php
+  3. API receives: application_id, contractor_id
+  4. Query: Get all workmen for this application
+     FROM workmen WHERE application_id = ? AND status = 'active'
+  5. For each workman:
+     a. Call: validatePassLimit($conn, $contractor_id, 'Workman', 1)
+     b. Workman has NO_LIMIT → Always returns valid
+     c. Generate pass: INSERT INTO permanent_gate_passes
+     d. Create QR code with pass details
+     e. Send notification to worker
+  6. Update workflow_status = 'pass_generated'
+  7. Return: { generated: 25, skipped: 0 }
+
+Code Location:
+  Backend: api/generate_permanent_pass.php (line 41-51)
+
+
+ACTIVITY 4: WELFARE ADMIN OVERRIDE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Trigger: Validation fails, but Welfare Admin has override permission
+
+Process:
+  1. Normal validation fails (e.g., representative limit exceeded)
+  2. Frontend shows: ⚠️ "Limit exceeded. Request Welfare Override?"
+  3. Admin clicks: "Request Override"
+  4. Sends: POST /api/welfare/override_pass_limit.php
+     {
+       contractor_id: 123,
+       pass_type: 'Representative',
+       reason: 'Specific project requirement',
+       admin_id: 5,
+       is_override: true
+     }
+  5. Backend:
+     a. Check: Is admin a Welfare User?
+     b. Check: override_allowed = true for this rule?
+     c. Query: validatePassLimit($conn, 123, 'Representative', 1, true)
+     d. Result: Valid (even though it exceeds limit)
+  6. INSERT: representative with override_flag = true
+  7. Log: INSERT INTO audit_log 
+     (action='pass_limit_override', contractor_id=123, ...)
+  8. Return: { success: true, message: 'Added with override', override: true }
+  9. Send notification to supervisor/manager about override
+
+Code Location:
+  Backend: api/welfare/override_pass_limit.php
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📋 PART 3: ACTIVITY SUMMARY TABLE
+──────────────────────────────────────────────────────────────────────────────
+
+Activity                 Trigger              Validation Point     Rule Applied
+─────────────────────────────────────────────────────────────────────────────
+Register Contractor      User submits Annex2A Before application   Contractor:  ≤2
+Add Representative       Save Annex 3A rep    Before INSERT        Representative: ≤1
+Add Supervisor           Save Annex 3A sup    Before INSERT        Supervisor: Dynamic
+Enroll Workmen           Submit Annex 4A      Before INSERT        Workman: Unlimited
+Request Gate Pass        Click "Generate"     Before pass creation Workman: Unlimited
+Override Limit           Welfare Admin click  With override flag   All types: Allow if true
+Report Generation        Admin request        No validation        Query pass_limits
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🔄 PART 4: QUERY FLOW DIAGRAM
+──────────────────────────────────────────────────────────────────────────────
+
+User Action (e.g., Add Supervisor)
+        │
+        ▼
+Form Input: { pass_type: 'Supervisor', requested: 2 }
+        │
+        ▼
+Frontend Validation (annexure5a_validator.js)
+├─ Calculate allowed = 1 + floor(35/10)
+├─ Compare: 1 + 2 <= 4? YES
+└─ Show: "✅ Can add 2 supervisors"
+        │
+        ▼
+POST Request to Backend
+        │
+        ▼
+Backend: validatePassLimit($conn, contractor_id, 'Supervisor', 2)
+        │
+        ├─ Query 1: SELECT MAX(pass_no) FROM permanent_gate_passes
+        │          (to get workmen_count)
+        │
+        ├─ Query 2: SELECT * FROM pass_limits 
+        │          WHERE pass_type='Supervisor' AND contractor_id IN (0, ?)
+        │
+        ├─ Query 3: SELECT COUNT(*) FROM annexure3a
+        │          WHERE contractor_id = ? AND type='Supervisor'
+        │
+        ├─ Calculate: allowed = 1 + floor(35/10) = 4
+        ├─ Compare: (1 + 2) <= 4? YES
+        │
+        └─ Return: { valid: true, ... }
+        │
+        ▼
+INSERT INTO annexure3a (...)
+        │
+        ▼
+UPDATE workflow_status = 'supervisor_added'
+        │
+        ▼
+Response: { success: true, message: 'Added successfully' }
+        │
+        ▼
+Frontend: Update UI with success message
+
+═══════════════════════════════════════════════════════════════════════════════
+

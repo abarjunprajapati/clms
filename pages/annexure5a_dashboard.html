@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Annexure 5/A Dashboard</title>
+    <style>
+        /* Reuse styles from management.html */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .dashboard { max-width: 1400px; margin: 0 auto; background: rgba(255,255,255,0.95); border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); overflow: hidden; }
+        .dash-header { background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); padding: 40px; text-align: center; color: white; }
+        .dash-header h1 { font-size: 36px; margin-bottom: 10px; }
+        .content { padding: 30px; }
+        .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 40px; }
+        .stat-box { background: white; border-radius: 12px; padding: 25px; text-align: center; box-shadow: 0 8px 25px rgba(0,0,0,0.08); transition: transform 0.3s; }
+        .stat-box:hover { transform: translateY(-5px); }
+        .stat-icon { font-size: 48px; margin-bottom: 15px; opacity: 0.8; }
+        .stat-big { font-size: 40px; font-weight: bold; color: #667eea; margin-bottom: 5px; }
+        .stat-label { color: #666; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+        .util-bar { height: 8px; background: #eee; border-radius: 4px; margin: 10px 0; overflow: hidden; }
+        .util-fill { height: 100%; background: linear-gradient(90deg, #4caf50, #ff9800, #f44336); transition: width 1s; border-radius: 4px; }
+        .limits-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+        .limits-table th { background: #f8f9ff; padding: 15px; text-align: left; font-weight: 600; color: #333; border-bottom: 2px solid #eee; }
+        .limits-table td { padding: 15px; border-bottom: 1px solid #f0f0f0; }
+        .limits-table tr:hover { background: #f8f9ff; }
+        .util-percent { font-weight: bold; color: #667eea; }
+        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .status-ok { background: #e8f5e8; color: #2e7d32; }
+        .status-warning { background: #fff3cd; color: #856404; }
+        .status-critical { background: #ffebee; color: #c62828; }
+        .search-box { margin-bottom: 20px; }
+        .search-box input { width: 300px; padding: 12px; border: 2px solid #ddd; border-radius: 25px; font-size: 14px; }
+        @media (max-width: 768px) { .stats-row { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="dash-header">
+            <h1>📊 Annexure 5/A Dashboard</h1>
+            <p>Pass Enrollment Limits • Real-time Monitoring • Compliance Status</p>
+        </div>
+        
+        <div class="content">
+            <div class="search-box">
+                <input type="text" id="contractorSearch" placeholder="🔍 Search Contractor ID or Name..." oninput="loadDashboard()">
+                <button onclick="loadDashboard()" style="margin-left: 10px; padding: 12px 20px; background: #667eea; color: white; border: none; border-radius: 25px; cursor: pointer;">Search</button>
+            </div>
+            
+            <div class="stats-row" id="statsRow">
+                <!-- Dynamic stats -->
+            </div>
+            
+            <table class="limits-table" id="limitsTable">
+                <thead>
+                    <tr>
+                        <th>Pass Type</th>
+                        <th>Current</th>
+                        <th>Max Allowed</th>
+                        <th>Utilization</th>
+                        <th>Status</th>
+                        <th>Rule</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Dynamic data -->
+                </tbody>
+            </table>
+            
+            <div style="margin-top: 30px; padding: 20px; background: #f8f9ff; border-radius: 8px;">
+                <h3>🧪 Quick Test Links</h3>
+                <a href="javascript:testValidation()" style="background: #4caf50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Test Supervisor (35 workmen)</a>
+                <a href="javascript:testOverride()" style="background: #ff9800; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Test Override</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/app.js"></script>
+    <script src="/js/annexure5a_validator.js"></script>
+    <script>
+        let currentContractorId = 100; // Test contractor
+        
+        // Load dashboard data
+        async function loadDashboard(contractorId = currentContractorId) {
+            try {
+                const response = await fetch(`/api/get_pass_limits.php?contractor_id=${contractorId}`);
+                const data = await response.json();
+                
+                if (data.success !== false) {
+                    updateStats(data);
+                    updateTable(data.pass_limits);
+                    currentContractorId = contractorId;
+                } else {
+                    alert('Error loading data: ' + data.error);
+                }
+            } catch (e) {
+                alert('Network error: ' + e.message);
+            }
+        }
+        
+        function updateStats(data) {
+            const statsHtml = data.pass_limits.map(limit => `
+                <div class="stat-box">
+                    <div class="stat-icon">👷</div>
+                    <div class="stat-big">${limit.current}/${limit.allowed || '∞'}</div>
+                    <div class="stat-label">${limit.pass_type}</div>
+                    <div class="util-bar"><div class="util-fill" style="width: ${limit.utilization}%"></div></div>
+                    <div class="util-percent">${limit.utilization}%</div>
+                </div>
+            `).join('');
+            document.getElementById('statsRow').innerHTML = statsHtml;
+        }
+        
+        function updateTable(limits) {
+            const tbody = document.querySelector('#limitsTable tbody');
+            tbody.innerHTML = limits.map(limit => {
+                const status = limit.utilization < 80 ? 'status-ok' : limit.utilization < 95 ? 'status-warning' : 'status-critical';
+                const allowed = limit.allowed === null ? 'Unlimited' : limit.allowed;
+                return `
+                    <tr>
+                        <td><strong>${limit.pass_type}</strong></td>
+                        <td>${limit.current}</td>
+                        <td>${allowed}</td>
+                        <td>${limit.utilization}%</td>
+                        <td><span class="status-badge ${status}">${limit.utilization < 100 ? 'OK' : 'Limit Reached'}</span></td>
+                        <td>${limit.rule}</td>
+                        <td><button onclick="overrideLimit('${limit.pass_type}')" class="btn-override" style="padding: 5px 15px; font-size: 12px;">Override</button></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        function overrideLimit(passType) {
+            const reason = prompt('Reason for override:');
+            if (reason) {
+                // Call override API
+                console.log('Override', passType, reason);
+            }
+        }
+        
+        function testValidation() {
+            const result = PassLimitValidator.validateSupervisor(35, 4);
+            alert(result.message + (result.valid ? ' ✅' : ' ❌'));
+        }
+        
+        function testOverride() {
+            console.log('Override simulation for test contractor');
+            alert('✅ Override successful - logged to audit!');
+        }
+        
+        // Initialize
+        loadDashboard();
+        setInterval(() => loadDashboard(), 30000); // Auto refresh every 30s
+    </script>
+</body>
+</html>
