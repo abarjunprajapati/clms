@@ -1,233 +1,284 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
-checkAuth(['safety_user']);
+checkAuth(['safety_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
+require_once __DIR__ . '/../../include/safety_training_control.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Safety Officer';
+clms_safety_ensure_control_schema($conn);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        $batchId = (int)($_POST['batch_id'] ?? 0);
+        $selected = $_POST['selected_requests'] ?? array();
+        $mode = ($_POST['schedule_mode'] ?? 'schedule') === 'draft' ? 'draft' : 'schedule';
+        if ($mode === 'draft') {
+            $result = clms_safety_save_batch_selection($conn, $batchId, $selected, (int)($_SESSION['user_id'] ?? 0));
+            $_SESSION['success'] = 'Draft saved for batch ' . $result['batch_number'] . '. Selected ' . $result['selected'] . ' worker(s).';
+        } else {
+            $result = clms_safety_schedule_batch($conn, $batchId, $selected, (int)($_SESSION['user_id'] ?? 0));
+            $_SESSION['success'] = 'Batch ' . $result['batch_number'] . ' scheduled. Token generated for ' . $result['scheduled'] . ' worker(s).';
+        }
+        header('Location: training_schedule.php?batch_id=' . $batchId);
+        exit;
+    } catch (Throwable $e) {
+        $_SESSION['error'] = $e->getMessage();
+        header('Location: training_schedule.php' . (!empty($_POST['batch_id']) ? '?batch_id=' . (int)$_POST['batch_id'] : ''));
+        exit;
+    }
+}
 
 function renderContent() {
     global $conn;
-    
-    // Fetch sessions with confirmed attendee count only.
-    $sessions = db_fetch_all($conn, "
-        SELECT ts.*,
-               COALESCE(att.confirmed_count, 0) AS enrolled_count
-        FROM training_schedule ts
+
+    $batches = db_fetch_all($conn, "
+        SELECT b.*,
+               COALESCE(wc.total_workers, 0) AS total_workers
+        FROM training_class_batches b
         LEFT JOIN (
-            SELECT tsw.session_id, COUNT(*) AS confirmed_count
-            FROM training_session_workers tsw
-            JOIN training_requests tr ON tr.id = tsw.training_request_id
-            WHERE tr.status = 'contractor_confirmed'
-            GROUP BY tsw.session_id
-        ) att ON att.session_id = ts.id
-        ORDER BY ts.session_date DESC, ts.session_time ASC
+            SELECT batch_id, SUM(CASE WHEN ticked = 1 THEN 1 ELSE 0 END) AS total_workers
+            FROM training_batch_workers
+            GROUP BY batch_id
+        ) wc ON wc.batch_id = b.id
+        ORDER BY b.training_date DESC, b.id DESC
+        LIMIT 100
     ");
-    ?>
-    <div class="content-header">
-      <h2 class="page-title">Training Schedule</h2>
-      <!-- <p class="page-subtitle">Plan and manage safety training sessions.</p> -->
-    </div>
 
-    <div class="grid grid-3" style="gap:20px">
-      <!-- CREATE SESSION FORM -->
-      <div class="card glass" style="grid-column: span 1">
-        <div class="card-header">
-          <div class="card-title"><i class="fas fa-calendar-plus"></i> Create New Session</div>
-        </div>
-        <div class="card-body">
-          <form action="../../api/safety/create_session.php" method="POST">
-            <div class="form-group">
-              <label class="form-label">Training Date</label>
-              <input type="date" name="session_date" class="form-control" required min="<?= date('Y-m-d') ?>">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Time Slot</label>
-              <input type="time" name="session_time" class="form-control" required>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Location / Venue</label>
-              <input type="text" name="location" class="form-control" placeholder="e.g. Training Hall A" required>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Training Type</label>
-              <select name="training_type" class="form-control" required>
-                <option value="induction">Safety Induction (Mandatory)</option>
-                <option value="refresher">Refresher Training</option>
-                <option value="special">Specialized Safety Training</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Batch Size (Capacity)</label>
-              <input type="number" name="capacity" class="form-control" value="30" min="1" required>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Trainer Name</label>
-              <input type="text" name="trainer_name" class="form-control" placeholder="Name of safety officer">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Remarks</label>
-              <textarea name="remarks" class="form-control" rows="2"></textarea>
-            </div>
-            <button type="submit" class="btn btn-primary btn-block" style="margin-top:10px">
-              <i class="fas fa-save"></i> Save Session
-            </button>
-          </form>
-        </div>
+    $selectedBatchId = (int)($_GET['batch_id'] ?? ($batches[0]['id'] ?? 0));
+    $batch = $selectedBatchId
+        ? db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', array($selectedBatchId))
+        : null;
+    $workers = $batch ? clms_safety_batch_candidates($conn, (int)$batch['id']) : array();
+    $alreadyScheduled = false;
+    foreach ($workers as $worker) {
+        if ((int)($worker['ticked'] ?? 0) === 1) {
+            $alreadyScheduled = true;
+            break;
+        }
+    }
+    $capacity = $batch ? max(1, (int)$batch['capacity']) : 0;
+?>
+<div class="content-header schedule-header">
+  <div>
+    <h2 class="page-title"><i class="fas fa-calendar-alt"></i> Training Schedule</h2>
+    <p class="page-subtitle">Assign workers to a batch by ticking seats. Extra workers stay waiting until a selected row is unticked.</p>
+  </div>
+  <div class="schedule-actions">
+    <a href="training_class_master.php" class="btn btn-outline"><i class="fas fa-calendar-plus"></i> Create Batch</a>
+    <a href="reports.php" class="btn btn-outline"><i class="fas fa-list"></i> All Trainings</a>
+  </div>
+</div>
+
+<section class="card glass selector-card">
+  <div class="card-body">
+    <form method="get" class="batch-select-form">
+      <label>Batch No
+        <select class="form-control" name="batch_id" onchange="this.form.submit()">
+          <?php foreach ($batches as $item): ?>
+            <option value="<?= (int)$item['id'] ?>" <?= $batch && (int)$batch['id'] === (int)$item['id'] ? 'selected' : '' ?>>
+              <?= htmlspecialchars($item['batch_number']) ?> - <?= date('d M Y', strtotime($item['training_date'])) ?> - <?= htmlspecialchars($item['language_name']) ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <a class="btn btn-outline" href="training_batch_report.php<?= $batch ? '?batch_id=' . (int)$batch['id'] : '' ?>"><i class="fas fa-file-lines"></i> Batch Report</a>
+    </form>
+  </div>
+</section>
+
+<?php if (!$batch): ?>
+  <div class="alert alert-warning">No batch found. Create a training batch first.</div>
+<?php else: ?>
+<section class="batch-summary">
+  <div class="summary-card"><span>Training Dt</span><strong><?= date('d M Y', strtotime($batch['training_date'])) ?></strong></div>
+  <div class="summary-card"><span>Language</span><strong><?= htmlspecialchars($batch['language_name']) ?></strong></div>
+  <div class="summary-card"><span>Location</span><strong><?= htmlspecialchars($batch['venue_name']) ?></strong></div>
+  <div class="summary-card"><span>Session</span><strong><?= htmlspecialchars($batch['session_name']) ?></strong></div>
+  <div class="summary-card"><span>Time</span><strong><?= htmlspecialchars(substr((string)($batch['time_from'] ?: ($batch['session_name'] === 'AN' ? '14:00' : '09:00')), 0, 5)) ?> - <?= htmlspecialchars(substr((string)($batch['time_to'] ?: ''), 0, 5) ?: '-') ?></strong></div>
+  <div class="summary-card"><span>Training Type</span><strong><?= htmlspecialchars($batch['training_type']) ?></strong></div>
+  <div class="summary-card"><span>Trainer</span><strong><?= htmlspecialchars($batch['instructor_name'] ?: 'Not assigned') ?></strong></div>
+  <div class="summary-card capacity"><span>Slots</span><strong><b id="selectedCount">0</b> / <?= $capacity ?></strong></div>
+</section>
+
+<form method="post" id="scheduleForm">
+  <input type="hidden" name="batch_id" value="<?= (int)$batch['id'] ?>">
+  <section class="card glass workers-card">
+    <div class="card-header schedule-table-head">
+      <div>
+        <div class="card-title"><i class="fas fa-users"></i> Assign Batch Workers</div>
+        <p>Only <?= htmlspecialchars($batch['language_name']) ?> workers are shown, sorted by application date. First <?= $capacity ?> rows are auto-ticked unless a draft/schedule already exists.</p>
       </div>
-
-      <!-- SESSION LIST -->
-      <div class="card glass" style="grid-column: span 2">
-        <div class="card-header">
-          <div class="card-title"><i class="fas fa-list"></i> Scheduled Sessions</div>
-        </div>
-        <div class="card-body">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Details</th>
-                <th>Type</th>
-                <th>Capacity</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach($sessions as $sess): ?>
-              <?php
-                $capacity = max(1, (int)($sess['capacity'] ?? 0));
-                $enrolled = (int)($sess['enrolled_count'] ?? 0);
-                $progress = min(100, ($enrolled / $capacity) * 100);
-                $sessionStatus = strtolower((string)($sess['session_status'] ?? 'open'));
-              ?>
-              <tr>
-                <td>
-                  <div style="font-weight:600"><?= date('d M Y', strtotime($sess['session_date'])) ?></div>
-                  <div style="font-size:11px;opacity:0.7"><?= date('H:i', strtotime($sess['session_time'])) ?></div>
-                </td>
-                <td>
-                  <div style="font-size:13px;font-weight:500"><?= htmlspecialchars($sess['location']) ?></div>
-                  <div style="font-size:11px;opacity:0.6">Trainer: <?= htmlspecialchars($sess['trainer_name'] ?: 'Not Assigned') ?></div>
-                </td>
-                <td><span class="badge badge-outline"><?= ucfirst($sess['training_type']) ?></span></td>
-                <td>
-                  <div style="font-size:12px"><?= $enrolled ?> / <?= $capacity ?></div>
-                  <div class="progress-bar-small">
-                    <div class="progress-fill" style="width: <?= $progress ?>%"></div>
-                  </div>
-                </td>
-                <td>
-                  <?php if($sessionStatus == 'open'): ?>
-                    <span class="badge badge-info">Open</span>
-                  <?php elseif($sessionStatus == 'locked'): ?>
-                    <span class="badge badge-warning">Locked</span>
-                  <?php elseif($sessionStatus == 'cancelled'): ?>
-                    <span class="badge badge-danger">Cancelled</span>
-                  <?php else: ?>
-                    <span class="badge badge-success">Completed</span>
-                  <?php endif; ?>
-                </td>
-                <td>
-                  <a href="manage_session.php?id=<?= $sess['id'] ?>" class="btn btn-sm btn-outline">
-                    <i class="fas fa-cog"></i> Manage
-                  </a>
-                  <?php if($sessionStatus !== 'completed' && $sessionStatus !== 'cancelled'): ?>
-                    <button type="button" class="btn btn-sm btn-outline" onclick='openRescheduleSession(<?= json_encode([
-                        'id' => (int)$sess['id'],
-                        'date' => $sess['session_date'],
-                        'time' => substr((string)$sess['session_time'], 0, 5),
-                        'location' => $sess['location'],
-                        'trainer' => $sess['trainer_name'],
-                        'batch' => $sess['batch_number'] ?? '',
-                    ], JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
-                      <i class="fas fa-clock"></i> Reschedule
-                    </button>
-                    <button type="button" class="btn btn-sm btn-danger" onclick="cancelSession(<?= (int)$sess['id'] ?>)">
-                      <i class="fas fa-ban"></i> Cancel
-                    </button>
-                  <?php endif; ?>
-                </td>
-              </tr>
-              <?php endforeach; if(empty($sessions)): ?>
-              <tr><td colspan="6" style="text-align:center;padding:40px;opacity:0.5">No sessions found. Create one to start.</td></tr>
+      <div class="table-actions">
+        <button type="button" class="btn btn-sm btn-outline" onclick="exportScheduleCsv()"><i class="fas fa-file-excel"></i> XL</button>
+        <button type="submit" class="btn btn-sm btn-outline" name="schedule_mode" value="draft"><i class="fas fa-file"></i> Save Draft</button>
+        <button type="submit" class="btn btn-sm btn-primary" name="schedule_mode" value="schedule"><i class="fas fa-check"></i> Schedule</button>
+      </div>
+    </div>
+    <div class="card-body" style="padding:0">
+      <table class="data-table schedule-table" id="scheduleTable">
+        <thead>
+          <tr>
+            <th>Tick</th>
+            <th>S.No</th>
+            <th>Application Dt</th>
+            <th>Aadhaar</th>
+            <th>Name</th>
+            <th>Contractor Code</th>
+            <th>Contractor Name</th>
+            <th>Language</th>
+            <th>Token</th>
+            <th>Attempt</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($workers as $idx => $worker):
+            $autoChecked = $alreadyScheduled ? ((int)$worker['ticked'] === 1) : ($idx < $capacity);
+            $isBlocked = (int)$worker['attempt_no'] > 3;
+            $tokenPreview = $worker['token_number'] ?: ($autoChecked ? str_pad((string)($idx + 1), 6, '0', STR_PAD_LEFT) : '');
+          ?>
+          <tr class="<?= $idx >= $capacity && !$autoChecked ? 'waiting-row' : '' ?>">
+            <td>
+              <input
+                type="checkbox"
+                class="worker-check"
+                name="selected_requests[]"
+                value="<?= (int)$worker['training_request_id'] ?>"
+                data-token-target="token_<?= (int)$worker['training_request_id'] ?>"
+                <?= $isBlocked ? 'data-max-attempt="1"' : '' ?>
+                <?= $autoChecked && !$isBlocked ? 'checked' : '' ?>
+                <?= $isBlocked ? 'disabled' : '' ?>
+              >
+            </td>
+            <td><?= $idx + 1 ?></td>
+            <td><?= !empty($worker['requested_date']) ? date('d M Y', strtotime($worker['requested_date'])) : date('d M Y', strtotime($worker['request_created_at'])) ?></td>
+            <td><?= htmlspecialchars($worker['aadhaar'] ?? '') ?></td>
+            <td><strong><?= htmlspecialchars($worker['name'] ?? '') ?></strong><div class="muted"><?= htmlspecialchars($worker['temp_id'] ?? '') ?></div></td>
+            <td><?= htmlspecialchars($worker['contractor_code'] ?? '') ?></td>
+            <td><?= htmlspecialchars($worker['contractor_name'] ?? '') ?></td>
+            <td><?= htmlspecialchars($worker['safety_language'] ?? $batch['language_name']) ?></td>
+            <td><span class="token-pill" id="token_<?= (int)$worker['training_request_id'] ?>"><?= htmlspecialchars($tokenPreview) ?></span></td>
+            <td>
+              <?php if ($isBlocked): ?>
+                <span class="badge badge-danger">Max Attempt</span>
+              <?php else: ?>
+                <?= (int)$worker['attempt_no'] ?>
               <?php endif; ?>
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </td>
+            <td><span class="badge <?= $autoChecked ? 'badge-info' : 'badge-gray' ?> row-state"><?= $autoChecked ? 'Selected' : 'Waiting' ?></span></td>
+          </tr>
+          <?php endforeach; ?>
+          <?php if (empty($workers)): ?>
+            <tr><td colspan="11" style="text-align:center;padding:34px;color:var(--text-muted)">No eligible <?= htmlspecialchars($batch['language_name']) ?> workers found for scheduling.</td></tr>
+          <?php endif; ?>
+        </tbody>
+      </table>
     </div>
+  </section>
+</form>
+<?php endif; ?>
 
-    <style>
-    .progress-bar-small { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 5px; width: 60px; overflow: hidden; }
-    .progress-fill { height: 100%; background: var(--primary); }
-    .btn-block { width: 100%; display: block; }
-    </style>
-    <script>
-    async function postSessionAction(payload) {
-      const res = await fetch('../../api/safety/update_session.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.message || 'Unable to update session.');
-      return data;
-    }
+<style>
+  .schedule-header{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-bottom:16px}
+  .schedule-actions,.table-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .selector-card{margin-bottom:14px}
+  .batch-select-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .batch-select-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:800;color:#475569;min-width:320px;flex:1}
+  .form-control{height:38px;border:1px solid #cbd5e1;border-radius:8px;padding:0 10px;background:#fff}
+  .batch-summary{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+  .summary-card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;min-height:70px}
+  .summary-card span{display:block;font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:6px}
+  .summary-card strong{font-size:14px;color:#111827;line-height:1.25}
+  .summary-card.capacity{border-color:#bfdbfe;background:#eff6ff}
+  .summary-card.capacity strong{color:#1d4ed8}
+  .schedule-table-head{align-items:flex-start}
+  .schedule-table-head p{margin:4px 0 0;font-size:12px;color:#64748b}
+  .workers-card{overflow:hidden}
+  .muted{font-size:11px;color:#64748b;margin-top:2px}
+  .token-pill{display:inline-flex;min-width:58px;justify-content:center;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#334155;font-weight:800;font-size:11px}
+  .waiting-row{background:#fffaf0}
+  .seat-disabled-row{opacity:.62;background:#f8fafc}
+  .worker-check{width:18px;height:18px;cursor:pointer}
+  @media(max-width:1000px){.batch-summary{grid-template-columns:repeat(2,minmax(160px,1fr))}.schedule-header{flex-direction:column;align-items:stretch}}
+  @media(max-width:640px){.batch-summary{grid-template-columns:1fr}.batch-select-form label{min-width:0}.schedule-actions .btn,.table-actions .btn{flex:1}}
+  @media print{.sidebar,.topbar,.selector-card,.schedule-actions,.table-actions{display:none!important}.main-content{margin:0!important}.card{box-shadow:none!important}.batch-summary{grid-template-columns:repeat(4,1fr)}}
+</style>
+<script>
+  const scheduleCapacity = <?= (int)$capacity ?>;
 
-    async function cancelSession(id) {
-      const reason = prompt('Reason for cancelling this training session:');
-      if (reason === null) return;
-      if (!reason.trim()) {
-        alert('Cancellation reason is required.');
-        return;
-      }
-      if (!confirm('Cancel this session and return workers to scheduling queue?')) return;
-      try {
-        const data = await postSessionAction({ action: 'cancel', session_id: id, reason });
-        alert(data.message || 'Session cancelled.');
-        location.reload();
-      } catch (err) {
-        alert(err.message);
-      }
-    }
+  function refreshSelection() {
+    const checks = Array.from(document.querySelectorAll('.worker-check'));
+    const checked = checks.filter(input => input.checked);
+    const selectedCount = document.getElementById('selectedCount');
+    if (selectedCount) selectedCount.textContent = checked.length;
+    const isFull = checked.length >= scheduleCapacity;
 
-    async function openRescheduleSession(session) {
-      const date = prompt('New training date (YYYY-MM-DD):', session.date || '');
-      if (date === null) return;
-      const time = prompt('New training time (HH:MM):', session.time || '');
-      if (time === null) return;
-      const location = prompt('Training Hall / Venue:', session.location || '');
-      if (location === null) return;
-      const trainer = prompt('Instructor (optional):', session.trainer || '');
-      if (trainer === null) return;
-      const reason = prompt('Reason / remarks for reschedule:', 'Training schedule updated by Safety.');
-      if (reason === null) return;
-      if (!date.trim() || !time.trim() || !location.trim()) {
-        alert('Date, time and venue are required.');
-        return;
+    checks.forEach(input => {
+      const row = input.closest('tr');
+      const state = row ? row.querySelector('.row-state') : null;
+      if (row) row.classList.toggle('seat-disabled-row', isFull && !input.checked && !input.dataset.maxAttempt);
+      if (state) {
+        state.textContent = input.checked ? 'Selected' : 'Waiting';
+        state.className = 'badge row-state ' + (input.checked ? 'badge-info' : 'badge-gray');
       }
-      if (!confirm('Reschedule this session? Contractors will need to confirm again.')) return;
-      try {
-        const data = await postSessionAction({
-          action: 'reschedule',
-          session_id: session.id,
-          session_date: date.trim(),
-          session_time: time.trim(),
-          location: location.trim(),
-          trainer_name: trainer.trim(),
-          batch_number: session.batch || '',
-          reason: reason.trim()
-        });
-        alert(data.message || 'Session rescheduled.');
-        location.reload();
-      } catch (err) {
-        alert(err.message);
+      const target = document.getElementById(input.dataset.tokenTarget);
+      if (target && !input.checked) target.textContent = '';
+    });
+    checked.forEach((input, idx) => {
+      const target = document.getElementById(input.dataset.tokenTarget);
+      if (target) target.textContent = String(idx + 1).padStart(6, '0');
+    });
+  }
+
+  document.addEventListener('change', event => {
+    if (!event.target.classList.contains('worker-check')) return;
+    const selected = document.querySelectorAll('.worker-check:checked').length;
+    if (selected > scheduleCapacity) {
+      event.target.checked = false;
+      const message = 'Maximum Seats Reached';
+      if (window.Swal) {
+        Swal.fire({ icon: 'warning', title: message, text: `Only ${scheduleCapacity} workers can be selected for this batch.` });
+      } else {
+        alert(message);
       }
     }
-    </script>
-    <?php
+    refreshSelection();
+  });
+
+  document.getElementById('scheduleForm')?.addEventListener('submit', event => {
+    const selected = document.querySelectorAll('.worker-check:checked').length;
+    if (selected > scheduleCapacity) {
+      event.preventDefault();
+      alert('Maximum Seats Reached');
+      return;
+    }
+    if (selected === 0) {
+      event.preventDefault();
+      alert('Please select workers to schedule.');
+    }
+  });
+
+  function exportScheduleCsv() {
+    const table = document.getElementById('scheduleTable');
+    if (!table) return;
+    const rows = Array.from(table.querySelectorAll('tr')).map(row =>
+      Array.from(row.children).slice(1).map(cell => `"${cell.innerText.replace(/"/g, '""').trim()}"`).join(',')
+    );
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'training-schedule.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  refreshSelection();
+</script>
+<?php
 }
 
-renderLayout("Training Schedule", 'renderContent', $role, $name);
+renderLayout('Training Schedule', 'renderContent', $role, $name);
+?>

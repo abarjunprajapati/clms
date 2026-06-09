@@ -552,13 +552,22 @@ function renderSidebar($role) {
         case 'safety':
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Training Engine</div>';
             echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
+            echo '<a href="safety_control_desk.php" class="sidebar-item"><i class="fas fa-sliders"></i> Safety Control Desk</a>';
+            echo '<a href="training_class_master.php" class="sidebar-item"><i class="fas fa-calendar-plus"></i> Training Class Master</a>';
             echo '<a href="training_requests.php" class="sidebar-item"><i class="fas fa-envelope-open-text"></i> Training Requests</a>';
             echo '<a href="training_schedule.php" class="sidebar-item"><i class="fas fa-calendar-alt"></i> Training Schedule</a>';
             echo '<a href="conduct_results.php" class="sidebar-item"><i class="fas fa-users-cog"></i> Conduct & Results</a>';
             echo '<a href="training_status.php" class="sidebar-item"><i class="fas fa-user-check"></i> Training Status</a>';
+            echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Safety Masters</div>';
+            echo '<a href="training_location_master.php" class="sidebar-item"><i class="fas fa-location-dot"></i> Location Master</a>';
+            echo '<a href="instructor_master.php" class="sidebar-item"><i class="fas fa-person-chalkboard"></i> Instructor Master</a>';
+            echo '<a href="safety_training_type_master.php" class="sidebar-item"><i class="fas fa-list-check"></i> Training Type Master</a>';
+            echo '<a href="training_fee_master.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Training Fee Master</a>';
+            echo '<a href="training_language_master.php" class="sidebar-item"><i class="fas fa-language"></i> Language Master</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Monitoring</div>';
             echo '<a href="pending_training.php" class="sidebar-item"><i class="fas fa-hourglass-half"></i> Pending Workers</a>';
             echo '<a href="retraining.php" class="sidebar-item"><i class="fas fa-redo"></i> Re-Training Requests</a>';
+            echo '<a href="training_batch_report.php" class="sidebar-item"><i class="fas fa-file-lines"></i> Batch Reports</a>';
             echo '<a href="reports.php" class="sidebar-item"><i class="fas fa-chart-bar"></i> Training Reports</a>';
             break;
         case 'execution_officer':

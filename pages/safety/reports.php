@@ -211,6 +211,10 @@ function renderContent() {
 
     $from_date = $_GET['from_date'] ?? date('Y-m-01');
     $to_date = $_GET['to_date'] ?? date('Y-m-d');
+    $training_date = trim((string)($_GET['training_date'] ?? ''));
+    $batch_no = trim((string)($_GET['batch_no'] ?? ''));
+    $token_no = trim((string)($_GET['token_no'] ?? ''));
+    $status_filter = strtolower(trim((string)($_GET['status'] ?? '')));
     $contractor_id = isset($_GET['contractor_id']) ? (int)$_GET['contractor_id'] : 0;
     $fromDateTime = $from_date . ' 00:00:00';
     $toDateTime = $to_date . ' 23:59:59';
@@ -259,11 +263,42 @@ function renderContent() {
         $where = "$dateExpr BETWEEN ? AND ?";
         $params = [$fromDateTime, $toDateTime];
         $types = 'ss';
+        if ($training_date && safetyReportsColumnExists($conn, 'training_requests', 'scheduled_date')) {
+            $where .= ' AND tr.scheduled_date = ?';
+            $params[] = $training_date;
+            $types .= 's';
+        }
+        if ($batch_no && safetyReportsColumnExists($conn, 'training_requests', 'batch_number')) {
+            $where .= ' AND tr.batch_number LIKE ?';
+            $params[] = '%' . $batch_no . '%';
+            $types .= 's';
+        }
+        if ($status_filter) {
+            $where .= " AND LOWER(COALESCE($statusExpr, 'pending')) = ?";
+            $params[] = $status_filter;
+            $types .= 's';
+        }
         if ($contractor_id) {
             $where .= safetyReportsColumnExists($conn, 'training_requests', 'contractor_id') ? ' AND tr.contractor_id = ?' : ' AND w.contractor_id = ?';
             $params[] = $contractor_id;
             $types .= 'i';
         }
+        if ($token_no && safetyReportsTableExists($conn, 'training_batch_workers') && safetyReportsColumnExists($conn, 'training_batch_workers', 'token_number')) {
+            $where .= ' AND EXISTS (SELECT 1 FROM training_batch_workers tbw_filter WHERE tbw_filter.training_request_id = tr.id AND tbw_filter.token_number LIKE ?)';
+            $params[] = '%' . $token_no . '%';
+            $types .= 's';
+        }
+
+        $batchSelect = safetyReportsColumnExists($conn, 'training_requests', 'batch_number') ? 'tr.batch_number' : 'NULL';
+        $tokenSelect = (safetyReportsTableExists($conn, 'training_batch_workers') && safetyReportsColumnExists($conn, 'training_batch_workers', 'token_number'))
+            ? "(
+                SELECT tbw_token.token_number
+                FROM training_batch_workers tbw_token
+                WHERE tbw_token.training_request_id = tr.id
+                ORDER BY tbw_token.id DESC
+                LIMIT 1
+              )"
+            : 'NULL';
 
         $requestRows = db_fetch_all($conn, "
             SELECT
@@ -277,6 +312,8 @@ function renderContent() {
                 $attendanceExpr AS attendance_status,
                 $statusExpr AS status,
                 $dateExpr AS report_date,
+                $batchSelect AS batch_number,
+                $tokenSelect AS token_number,
                 'Training Request' AS source
             FROM training_requests tr
             JOIN workmen w ON tr.workman_id = w.id
@@ -288,7 +325,7 @@ function renderContent() {
         safetyReportsAddRows($requestRows, $reportRows, $seen);
     }
 
-    if (safetyReportsTableExists($conn, 'workmen')) {
+    if (safetyReportsTableExists($conn, 'workmen') && !$training_date && !$batch_no && !$token_no) {
         $workerDateExprs = [];
         foreach (['updated_at', 'created_at'] as $column) {
             if (safetyReportsColumnExists($conn, 'workmen', $column)) {
@@ -305,6 +342,11 @@ function renderContent() {
         $where = "$workerDateExpr BETWEEN ? AND ?";
         $params = [$fromDateTime, $toDateTime];
         $types = 'ss';
+        if ($status_filter) {
+            $where .= " AND LOWER(COALESCE($trainingStatus, $safetyStatus, 'pending')) = ?";
+            $params[] = $status_filter;
+            $types .= 's';
+        }
         if ($contractor_id) {
             $where .= ' AND w.contractor_id = ?';
             $params[] = $contractor_id;
@@ -338,6 +380,8 @@ function renderContent() {
                 NULL AS attendance_status,
                 COALESCE($trainingStatus, $safetyStatus, 'pending') AS status,
                 $workerDateExpr AS report_date,
+                NULL AS batch_number,
+                NULL AS token_number,
                 'Worker Status' AS source
             FROM workmen w
             LEFT JOIN contractors c ON w.contractor_id = c.id
@@ -376,6 +420,7 @@ function renderContent() {
       </div>
       <div class="sr-actions">
         <a href="training_requests.php" class="btn btn-outline"><i class="fas fa-envelope-open-text"></i> Requests</a>
+        <button type="button" class="btn btn-outline" onclick="exportTrainingReportCsv()"><i class="fas fa-file-excel"></i> XL</button>
         <button type="button" class="btn btn-primary" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
       </div>
     </div>
@@ -400,11 +445,32 @@ function renderContent() {
             <input type="date" name="to_date" class="form-control" value="<?= htmlspecialchars($to_date) ?>">
           </div>
           <div class="form-group">
+            <label class="form-label">Training Date</label>
+            <input type="date" name="training_date" class="form-control" value="<?= htmlspecialchars($training_date) ?>">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Batch No</label>
+            <input type="text" name="batch_no" class="form-control" value="<?= htmlspecialchars($batch_no) ?>" placeholder="B20260609001">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Token No</label>
+            <input type="text" name="token_no" class="form-control" value="<?= htmlspecialchars($token_no) ?>" placeholder="000001">
+          </div>
+          <div class="form-group">
             <label class="form-label">Contractor</label>
             <select name="contractor_id" class="form-control">
               <option value="">All Contractors</option>
               <?php foreach($contractors as $c): ?>
               <option value="<?= (int)$c['id'] ?>" <?= $contractor_id === (int)$c['id'] ? 'selected' : '' ?>><?= htmlspecialchars($c['name'] ?? 'N/A') ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-control">
+              <option value="">All</option>
+              <?php foreach (['pending', 'welfare_pending', 'contractor_confirmed', 'scheduled', 'passed', 'failed', 'absent'] as $statusOption): ?>
+                <option value="<?= htmlspecialchars($statusOption) ?>" <?= $status_filter === $statusOption ? 'selected' : '' ?>><?= htmlspecialchars(ucwords(str_replace('_', ' ', $statusOption))) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
@@ -421,10 +487,12 @@ function renderContent() {
         <div class="card-title">Training Report Details</div>
       </div>
       <div class="card-body" style="padding:0">
-        <table class="data-table">
+        <table class="data-table" id="trainingReportTable">
           <thead>
             <tr>
               <th>Date</th>
+              <th>Batch No</th>
+              <th>Token No</th>
               <th>Worker</th>
               <th>Contractor</th>
               <th>Type</th>
@@ -440,6 +508,8 @@ function renderContent() {
             ?>
             <tr>
               <td><?= !empty($row['report_date']) ? date('d M Y', strtotime($row['report_date'])) : '-' ?></td>
+              <td><?= htmlspecialchars($row['batch_number'] ?? '') ?></td>
+              <td><?= htmlspecialchars($row['token_number'] ?? '') ?></td>
               <td>
                 <div style="font-weight:700"><?= htmlspecialchars($row['worker_name'] ?? 'Worker') ?></div>
                 <div style="font-size:11px;color:var(--text-muted)"><?= htmlspecialchars($row['worker_code'] ?? '') ?></div>
@@ -452,7 +522,7 @@ function renderContent() {
             </tr>
             <?php endforeach; ?>
             <?php if(empty($reportRows)): ?>
-            <tr><td colspan="7" class="text-center" style="padding:40px;">No data found for the selected period.</td></tr>
+            <tr><td colspan="9" class="text-center" style="padding:40px;">No data found for the selected period.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>
@@ -469,12 +539,28 @@ function renderContent() {
       .sr-stat strong{font-size:22px;color:#111827;line-height:1}
       .sr-stat span{font-size:11px;color:#64748b;font-weight:800;text-transform:uppercase}
       .sr-filter-card{margin-bottom:18px}
-      .sr-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr)) auto;gap:12px;align-items:end}
+      .sr-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr)) auto;gap:12px;align-items:end}
       .sr-filter-actions{display:flex;gap:8px}
       @media(max-width:1000px){.sr-stats{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}.sr-filter-grid{grid-template-columns:1fr 1fr}}
       @media(max-width:640px){.safety-report-header{flex-direction:column;align-items:stretch}.sr-actions,.sr-filter-actions{width:100%}.sr-actions .btn,.sr-filter-actions .btn{flex:1}.sr-filter-grid{grid-template-columns:1fr}}
       @media print{.sidebar,.topbar,.sr-actions,.sr-filter-card{display:none!important}.main-content{margin:0!important}.card{box-shadow:none!important}}
     </style>
+    <script>
+      function exportTrainingReportCsv() {
+        const table = document.getElementById('trainingReportTable');
+        if (!table) return;
+        const rows = Array.from(table.querySelectorAll('tr')).map(row =>
+          Array.from(row.children).map(cell => `"${cell.innerText.replace(/"/g, '""').trim()}"`).join(',')
+        );
+        const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'all-trainings-report.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    </script>
     <?php
 }
 
