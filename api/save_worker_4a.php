@@ -117,8 +117,8 @@ function table_has_auto_increment_id($conn, $table) {
 
 function next_manual_id($conn, $table) {
     $safeTable = str_replace('`', '``', $table);
-    $result = mysqli_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM `$safeTable`");
-    $row = $result ? mysqli_fetch_assoc($result) : null;
+    $result = clms_db_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM `$safeTable`");
+    $row = $result ? clms_db_fetch_assoc($result) : null;
     return (int)($row['next_id'] ?? 1);
 }
 
@@ -196,16 +196,16 @@ function update_table_row_by_id($conn, $table, $id, $row) {
 }
 
 function worker4a_table_exists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $result = mysqli_query($conn, "SHOW TABLES LIKE '{$table}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $result = clms_db_query($conn, "SHOW TABLES LIKE '{$table}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function worker4a_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function worker4a_contractor_select_expr($conn) {
@@ -297,13 +297,13 @@ function worker4a_ensure_column($conn, $table, $column, $definition) {
     if (worker4a_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    if (!mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
-        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . mysqli_error($conn));
+    if (!clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
+        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . clms_db_error($conn));
     }
 }
 
 function worker4a_ensure_schema($conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS workmen (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS workmen (
         id INT NOT NULL,
         contractor_id INT NULL,
         name VARCHAR(200) NULL,
@@ -388,7 +388,7 @@ function worker4a_ensure_schema($conn) {
         worker4a_ensure_column($conn, 'workmen', $column, $definition);
     }
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS documents (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS documents (
         id INT AUTO_INCREMENT PRIMARY KEY,
         workman_id INT NULL,
         document_type VARCHAR(100) NULL,
@@ -406,7 +406,7 @@ function worker4a_ensure_schema($conn) {
         worker4a_ensure_column($conn, 'documents', $column, $definition);
     }
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS application_workflow (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS application_workflow (
         id INT AUTO_INCREMENT PRIMARY KEY,
         application_id VARCHAR(50) NULL,
         contractor_id INT NULL,
@@ -546,9 +546,9 @@ function worker4a_upsert_workflow($conn, $application_no, $contractor_id) {
 
     $existing = null;
     if (worker4a_column_exists($conn, 'application_workflow', 'application_id')) {
-        $safeApp = mysqli_real_escape_string($conn, $application_no);
-        $result = mysqli_query($conn, "SELECT * FROM application_workflow WHERE application_id = '$safeApp' LIMIT 1");
-        $existing = ($result && mysqli_num_rows($result) > 0) ? mysqli_fetch_assoc($result) : null;
+        $safeApp = clms_db_real_escape_string($conn, $application_no);
+        $result = clms_db_query($conn, "SELECT * FROM application_workflow WHERE application_id = '$safeApp' LIMIT 1");
+        $existing = ($result && clms_db_num_rows($result) > 0) ? clms_db_fetch_assoc($result) : null;
     }
 
     $wfRow = [
@@ -585,7 +585,7 @@ function worker4a_upsert_workflow($conn, $application_no, $contractor_id) {
 }
 
 function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $requested_by = 0) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,

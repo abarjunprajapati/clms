@@ -9,13 +9,13 @@ $work_order = trim($work_order);
 try {
     $rows = [];
     if ($work_order !== '') {
-        $safe = mysqli_real_escape_string($conn, $work_order);
+        $safe = clms_db_real_escape_string($conn, $work_order);
         // If work_orders table exists and has project_name
-        $res = mysqli_query($conn, "SHOW TABLES LIKE 'work_orders'");
-        if ($res && mysqli_num_rows($res) > 0) {
+        $res = clms_db_query($conn, "SHOW TABLES LIKE 'work_orders'");
+        if ($res && clms_db_num_rows($res) > 0) {
             $sql = "SELECT id, project_name AS text, project_code AS code FROM work_orders WHERE work_order_no = '$safe' LIMIT 100";
-            $r = mysqli_query($conn, $sql);
-            while ($row = mysqli_fetch_assoc($r)) {
+            $r = clms_db_query($conn, $sql);
+            while ($row = clms_db_fetch_assoc($r)) {
                 $rows[] = ['id' => $row['id'] ?? $row['code'] ?? $row['text'], 'text' => $row['text'] ?? $row['code'] ?? $row['id']];
             }
         } else {

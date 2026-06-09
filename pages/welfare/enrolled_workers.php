@@ -11,26 +11,26 @@ if (!in_array($_welfareRole, ['welfare_user', 'welfare_admin', 'admin', 'super_a
 }
 
 // Fetch lists for filters
-$contractorRes = mysqli_query($conn, "SELECT id, contractor_name FROM contractors ORDER BY contractor_name ASC");
+$contractorRes = clms_db_query($conn, "SELECT id, contractor_name FROM contractors ORDER BY contractor_name ASC");
 $contractors = [];
 if ($contractorRes) {
-    while ($r = mysqli_fetch_assoc($contractorRes)) {
+    while ($r = clms_db_fetch_assoc($contractorRes)) {
         $contractors[] = $r;
     }
 }
 
-$deptRes = mysqli_query($conn, "SELECT id, name FROM master_departments ORDER BY name ASC");
+$deptRes = clms_db_query($conn, "SELECT id, name FROM master_departments ORDER BY name ASC");
 $departments = [];
 if ($deptRes) {
-    while ($r = mysqli_fetch_assoc($deptRes)) {
+    while ($r = clms_db_fetch_assoc($deptRes)) {
         $departments[] = $r;
     }
 }
 
-$tradeRes = mysqli_query($conn, "SELECT DISTINCT trade FROM worker_master WHERE trade IS NOT NULL AND trade != '' ORDER BY trade ASC");
+$tradeRes = clms_db_query($conn, "SELECT DISTINCT trade FROM worker_master WHERE trade IS NOT NULL AND trade != '' ORDER BY trade ASC");
 $trades = [];
 if ($tradeRes) {
-    while ($r = mysqli_fetch_assoc($tradeRes)) {
+    while ($r = clms_db_fetch_assoc($tradeRes)) {
         $trades[] = $r['trade'];
     }
 }

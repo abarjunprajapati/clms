@@ -11,7 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     // Input validation
     $worker_id = isset($_POST['worker_id']) ? (int)$_POST['worker_id'] : 0;
-    $delete_reason = isset($_POST['delete_reason']) ? mysqli_real_escape_string($conn, trim($_POST['delete_reason'])) : '';
+    $delete_reason = isset($_POST['delete_reason']) ? clms_db_real_escape_string($conn, trim($_POST['delete_reason'])) : '';
     $deleted_by = 1; // TODO: Get from session
 
     if (!$worker_id || empty($delete_reason)) {
@@ -19,17 +19,17 @@ try {
     }
 
     // Begin transaction
-    mysqli_begin_transaction($conn);
+    clms_db_begin_transaction($conn);
 
     // Rule 6 Soft Delete Validation: Check if active attendance, active pass, etc.
     $checkQuery = "SELECT attendance_status, safety_status, worker_status, pass_type FROM worker_master WHERE worker_id = $worker_id FOR UPDATE";
-    $result = mysqli_query($conn, $checkQuery);
+    $result = clms_db_query($conn, $checkQuery);
     
-    if (mysqli_num_rows($result) === 0) {
+    if (clms_db_num_rows($result) === 0) {
         throw new Exception("Worker not found.");
     }
     
-    $worker = mysqli_fetch_assoc($result);
+    $worker = clms_db_fetch_assoc($result);
     
     if ($worker['attendance_status'] === 'Active') {
         throw new Exception("Cannot delete worker with active attendance.");
@@ -46,14 +46,14 @@ try {
                         delete_reason = '$delete_reason' 
                     WHERE worker_id = $worker_id";
                     
-    if (!mysqli_query($conn, $updateQuery)) {
-        throw new Exception("Failed to delete worker: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $updateQuery)) {
+        throw new Exception("Failed to delete worker: " . clms_db_error($conn));
     }
 
     // Sync soft delete to workmen table
     $updateWorkman = "UPDATE workmen SET status = 'removed' WHERE id = $worker_id";
-    if (!mysqli_query($conn, $updateWorkman)) {
-        throw new Exception("Failed to update workmen delete status: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $updateWorkman)) {
+        throw new Exception("Failed to update workmen delete status: " . clms_db_error($conn));
     }
 
     // Log the action
@@ -65,16 +65,16 @@ try {
     $logQuery = "INSERT INTO worker_audit_logs (worker_id, module_name, action_type, old_values, new_values, ip_address, browser_info, remarks, created_by) 
                  VALUES ($worker_id, 'Enrolled Workers', 'Soft Delete', '$oldValues', '$newValues', '$ip', '$browser', 'Worker soft deleted', $deleted_by)";
                  
-    if (!mysqli_query($conn, $logQuery)) {
-        throw new Exception("Failed to write audit log: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $logQuery)) {
+        throw new Exception("Failed to write audit log: " . clms_db_error($conn));
     }
 
-    mysqli_commit($conn);
+    clms_db_commit($conn);
 
     echo json_encode(['status' => 'success', 'message' => 'Worker soft-deleted successfully']);
 
 } catch (Exception $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }

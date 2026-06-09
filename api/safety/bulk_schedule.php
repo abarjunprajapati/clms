@@ -32,7 +32,7 @@ if ($needed > $available) {
     exit;
 }
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 
 try {
     $linked = 0;
@@ -86,10 +86,10 @@ try {
         [$session_id, $session_id]
     );
 
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     header("Location: ../../pages/safety/training_requests.php?success=Scheduled $needed workers; $linked confirmed worker(s) linked to batch");
 } catch (Exception $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     header("Location: ../../pages/safety/training_requests.php?error=" . urlencode($e->getMessage()));
 }
 

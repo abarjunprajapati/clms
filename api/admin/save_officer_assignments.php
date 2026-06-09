@@ -20,7 +20,7 @@ if (!$officerId) {
     exit;
 }
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 
 try {
     // 1. Clear existing department assignments
@@ -37,10 +37,10 @@ try {
         db_execute($conn, "INSERT INTO execution_officer_contractors (execution_officer_id, contractor_id) VALUES (?, ?)", 'ii', [$officerId, $cid]);
     }
 
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     echo json_encode(['status' => true, 'message' => 'Assignments updated successfully']);
 } catch (Exception $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     echo json_encode(['status' => false, 'message' => $e->getMessage()]);
 }
 ?>

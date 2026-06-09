@@ -2,7 +2,7 @@
 
 function clms_nlm_query($conn, $sql) {
     try {
-        return @mysqli_query($conn, $sql);
+        return @clms_db_query($conn, $sql);
     } catch (Throwable $e) {
         error_log('[NATIONALITY_MASTER] ' . $e->getMessage());
         return false;
@@ -10,16 +10,16 @@ function clms_nlm_query($conn, $sql) {
 }
 
 function clms_nlm_table_exists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
+    $table = clms_db_real_escape_string($conn, $table);
     $result = clms_nlm_query($conn, "SHOW TABLES LIKE '$table'");
-    return $result && mysqli_num_rows($result) > 0;
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_nlm_column_exists($conn, $table, $column) {
     $table = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
+    $column = clms_db_real_escape_string($conn, $column);
     $result = clms_nlm_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_ensure_nationality_location_masters($conn) {

@@ -34,9 +34,9 @@ try {
         apiError('Invalid status', 400);
     }
 
-    $colRes = mysqli_query($conn, "SHOW COLUMNS FROM users LIKE 'employee_code'");
-    if (!$colRes || mysqli_num_rows($colRes) === 0) {
-        @mysqli_query($conn, "ALTER TABLE users ADD COLUMN employee_code VARCHAR(50) NULL");
+    $colRes = clms_db_query($conn, "SHOW COLUMNS FROM users LIKE 'employee_code'");
+    if (!$colRes || clms_db_num_rows($colRes) === 0) {
+        @clms_db_query($conn, "ALTER TABLE users ADD COLUMN employee_code VARCHAR(50) NULL");
     }
 
     // Check user exists
@@ -75,7 +75,7 @@ try {
     if ($stmt->execute()) {
         if ($role === 'execution_officer') {
             $eoStatus = $status !== '' ? $status : ($existing['status'] ?? 'active');
-            mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_officers (
+            clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_officers (
                 id INT NOT NULL AUTO_INCREMENT,
                 employee_code VARCHAR(50) NULL,
                 name VARCHAR(200) NULL,

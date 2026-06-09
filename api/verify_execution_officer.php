@@ -12,15 +12,15 @@ function eo_verify_json($payload, $status = 200) {
 
 function eo_verify_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function eo_verify_table_exists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && mysqli_num_rows($res) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function eo_verify_lookup($conn, $code) {

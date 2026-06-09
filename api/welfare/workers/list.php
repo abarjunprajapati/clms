@@ -8,11 +8,11 @@ try {
     $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
     $offset = ($page - 1) * $limit;
 
-    $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-    $status = isset($_GET['status']) ? mysqli_real_escape_string($conn, $_GET['status']) : '';
+    $search = isset($_GET['search']) ? clms_db_real_escape_string($conn, $_GET['search']) : '';
+    $status = isset($_GET['status']) ? clms_db_real_escape_string($conn, $_GET['status']) : '';
     $contractor_id = isset($_GET['contractor_id']) ? (int)$_GET['contractor_id'] : 0;
     $department_id = isset($_GET['department_id']) ? (int)$_GET['department_id'] : 0;
-    $trade = isset($_GET['trade']) ? mysqli_real_escape_string($conn, $_GET['trade']) : '';
+    $trade = isset($_GET['trade']) ? clms_db_real_escape_string($conn, $_GET['trade']) : '';
     
     $where = "w.worker_status != 'Deleted'";
     if ($search) {
@@ -39,21 +39,21 @@ try {
               ORDER BY w.created_at DESC 
               LIMIT $offset, $limit";
               
-    $result = mysqli_query($conn, $query);
+    $result = clms_db_query($conn, $query);
     
     if (!$result) {
-        throw new Exception(mysqli_error($conn));
+        throw new Exception(clms_db_error($conn));
     }
     
     $data = [];
-    while ($row = mysqli_fetch_assoc($result)) {
+    while ($row = clms_db_fetch_assoc($result)) {
         $data[] = $row;
     }
     
     // Get total count
     $countQuery = "SELECT COUNT(*) as total FROM worker_master w WHERE $where";
-    $countResult = mysqli_query($conn, $countQuery);
-    $total = mysqli_fetch_assoc($countResult)['total'];
+    $countResult = clms_db_query($conn, $countQuery);
+    $total = clms_db_fetch_assoc($countResult)['total'];
 
     echo json_encode([
         'status' => 'success',

@@ -14,16 +14,11 @@ $conn = null;
 if (function_exists('db_connect')) {
     $conn = db_connect();
 } else {
-    // Create new connection using config
-    $Servername = "127.0.0.1";
-    $Username = "root";
-    $Password = "";
-    $Dbname = "new_clms";
-    $conn = mysqli_connect($Servername, $Username, $Password, $Dbname);
+    $conn = $GLOBALS['conn'] ?? $conn;
 }
 
 if (!$conn) {
-    die("Connection failed: " . mysqli_connect_error());
+    die("Connection failed: " . clms_db_connect_error());
 }
 
 echo "Starting schema initialization...\n\n";

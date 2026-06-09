@@ -1,18 +1,18 @@
 <?php
 
 function clms_labour_threshold_column_exists($conn, $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `labour_license_thresholds` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `labour_license_thresholds` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_labour_threshold_table_exists($conn) {
-    $result = mysqli_query($conn, "SHOW TABLES LIKE 'labour_license_thresholds'");
-    return $result && mysqli_num_rows($result) > 0;
+    $result = clms_db_query($conn, "SHOW TABLES LIKE 'labour_license_thresholds'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_ensure_labour_license_thresholds($conn) {
-    $created = mysqli_query($conn, "CREATE TABLE IF NOT EXISTS labour_license_thresholds (
+    $created = clms_db_query($conn, "CREATE TABLE IF NOT EXISTS labour_license_thresholds (
         id INT NOT NULL AUTO_INCREMENT,
         threshold_value INT NOT NULL DEFAULT 20,
         threshold_from_date DATE NOT NULL,
@@ -39,7 +39,7 @@ function clms_ensure_labour_license_thresholds($conn) {
     ];
     foreach ($columns as $column => $sql) {
         if (!clms_labour_threshold_column_exists($conn, $column)) {
-            mysqli_query($conn, $sql);
+            clms_db_query($conn, $sql);
         }
     }
 

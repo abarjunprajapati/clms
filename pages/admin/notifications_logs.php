@@ -6,8 +6,8 @@ include __DIR__ . '/../../include/layout.php';
 
 function renderContent() {
     global $conn;
-    $logCheck = mysqli_query($conn, "SHOW TABLES LIKE 'notification_logs'");
-    $hasTable = ($logCheck && mysqli_num_rows($logCheck) > 0);
+    $logCheck = clms_db_query($conn, "SHOW TABLES LIKE 'notification_logs'");
+    $hasTable = ($logCheck && clms_db_num_rows($logCheck) > 0);
     
     $logs = [];
     $stats = ['sms'=>0,'email'=>0,'system'=>0,'push'=>0,'sent'=>0,'failed'=>0];

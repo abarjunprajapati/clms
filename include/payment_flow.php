@@ -1,27 +1,27 @@
 <?php
 
 function clms_payment_table_exists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && mysqli_num_rows($res) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function clms_payment_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function clms_payment_ensure_column($conn, $table, $column, $definition) {
     if (!clms_payment_table_exists($conn, $table) || clms_payment_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function clms_ensure_payment_flow($conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_payment_requests (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_payment_requests (
         id INT NOT NULL AUTO_INCREMENT,
         payment_ref VARCHAR(60) NOT NULL UNIQUE,
         payment_token VARCHAR(80) NOT NULL UNIQUE,
@@ -91,7 +91,7 @@ function clms_ensure_payment_flow($conn) {
         clms_payment_ensure_column($conn, 'training_payment_requests', $column, $definition);
     }
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_payment_request_workers (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_payment_request_workers (
         id INT NOT NULL AUTO_INCREMENT,
         payment_request_id INT NOT NULL,
         workman_id INT NOT NULL,
@@ -113,7 +113,7 @@ function clms_ensure_payment_flow($conn) {
         clms_payment_ensure_column($conn, 'training_payment_request_workers', $column, $definition);
     }
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS system_settings (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS system_settings (
         id INT NOT NULL AUTO_INCREMENT,
         setting_key VARCHAR(100) NOT NULL UNIQUE,
         setting_value TEXT,
@@ -396,7 +396,7 @@ function clms_create_training_payment_request($conn, $contractorId, array $worke
             (int)$createdBy,
         ]
     );
-    $paymentRequestId = (int)mysqli_insert_id($conn);
+    $paymentRequestId = (int)clms_db_insert_id($conn);
 
     foreach ($workerIds as $workerId) {
         $worker = db_single($conn, "SELECT temp_id FROM workmen WHERE id = ? LIMIT 1", 'i', [$workerId]);

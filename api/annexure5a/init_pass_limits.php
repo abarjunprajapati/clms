@@ -29,35 +29,35 @@ try {
         INDEX idx_pass_type (pass_type)
     )";
 
-    if (mysqli_query($conn, $create_sql)) {
+    if (clms_db_query($conn, $create_sql)) {
         echo "✅ Table 'pass_limits' created/verified\n";
     } else {
-        throw new Exception("Failed to create table: " . mysqli_error($conn));
+        throw new Exception("Failed to create table: " . clms_db_error($conn));
     }
 
     // ============ CHECK & ADD MISSING COLUMNS ============
     
     // Check if description column exists
-    $check_desc = mysqli_query($conn, "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='pass_limits' AND COLUMN_NAME='description'");
-    if (mysqli_num_rows($check_desc) === 0) {
+    $check_desc = clms_db_query($conn, "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='pass_limits' AND COLUMN_NAME='description'");
+    if (clms_db_num_rows($check_desc) === 0) {
         echo "⚠️  Adding missing 'description' column...\n";
         $alter_sql = "ALTER TABLE pass_limits ADD COLUMN description TEXT DEFAULT NULL AFTER rule";
-        if (mysqli_query($conn, $alter_sql)) {
+        if (clms_db_query($conn, $alter_sql)) {
             echo "✅ Column 'description' added\n";
         } else {
-            echo "⚠️  Could not add description column (may already exist): " . mysqli_error($conn) . "\n";
+            echo "⚠️  Could not add description column (may already exist): " . clms_db_error($conn) . "\n";
         }
     }
 
     // Check if override_allowed column exists
-    $check_override = mysqli_query($conn, "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='pass_limits' AND COLUMN_NAME='override_allowed'");
-    if (mysqli_num_rows($check_override) === 0) {
+    $check_override = clms_db_query($conn, "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='pass_limits' AND COLUMN_NAME='override_allowed'");
+    if (clms_db_num_rows($check_override) === 0) {
         echo "⚠️  Adding missing 'override_allowed' column...\n";
         $alter_sql = "ALTER TABLE pass_limits ADD COLUMN override_allowed BOOLEAN DEFAULT TRUE AFTER description";
-        if (mysqli_query($conn, $alter_sql)) {
+        if (clms_db_query($conn, $alter_sql)) {
             echo "✅ Column 'override_allowed' added\n";
         } else {
-            echo "⚠️  Could not add override_allowed column: " . mysqli_error($conn) . "\n";
+            echo "⚠️  Could not add override_allowed column: " . clms_db_error($conn) . "\n";
         }
     }
 
@@ -65,7 +65,7 @@ try {
     
     // Delete existing defaults (keep contractor-specific)
     $delete_defaults = "DELETE FROM pass_limits WHERE contractor_id = 0";
-    mysqli_query($conn, $delete_defaults);
+    clms_db_query($conn, $delete_defaults);
 
     $rules = [
         [
@@ -99,7 +99,7 @@ try {
     ];
 
     $inserted = 0;
-    $stmt = mysqli_prepare($conn, 
+    $stmt = clms_db_prepare($conn, 
         "INSERT INTO pass_limits 
          (contractor_id, pass_type, max_allowed, ratio_per_workmen, rule, description, override_allowed) 
          VALUES (0, ?, ?, ?, ?, ?, TRUE)"
@@ -112,7 +112,7 @@ try {
         $rule = $r['rule'];
         $desc = $r['description'];
 
-        mysqli_stmt_bind_param($stmt, 'siiss', 
+        clms_db_stmt_bind_param($stmt, 'siiss', 
             $pass_type,
             $max_allowed,
             $ratio,
@@ -120,22 +120,22 @@ try {
             $desc
         );
 
-        if (mysqli_stmt_execute($stmt)) {
+        if (clms_db_stmt_execute($stmt)) {
             echo "✅ Inserted: $pass_type → Max: " . ($max_allowed ?? 'Unlimited') . 
                  ", Ratio: " . ($ratio ?? 'N/A') . "\n";
             $inserted++;
         } else {
-            echo "❌ Failed to insert $pass_type: " . mysqli_stmt_error($stmt) . "\n";
+            echo "❌ Failed to insert $pass_type: " . clms_db_stmt_error($stmt) . "\n";
         }
     }
 
-    mysqli_stmt_close($stmt);
+    clms_db_stmt_close($stmt);
 
     // ============ VERIFICATION ============
     echo "\n📋 Current Rules:\n";
-    $result = mysqli_query($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0 ORDER BY pass_type");
+    $result = clms_db_query($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0 ORDER BY pass_type");
     
-    while ($row = mysqli_fetch_assoc($result)) {
+    while ($row = clms_db_fetch_assoc($result)) {
         echo sprintf(
             "  • %s: Max=%s, Ratio=%s, Rule=%s, Override=%s\n",
             $row['pass_type'],

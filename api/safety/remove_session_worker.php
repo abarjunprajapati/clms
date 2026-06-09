@@ -41,7 +41,7 @@ if (!$link) {
     safetyRemoveJson(['success' => false, 'message' => 'Worker is not assigned to this session.'], 404);
 }
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 try {
     db_execute($conn, "DELETE FROM training_session_workers WHERE id = ?", 'i', [(int)$link['id']]);
 
@@ -85,10 +85,10 @@ try {
         [$sessionId, $sessionId]
     );
 
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     safetyRemoveJson(['success' => true, 'message' => 'Worker removed from session and returned to scheduling queue.']);
 } catch (Throwable $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     safetyRemoveJson(['success' => false, 'message' => $e->getMessage()], 500);
 }
 ?>

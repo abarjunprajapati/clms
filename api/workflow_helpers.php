@@ -94,7 +94,7 @@ function workflow_ensure_tables($conn) {
 /**
  * Advance application to next workflow stage
  * 
- * @param mysqli $conn Database connection
+ * @param $conn Database connection
  * @param string $application_id The application ID
  * @param string $current_stage Current stage (pio/welfare/aoc/final)
  * @param string $status New status (approved/rejected)

@@ -19,26 +19,26 @@ function renderContent() {
     $maxExec = ini_get('max_execution_time');
     
     // Error logs
-    $errCheck = mysqli_query($conn, "SHOW TABLES LIKE 'system_error_logs'");
+    $errCheck = clms_db_query($conn, "SHOW TABLES LIKE 'system_error_logs'");
     $errors = [];
     $critErrors = 0;
-    if($errCheck && mysqli_num_rows($errCheck) > 0) {
+    if($errCheck && clms_db_num_rows($errCheck) > 0) {
         $errors = db_fetch_all($conn, "SELECT * FROM system_error_logs WHERE resolved=0 ORDER BY created_at DESC LIMIT 15");
         $critErrors = db_count($conn, "SELECT COUNT(*) c FROM system_error_logs WHERE severity='critical' AND resolved=0");
     }
     
     // Lockdown status
-    $lockdownCheck = mysqli_query($conn, "SHOW TABLES LIKE 'system_settings'");
+    $lockdownCheck = clms_db_query($conn, "SHOW TABLES LIKE 'system_settings'");
     $lockdown = '0';
-    if($lockdownCheck && mysqli_num_rows($lockdownCheck) > 0) {
+    if($lockdownCheck && clms_db_num_rows($lockdownCheck) > 0) {
         $ls = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key='system_lockdown'");
         $lockdown = $ls['setting_value'] ?? '0';
     }
     
     // Super Admin activity
-    $actCheck = mysqli_query($conn, "SHOW TABLES LIKE 'super_admin_activity_logs'");
+    $actCheck = clms_db_query($conn, "SHOW TABLES LIKE 'super_admin_activity_logs'");
     $recentActivity = [];
-    if($actCheck && mysqli_num_rows($actCheck) > 0) {
+    if($actCheck && clms_db_num_rows($actCheck) > 0) {
         $recentActivity = db_fetch_all($conn, "SELECT sa.*, u.name as admin_name FROM super_admin_activity_logs sa LEFT JOIN users u ON sa.admin_id = u.id ORDER BY sa.created_at DESC LIMIT 10");
     }
     ?>

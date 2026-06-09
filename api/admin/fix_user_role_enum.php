@@ -17,12 +17,12 @@ $sql = "ALTER TABLE users MODIFY role ENUM(
     'execution'
 ) DEFAULT 'contractor'";
 
-if (!mysqli_query($conn, $sql)) {
+if (!clms_db_query($conn, $sql)) {
     http_response_code(500);
     echo json_encode([
         'success' => false,
         'message' => 'Failed to update users.role enum',
-        'error' => mysqli_error($conn)
+        'error' => clms_db_error($conn)
     ]);
     exit;
 }

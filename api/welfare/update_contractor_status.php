@@ -47,6 +47,6 @@ if ($ok) {
 
     echo json_encode(['success' => true, 'message' => "Contractor $status successfully"]);
 } else {
-    echo json_encode(['success' => false, 'error' => 'Database update failed: ' . mysqli_error($conn)]);
+    echo json_encode(['success' => false, 'error' => 'Database update failed: ' . clms_db_error($conn)]);
 }
 

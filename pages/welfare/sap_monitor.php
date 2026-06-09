@@ -5,10 +5,10 @@ include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
 
 function sapSafeQuery($conn, $sql) {
-    $r = @mysqli_query($conn, $sql);
+    $r = @clms_db_query($conn, $sql);
     if (!$r) return [];
     $rows = [];
-    while ($row = mysqli_fetch_assoc($r)) $rows[] = $row;
+    while ($row = clms_db_fetch_assoc($r)) $rows[] = $row;
     return $rows;
 }
 

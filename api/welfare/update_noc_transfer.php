@@ -53,6 +53,6 @@ if ($ok) {
 
     echo json_encode(['success' => true, 'message' => $action === 'approve_transfer' ? 'Transfer approved.' : 'Transfer rejected.']);
 } else {
-    echo json_encode(['success' => false, 'error' => 'Operation failed: ' . mysqli_error($conn)]);
+    echo json_encode(['success' => false, 'error' => 'Operation failed: ' . clms_db_error($conn)]);
 }
 

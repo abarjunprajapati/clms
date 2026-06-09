@@ -8,10 +8,10 @@ $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
 
 function welfareActionsColumnExists($conn, $table, $column) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function renderContent() {

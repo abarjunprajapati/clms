@@ -22,10 +22,10 @@ function renderContent() {
         'execution_training_status' => "VARCHAR(30) DEFAULT 'pending'",
         'training_approval_doc' => 'VARCHAR(255) NULL',
     ] as $column => $definition) {
-        $safeColumn = mysqli_real_escape_string($conn, $column);
-        $exists = mysqli_query($conn, "SHOW COLUMNS FROM workmen LIKE '$safeColumn'");
-        if (!$exists || mysqli_num_rows($exists) === 0) {
-            @mysqli_query($conn, "ALTER TABLE workmen ADD COLUMN `$column` $definition");
+        $safeColumn = clms_db_real_escape_string($conn, $column);
+        $exists = clms_db_query($conn, "SHOW COLUMNS FROM workmen LIKE '$safeColumn'");
+        if (!$exists || clms_db_num_rows($exists) === 0) {
+            @clms_db_query($conn, "ALTER TABLE workmen ADD COLUMN `$column` $definition");
         }
     }
     $officer = db_single($conn, "SELECT employee_code FROM execution_officers WHERE id = ? LIMIT 1", 'i', [$officerId]);

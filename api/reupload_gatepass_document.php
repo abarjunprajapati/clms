@@ -12,15 +12,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 function gpReuploadColumnExists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 try {
     clms_get_portal_contractor($conn);
-    @mysqli_query($conn, "ALTER TABLE gate_pass_requests MODIFY status VARCHAR(30) DEFAULT 'pending'");
-    @mysqli_query($conn, "ALTER TABLE gate_pass_request_workers MODIFY status VARCHAR(30) DEFAULT 'pending'");
+    @clms_db_query($conn, "ALTER TABLE gate_pass_requests MODIFY status VARCHAR(30) DEFAULT 'pending'");
+    @clms_db_query($conn, "ALTER TABLE gate_pass_request_workers MODIFY status VARCHAR(30) DEFAULT 'pending'");
 
     $userId = (int)($_SESSION['user_id'] ?? 0);
     $docId = (int)($_POST['doc_id'] ?? 0);

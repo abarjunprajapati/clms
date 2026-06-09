@@ -30,9 +30,9 @@ if ($success) {
     $user_id = $_SESSION['user_id'];
     $action = "Workflow transition to $status";
     $logSql = "INSERT INTO logs (user_id, action, module, module_id) VALUES (?, ?, 'workflow', ?)";
-    $logStmt = mysqli_prepare($conn, $logSql);
-    mysqli_stmt_bind_param($logStmt, "isi", $user_id, $action, $appId);
-    mysqli_stmt_execute($logStmt);
+    $logStmt = clms_db_prepare($conn, $logSql);
+    clms_db_stmt_bind_param($logStmt, "isi", $user_id, $action, $appId);
+    clms_db_stmt_execute($logStmt);
 }
 
 header('Content-Type: application/json');

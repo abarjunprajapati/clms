@@ -34,7 +34,7 @@ if ($workman['welfare_user_verified'] != 1) {
     json_response(false, null, 'Initial Welfare User verification pending.');
 }
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 
 try {
     if ($action === 'reject') {
@@ -44,7 +44,7 @@ try {
         $notif = new NotificationEngine($conn);
         $notif->send($workman['contractor_id'], "Pass request rejected for workman " . $workman['name'] . ". Reason: " . $global_remarks, 'warning');
         
-        mysqli_commit($conn);
+        clms_db_commit($conn);
         json_response(true, null, 'Workman documents rejected and sent for re-upload');
     }
 
@@ -96,17 +96,17 @@ try {
         } else {
             $request_no = 'GPR-' . date('Ymd') . '-' . rand(1000, 9999);
             db_execute($conn, "INSERT INTO gate_pass_requests (request_no, contractor_id, pass_type, status) VALUES (?, ?, 'Workmen', 'pending')", "si", [$request_no, $contractor_id]);
-            $request_id = mysqli_insert_id($conn);
+            $request_id = clms_db_insert_id($conn);
         }
         
         db_execute($conn, "INSERT INTO gate_pass_request_workers (request_id, workman_id, status) VALUES (?, ?, 'approved')", "ii", [$request_id, $workman_id]);
     }
     
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     json_response(true, null, 'Documents verified and approved successfully');
 
 } catch (Exception $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     
     // If it was a doc rejection in the loop
     db_execute($conn, "UPDATE workmen SET status = 'reupload_pending', pass_issuer_verified = 0 WHERE id = ?", "i", [$workman_id]);

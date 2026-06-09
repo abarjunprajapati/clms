@@ -59,6 +59,6 @@ if ($ok) {
 
     echo json_encode(['success' => true, 'message' => $action === 'approve_pass' ? 'Gate pass approved.' : 'Gate pass rejected.']);
 } else {
-    echo json_encode(['success' => false, 'error' => 'Database operation failed: ' . mysqli_error($conn)]);
+    echo json_encode(['success' => false, 'error' => 'Database operation failed: ' . clms_db_error($conn)]);
 }
 

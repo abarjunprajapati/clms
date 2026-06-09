@@ -9,9 +9,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             throw new Exception("Worker ID is required.");
         }
         $query = "SELECT * FROM worker_documents WHERE worker_id = $worker_id ORDER BY created_at DESC";
-        $result = mysqli_query($conn, $query);
+        $result = clms_db_query($conn, $query);
         $docs = [];
-        while ($row = mysqli_fetch_assoc($result)) {
+        while ($row = clms_db_fetch_assoc($result)) {
             $docs[] = $row;
         }
         echo json_encode(['status' => 'success', 'data' => $docs]);
@@ -39,9 +39,9 @@ try {
     }
 
     if ($action === 'upload') {
-        $document_type = isset($_POST['document_type']) ? mysqli_real_escape_string($conn, $_POST['document_type']) : '';
-        $document_number = isset($_POST['document_number']) ? mysqli_real_escape_string($conn, $_POST['document_number']) : '';
-        $expiry_date = isset($_POST['expiry_date']) && !empty($_POST['expiry_date']) ? "'".mysqli_real_escape_string($conn, $_POST['expiry_date'])."'" : "NULL";
+        $document_type = isset($_POST['document_type']) ? clms_db_real_escape_string($conn, $_POST['document_type']) : '';
+        $document_number = isset($_POST['document_number']) ? clms_db_real_escape_string($conn, $_POST['document_number']) : '';
+        $expiry_date = isset($_POST['expiry_date']) && !empty($_POST['expiry_date']) ? "'".clms_db_real_escape_string($conn, $_POST['expiry_date'])."'" : "NULL";
         
         if (empty($document_type) || !isset($_FILES['file'])) {
             throw new Exception("Document type and file are required.");
@@ -64,15 +64,15 @@ try {
         $insertQuery = "INSERT INTO worker_documents (worker_id, document_type, document_number, document_path, expiry_date, uploaded_by)
                         VALUES ($worker_id, '$document_type', '$document_number', '$dbPath', $expiry_date, $user_id)";
                         
-        if (!mysqli_query($conn, $insertQuery)) {
-            throw new Exception("Failed to save document record: " . mysqli_error($conn));
+        if (!clms_db_query($conn, $insertQuery)) {
+            throw new Exception("Failed to save document record: " . clms_db_error($conn));
         }
 
         echo json_encode(['status' => 'success', 'message' => 'Document uploaded successfully', 'path' => $dbPath]);
 
     } elseif ($action === 'verify' || $action === 'reject') {
         $document_id = isset($_POST['document_id']) ? (int)$_POST['document_id'] : 0;
-        $remarks = isset($_POST['remarks']) ? mysqli_real_escape_string($conn, trim($_POST['remarks'])) : '';
+        $remarks = isset($_POST['remarks']) ? clms_db_real_escape_string($conn, trim($_POST['remarks'])) : '';
 
         if (!$document_id) {
             throw new Exception("Document ID is required.");
@@ -92,8 +92,8 @@ try {
                             reupload_requested = $reupload
                         WHERE document_id = $document_id";
                         
-        if (!mysqli_query($conn, $updateQuery)) {
-            throw new Exception("Failed to update document status: " . mysqli_error($conn));
+        if (!clms_db_query($conn, $updateQuery)) {
+            throw new Exception("Failed to update document status: " . clms_db_error($conn));
         }
 
         echo json_encode(['status' => 'success', 'message' => "Document successfully {$status}"]);

@@ -11,10 +11,10 @@ $name = $_SESSION['name'] ?? 'Pass Issuing Officer';
 function reuploadCasesEnsureColumn($conn, $table, $column, $definition) {
     try {
         $safeTable = str_replace('`', '``', $table);
-        $safeColumn = mysqli_real_escape_string($conn, $column);
-        $exists = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
-        if ($exists && mysqli_num_rows($exists) === 0) {
-            @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$column` $definition");
+        $safeColumn = clms_db_real_escape_string($conn, $column);
+        $exists = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+        if ($exists && clms_db_num_rows($exists) === 0) {
+            @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$column` $definition");
         }
     } catch (Throwable $e) {
         error_log("reupload cases schema check failed: " . $e->getMessage());

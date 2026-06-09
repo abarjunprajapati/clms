@@ -30,11 +30,11 @@ $query = "
     ORDER BY w.worker_id ASC
 ";
 
-$res = mysqli_query($conn, $query);
+$res = clms_db_query($conn, $query);
 
 if (!$res) {
     http_response_code(500);
-    echo "Database error: " . mysqli_error($conn);
+    echo "Database error: " . clms_db_error($conn);
     exit;
 }
 
@@ -60,7 +60,7 @@ fputcsv($output, [
 ]);
 
 // Data rows
-while ($row = mysqli_fetch_assoc($res)) {
+while ($row = clms_db_fetch_assoc($res)) {
     fputcsv($output, [
         $row['worker_id'],
         $row['worker_name'],

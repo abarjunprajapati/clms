@@ -21,13 +21,13 @@ try {
               WHERE l.worker_id = $worker_id
               ORDER BY l.created_at DESC";
               
-    $result = mysqli_query($conn, $query);
+    $result = clms_db_query($conn, $query);
     if (!$result) {
-        throw new Exception(mysqli_error($conn));
+        throw new Exception(clms_db_error($conn));
     }
     
     $data = [];
-    while ($row = mysqli_fetch_assoc($result)) {
+    while ($row = clms_db_fetch_assoc($result)) {
         // Decode JSON values for frontend convenience
         $row['old_values'] = json_decode($row['old_values'], true);
         $row['new_values'] = json_decode($row['new_values'], true);

@@ -14,8 +14,8 @@ if (empty($vendor_code)) {
 }
 
 // Dynamically check if customer_code exists to avoid SQL validation errors
-$check_col = mysqli_query($conn, "SHOW COLUMNS FROM sap_po_master LIKE 'customer_code'");
-$has_customer_code = ($check_col && mysqli_num_rows($check_col) > 0);
+$check_col = clms_db_query($conn, "SHOW COLUMNS FROM sap_po_master LIKE 'customer_code'");
+$has_customer_code = ($check_col && clms_db_num_rows($check_col) > 0);
 
 if ($has_customer_code) {
     $pos = db_fetch_all($conn, 

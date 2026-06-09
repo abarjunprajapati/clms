@@ -44,7 +44,7 @@ function logAdminActivity($conn, $actionType, $module, $targetId = null, $oldDat
     $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS super_admin_activity_logs (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS super_admin_activity_logs (
         id INT AUTO_INCREMENT PRIMARY KEY,
         admin_id INT NOT NULL,
         action_type VARCHAR(100) NOT NULL,

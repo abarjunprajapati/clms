@@ -30,9 +30,9 @@ $requiredTables = [
 
 $requiredTable = $requiredTables[$dataset] ?? '';
 if ($requiredTable !== '') {
-    $safeTable = mysqli_real_escape_string($conn, $requiredTable);
-    $tableCheck = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
-    if (!$tableCheck || mysqli_num_rows($tableCheck) === 0) {
+    $safeTable = clms_db_real_escape_string($conn, $requiredTable);
+    $tableCheck = clms_db_query($conn, "SHOW TABLES LIKE '$safeTable'");
+    if (!$tableCheck || clms_db_num_rows($tableCheck) === 0) {
         jsonError("Cannot export '$dataset': source table '$requiredTable' does not exist.", 404);
     }
 }

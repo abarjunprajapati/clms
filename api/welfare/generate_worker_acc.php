@@ -60,14 +60,14 @@ if ($row['status'] !== 'temporary_issued' && $row['status'] !== 'acc_generated')
 
 $appId = $row['application_no'];
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 try {
     // Generate ACC Number if not already present
     $acc = $row['acc_number'];
     if (empty($acc)) {
         $acc = generateEightDigitAcc($conn, $row['id']);
     }
-    $accSql = mysqli_real_escape_string($conn, $acc);
+    $accSql = clms_db_real_escape_string($conn, $acc);
     
     // 1. Update workmen table: status, acc numbers, and reset biometric status to pending
     $updateWorker = db_execute($conn, 
@@ -84,7 +84,7 @@ try {
     );
     
     // 3. Update attendance map
-    mysqli_query($conn, "INSERT IGNORE INTO acc_attendance_map (acc_number, worker_id) VALUES ('$accSql', " . (int)$workmanId . ")");
+    clms_db_query($conn, "INSERT IGNORE INTO acc_attendance_map (acc_number, worker_id) VALUES ('$accSql', " . (int)$workmanId . ")");
     
     // 4. Update Application Status to acc_generated (via WorkflowEngine to ensure consistency)
     // We use setStatus instead of performAction because performAction usually moves the whole application
@@ -103,11 +103,11 @@ try {
         "ssss", ['WORKMAN', $appId, 'ACC_GENERATED', $payloadJson]
     );
     
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     
     sendJson(['success' => true, 'message' => 'ACC ' . $acc . ' generated and status updated to ACC_GENERATED', 'acc_number' => $acc]);
 } catch (Exception $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     sendJson(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
 }
 ?>

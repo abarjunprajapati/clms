@@ -61,7 +61,7 @@ try {
             reason TEXT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-        @mysqli_query($conn, $create_history_sql);
+        @clms_db_query($conn, $create_history_sql);
 
         $hstmt = $conn->prepare("INSERT INTO contractor_annexure2a_history (annexure2a_id, contractor_id, status, reason) VALUES (?, ?, ?, ?)");
         if ($hstmt) {

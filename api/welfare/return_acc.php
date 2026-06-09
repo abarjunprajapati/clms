@@ -150,7 +150,7 @@ try {
     $conn->commit();
 } catch (Throwable $e) {
     if ($started) {
-        @mysqli_rollback($conn);
+        @clms_db_rollback($conn);
     }
     accReturnJson(false, 'ACC return failed: ' . $e->getMessage(), null, 500);
 }

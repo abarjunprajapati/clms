@@ -91,13 +91,13 @@ $coreSql = "UPDATE workmen SET is_blocked = $blockedFlag, blocked_source = $sour
 if (!wbTryQuery($conn, $coreSql)) {
     $fallbackSql = "UPDATE workmen SET is_blocked = $blockedFlag WHERE id = $workmanId";
     if (!wbTryQuery($conn, $fallbackSql)) {
-        workerBlockJson(false, 'Unable to update worker block flag. DB error: ' . mysqli_error($conn), null, 500);
+        workerBlockJson(false, 'Unable to update worker block flag. DB error: ' . clms_db_error($conn), null, 500);
     }
 }
 
 if ($action === 'block') {
     wbTryQuery($conn, "UPDATE worker_blocks SET status = 'released' WHERE workman_id = $workmanId AND status = 'active'");
-    $reasonSql = "'" . mysqli_real_escape_string($conn, $reason) . "'";
+    $reasonSql = "'" . clms_db_real_escape_string($conn, $reason) . "'";
     $nextBlockId = db_count($conn, "SELECT COALESCE(MAX(id), 0) + 1 FROM worker_blocks");
     if ($nextBlockId < 1) $nextBlockId = 1;
     wbTryQuery($conn, "INSERT INTO worker_blocks (id, workman_id, blocked_by, reason, block_type, status, blocked_at)
@@ -112,15 +112,15 @@ if ($action === 'block') {
     $message = 'Worker unblocked successfully.';
 }
 
-$reasonSql = "'" . mysqli_real_escape_string($conn, $reason) . "'";
-$historyActionSql = "'" . mysqli_real_escape_string($conn, $historyAction) . "'";
+$reasonSql = "'" . clms_db_real_escape_string($conn, $reason) . "'";
+$historyActionSql = "'" . clms_db_real_escape_string($conn, $historyAction) . "'";
 $nextHistoryId = db_count($conn, "SELECT COALESCE(MAX(id), 0) + 1 FROM worker_block_history");
 if ($nextHistoryId < 1) $nextHistoryId = 1;
 wbTryQuery($conn, "INSERT INTO worker_block_history (id, workman_id, action, reason, action_by, created_at)
     VALUES ($nextHistoryId, $workmanId, $historyActionSql, $reasonSql, $actionBy, NOW())");
 
-$detail = mysqli_real_escape_string($conn, "Worker $workmanId $action. Reason: $reason");
+$detail = clms_db_real_escape_string($conn, "Worker $workmanId $action. Reason: $reason");
 wbTryQuery($conn, "INSERT INTO audit_logs (user_id, action, module, details, ip_address)
-    VALUES ($actionBy, 'worker_$action', 'worker_blocks', '$detail', '" . mysqli_real_escape_string($conn, $_SERVER['REMOTE_ADDR'] ?? '') . "')");
+    VALUES ($actionBy, 'worker_$action', 'worker_blocks', '$detail', '" . clms_db_real_escape_string($conn, $_SERVER['REMOTE_ADDR'] ?? '') . "')");
 
 workerBlockJson(true, $message);

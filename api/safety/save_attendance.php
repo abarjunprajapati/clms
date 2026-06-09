@@ -24,16 +24,16 @@ if (!$session || $session['session_status'] == 'completed') {
     exit;
 }
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 try {
     foreach ($attendance_data as $workman_id => $status) {
         $rem = $remarks_data[$workman_id] ?? '';
         db_execute($conn, "UPDATE training_session_workers SET attendance_status=?, remarks=? WHERE session_id=? AND workman_id=?", 'ssii', [$status, $rem, $session_id, $workman_id]);
     }
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     echo json_encode(["success" => true, "message" => "Attendance saved"]);
 } catch (Exception $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     echo json_encode(["success" => false, "message" => $e->getMessage()]);
 }
 

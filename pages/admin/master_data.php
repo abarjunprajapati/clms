@@ -39,9 +39,9 @@ function renderContent() {
       </div>
 
       <?php foreach($tables as $tbl => $meta):
-        $tableExists = mysqli_query($conn, "SHOW TABLES LIKE '$tbl'");
+        $tableExists = clms_db_query($conn, "SHOW TABLES LIKE '$tbl'");
         $rows = [];
-        if($tableExists && mysqli_num_rows($tableExists) > 0) {
+        if($tableExists && clms_db_num_rows($tableExists) > 0) {
             $rows = db_fetch_all($conn, "SELECT * FROM $tbl ORDER BY id");
         }
         $col = $meta['col'];

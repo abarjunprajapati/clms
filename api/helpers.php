@@ -143,9 +143,9 @@ function notificationTableExists($conn, $table) {
     if (!$conn || !preg_match('/^[A-Za-z0-9_]+$/', $table)) {
         return false;
     }
-    $safe = mysqli_real_escape_string($conn, $table);
-    $result = @mysqli_query($conn, "SHOW TABLES LIKE '$safe'");
-    return $result && mysqli_num_rows($result) > 0;
+    $safe = clms_db_real_escape_string($conn, $table);
+    $result = @clms_db_query($conn, "SHOW TABLES LIKE '$safe'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function notificationSetting($conn, $key, $fallback = '') {
@@ -166,7 +166,7 @@ function notificationLog($conn, $recipient, $channel, $type, $subject, $message,
     if (!$conn) {
         return;
     }
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS notification_logs (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS notification_logs (
         id INT AUTO_INCREMENT PRIMARY KEY,
         recipient VARCHAR(100),
         recipient_name VARCHAR(100),

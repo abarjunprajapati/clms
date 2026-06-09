@@ -13,17 +13,17 @@ $user_id = $_SESSION['user_id'];
 clms_get_portal_contractor($conn);
 
 function contractorTrainingTableExists($conn, $table) {
-    $safeTable = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
-    return $res && mysqli_num_rows($res) > 0;
+    $safeTable = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$safeTable'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function contractorTrainingColumnExists($conn, $table, $column) {
     if (!contractorTrainingTableExists($conn, $table)) return false;
     $safeTable = str_replace('`', '``', $table);
-    $safeColumn = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
-    return $res && mysqli_num_rows($res) > 0;
+    $safeColumn = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function renderContent() {

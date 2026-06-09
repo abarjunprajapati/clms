@@ -80,7 +80,7 @@ class ContractorBlockingService {
     
     public static function blockContractor($conn, $contractorId, $reason, $remarks, $userId) {
         self::ensureSchema($conn);
-        mysqli_begin_transaction($conn);
+        clms_db_begin_transaction($conn);
         try {
             $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
             $now = date('Y-m-d H:i:s');
@@ -139,10 +139,10 @@ class ContractorBlockingService {
             NotificationEngine::sendRoleNotification($conn, 'welfare_user', $msg, 'danger');
             NotificationEngine::sendRoleNotification($conn, 'admin', $msg, 'danger');
 
-            mysqli_commit($conn);
+            clms_db_commit($conn);
             return ['success' => true, 'message' => 'Contractor blocked successfully and cascades triggered.'];
         } catch (Exception $e) {
-            mysqli_rollback($conn);
+            clms_db_rollback($conn);
             return ['success' => false, 'message' => $e->getMessage()];
         }
     }

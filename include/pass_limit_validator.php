@@ -144,7 +144,7 @@ function calculateAllowed($conn, $contractor_id, $pass_type) {
  * Validates whether a new enrollment is allowed based on Annexure 5/A rules.
  * Throws Exception if limit is exceeded.
  * 
- * @param mysqli $conn        Database connection
+ * @param $conn        Database connection
  * @param int    $contractor_id  Contractor ID
  * @param string $pass_type      One of: Contractor, Representative, Supervisor, Workman
  * @param int    $adding         Number of new enrollments being added (default 1)

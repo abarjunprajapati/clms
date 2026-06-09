@@ -25,7 +25,7 @@ if (!$conn) {
     json_response(false, null, 'Database connection failed');
 }
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 
 try {
     // 1. Update Annexure 3A status
@@ -83,14 +83,14 @@ try {
         }
     }
 
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     json_response(true, null, 'Contractor registration updated successfully');
 
 } catch (Exception $e) {
-    if ($conn) mysqli_rollback($conn);
+    if ($conn) clms_db_rollback($conn);
     json_response(false, null, 'Error: ' . $e->getMessage());
 } catch (Throwable $t) {
-    if ($conn) mysqli_rollback($conn);
+    if ($conn) clms_db_rollback($conn);
     json_response(false, null, 'Fatal Error: ' . $t->getMessage());
 }
 

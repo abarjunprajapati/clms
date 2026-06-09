@@ -1,15 +1,15 @@
 <?php
 if (!function_exists('clms_portal_column_exists')) {
-function clms_portal_column_exists(mysqli $conn, string $table, string $column): bool {
+function clms_portal_column_exists($conn, string $table, string $column): bool {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 }
 
 if (!function_exists('clms_portal_insert_contractor')) {
-function clms_portal_insert_contractor(mysqli $conn, array $values): int {
+function clms_portal_insert_contractor($conn, array $values): int {
     $columns = [];
     $params = [];
     $types = '';
@@ -46,7 +46,7 @@ function clms_portal_insert_contractor(mysqli $conn, array $values): int {
 }
 
 if (!function_exists('clms_get_portal_contractor')) {
-function clms_get_portal_contractor(mysqli $conn) {
+function clms_get_portal_contractor($conn) {
     $userId = (int)($_SESSION['user_id'] ?? 0);
     $role = $_SESSION['role'] ?? '';
     if (!$userId) {

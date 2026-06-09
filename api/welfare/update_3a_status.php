@@ -18,17 +18,17 @@ if (!$id || !$status || !in_array($status, $allowed_statuses, true)) {
 }
 
 function a3_welfare_column_exists($conn, $table, $column) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function a3_welfare_ensure_column($conn, $table, $column, $definition) {
     if (a3_welfare_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @mysqli_query($conn, "ALTER TABLE `{$safeTable}` ADD COLUMN `{$safeColumn}` {$definition}");
+    @clms_db_query($conn, "ALTER TABLE `{$safeTable}` ADD COLUMN `{$safeColumn}` {$definition}");
 }
 
 a3_welfare_ensure_column($conn, 'contractor_annexure3a', 'approval_reason', 'TEXT NULL');

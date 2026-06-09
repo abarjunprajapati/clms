@@ -11,17 +11,17 @@ $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Safety Officer';
 
 function safetyDashTableExists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && mysqli_num_rows($res) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function safetyDashColumnExists($conn, $table, $column) {
     if (!safetyDashTableExists($conn, $table)) return false;
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function safetyDashCol($conn, $table, $alias, $column, $fallback = 'NULL') {
@@ -35,7 +35,7 @@ function safetyDashEnsureColumn($conn, $table, $column, $definition) {
 
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function safetyDashEnsureControlSchema($conn) {
@@ -49,7 +49,7 @@ function safetyDashEnsureControlSchema($conn) {
         safetyDashEnsureColumn($conn, 'training_venue_masters', $column, $definition);
     }
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS safety_instructor_masters (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS safety_instructor_masters (
         id INT NOT NULL AUTO_INCREMENT,
         instructor_code VARCHAR(30) NULL,
         instructor_name VARCHAR(150) NOT NULL,
@@ -61,7 +61,7 @@ function safetyDashEnsureControlSchema($conn) {
         UNIQUE KEY uq_instructor_name (instructor_name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_language_masters (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_language_masters (
         id INT NOT NULL AUTO_INCREMENT,
         language_name VARCHAR(80) NOT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -73,7 +73,7 @@ function safetyDashEnsureControlSchema($conn) {
         UNIQUE KEY uq_training_language (language_name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_fee_masters (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_fee_masters (
         id INT NOT NULL AUTO_INCREMENT,
         fee_source VARCHAR(20) NOT NULL,
         amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -85,7 +85,7 @@ function safetyDashEnsureControlSchema($conn) {
         UNIQUE KEY uq_training_fee_source (fee_source)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_class_batches (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_class_batches (
         id INT NOT NULL AUTO_INCREMENT,
         batch_token VARCHAR(6) NOT NULL,
         batch_number VARCHAR(50) NOT NULL,
@@ -110,7 +110,7 @@ function safetyDashEnsureControlSchema($conn) {
         UNIQUE KEY uq_training_batch_token (batch_token)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_batch_workers (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_batch_workers (
         id INT NOT NULL AUTO_INCREMENT,
         batch_id INT NOT NULL,
         training_request_id INT NOT NULL,
@@ -280,7 +280,7 @@ function safetyDashHandlePost($conn) {
                     $saveMode === 'draft' ? 'draft' : 'open',
                 ]
             );
-            $sessionId = (int)mysqli_insert_id($conn);
+            $sessionId = (int)clms_db_insert_id($conn);
 
             db_execute(
                 $conn,
@@ -308,7 +308,7 @@ function safetyDashHandlePost($conn) {
                     $userId,
                 ]
             );
-            $batchId = (int)mysqli_insert_id($conn);
+            $batchId = (int)clms_db_insert_id($conn);
 
             $candidates = [];
             if ($saveMode === 'scheduled') {
@@ -477,7 +477,7 @@ function safetyDashRepairConfirmedSessions($conn) {
                         (string)($row['batch_number'] ?? '')
                     ]
                 );
-                $session = ['id' => mysqli_insert_id($conn), 'session_status' => 'open'];
+                $session = ['id' => clms_db_insert_id($conn), 'session_status' => 'open'];
             }
 
             $sessionId = (int)($session['id'] ?? 0);

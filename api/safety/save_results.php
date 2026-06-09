@@ -52,16 +52,16 @@ if (!$session || $session['session_status'] == 'completed') {
 }
 
 function safetyResultsTableExists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && mysqli_num_rows($res) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function safetyResultsColumnExists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function safetyResultsEnsureColumn($conn, $table, $column, $definition) {
@@ -70,15 +70,15 @@ function safetyResultsEnsureColumn($conn, $table, $column, $definition) {
     }
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function safetyResultsAvailableColumns($conn, $table) {
     $safeTable = str_replace('`', '``', $table);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable`");
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable`");
     $cols = [];
     if ($res) {
-        while ($row = mysqli_fetch_assoc($res)) {
+        while ($row = clms_db_fetch_assoc($res)) {
             $cols[$row['Field']] = true;
         }
     }
@@ -167,14 +167,14 @@ function safetyResultsSystemSettingIdIsAutoIncrement($conn) {
         return true;
     }
 
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `system_settings` LIKE 'id'");
-    $row = $res ? mysqli_fetch_assoc($res) : null;
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `system_settings` LIKE 'id'");
+    $row = $res ? clms_db_fetch_assoc($res) : null;
     return !$row || stripos($row['Extra'] ?? '', 'auto_increment') !== false;
 }
 
 function safetyResultsNextSystemSettingId($conn) {
-    $res = mysqli_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM `system_settings`");
-    $row = $res ? mysqli_fetch_assoc($res) : null;
+    $res = clms_db_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM `system_settings`");
+    $row = $res ? clms_db_fetch_assoc($res) : null;
     return (int)($row['next_id'] ?? 1);
 }
 
@@ -207,7 +207,7 @@ function safetyResultsEnsureSetting($conn, $key, $value, $group, $description) {
 }
 
 function safetyResultsEnsureSchema($conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_results (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_results (
         id INT AUTO_INCREMENT PRIMARY KEY,
         training_session_id VARCHAR(50) DEFAULT NULL,
         application_id VARCHAR(50) DEFAULT NULL,
@@ -286,7 +286,7 @@ safetyResultsEnsureSchema($conn);
 $passMark = max(1, (int)safetyResultsSetting($conn, 'training_pass_mark', 60));
 $validityDays = max(1, (int)safetyResultsSetting($conn, 'training_validity_days', 365));
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 try {
     foreach ($results as $workman_id => $res) {
         $workman_id = (int)$workman_id;
@@ -449,7 +449,7 @@ try {
             WorkflowEngine::performAction($conn, $appNo, 'complete_training', $_SESSION['role'], (int)($_SESSION['user_id'] ?? 0), 'All workers passed safety training');
         }
     }
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     safetyResultsJson(["success" => true, "message" => "Results updated successfully"]);
 } catch (Throwable $e) {
     if (isset($conn) && method_exists($conn, 'rollback')) {

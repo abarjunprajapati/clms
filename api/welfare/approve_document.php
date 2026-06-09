@@ -65,7 +65,7 @@ function latestGatePassDocsApproved($conn, $workmanId) {
 }
 
 function documentColumnExists($conn, $column) {
-    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $safeColumn = clms_db_real_escape_string($conn, $column);
     $res = $conn->query("SHOW COLUMNS FROM documents LIKE '$safeColumn'");
     return $res && $res->num_rows > 0;
 }

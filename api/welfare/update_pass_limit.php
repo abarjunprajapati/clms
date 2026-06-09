@@ -21,19 +21,19 @@ function passLimitColumnExists($conn, $table, $column) {
         return false;
     }
 
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function passLimitEnsureSchema($conn) {
-    $describe = mysqli_query($conn, "DESCRIBE `pass_limits`");
+    $describe = clms_db_query($conn, "DESCRIBE `pass_limits`");
     if (!$describe) {
-        return ['ok' => false, 'error' => 'pass_limits table is missing or cannot be described: ' . mysqli_error($conn)];
+        return ['ok' => false, 'error' => 'pass_limits table is missing or cannot be described: ' . clms_db_error($conn)];
     }
 
     $idColumn = null;
-    while ($column = mysqli_fetch_assoc($describe)) {
+    while ($column = clms_db_fetch_assoc($describe)) {
         if (($column['Field'] ?? '') === 'id') {
             $idColumn = $column;
             break;
@@ -45,21 +45,21 @@ function passLimitEnsureSchema($conn) {
     }
 
     if (stripos($idColumn['Extra'] ?? '', 'auto_increment') === false) {
-        $primary = mysqli_query($conn, "SHOW KEYS FROM `pass_limits` WHERE Key_name = 'PRIMARY'");
-        if (!$primary || mysqli_num_rows($primary) === 0) {
-            if (!mysqli_query($conn, "ALTER TABLE `pass_limits` ADD PRIMARY KEY (`id`)")) {
+        $primary = clms_db_query($conn, "SHOW KEYS FROM `pass_limits` WHERE Key_name = 'PRIMARY'");
+        if (!$primary || clms_db_num_rows($primary) === 0) {
+            if (!clms_db_query($conn, "ALTER TABLE `pass_limits` ADD PRIMARY KEY (`id`)")) {
                 return [
                     'ok' => false,
-                    'error' => 'pass_limits.id needs a primary key before AUTO_INCREMENT can be added: ' . mysqli_error($conn)
+                    'error' => 'pass_limits.id needs a primary key before AUTO_INCREMENT can be added: ' . clms_db_error($conn)
                 ];
             }
         }
 
         $type = stripos($idColumn['Type'] ?? '', 'bigint') !== false ? 'BIGINT(20)' : 'INT(11)';
-        if (!mysqli_query($conn, "ALTER TABLE `pass_limits` MODIFY `id` $type NOT NULL AUTO_INCREMENT")) {
+        if (!clms_db_query($conn, "ALTER TABLE `pass_limits` MODIFY `id` $type NOT NULL AUTO_INCREMENT")) {
             return [
                 'ok' => false,
-                'error' => 'pass_limits.id needs AUTO_INCREMENT, but automatic repair failed: ' . mysqli_error($conn)
+                'error' => 'pass_limits.id needs AUTO_INCREMENT, but automatic repair failed: ' . clms_db_error($conn)
             ];
         }
     }
@@ -73,8 +73,8 @@ function passLimitEnsureSchema($conn) {
     ];
 
     foreach ($requiredColumns as $column => $sql) {
-        if (!passLimitColumnExists($conn, 'pass_limits', $column) && !mysqli_query($conn, $sql)) {
-            return ['ok' => false, 'error' => "Could not add pass_limits.$column: " . mysqli_error($conn)];
+        if (!passLimitColumnExists($conn, 'pass_limits', $column) && !clms_db_query($conn, $sql)) {
+            return ['ok' => false, 'error' => "Could not add pass_limits.$column: " . clms_db_error($conn)];
         }
     }
 
@@ -82,34 +82,34 @@ function passLimitEnsureSchema($conn) {
 }
 
 function passLimitFindExistingId($conn, $contractorId, $passType) {
-    $stmt = mysqli_prepare($conn, "SELECT id FROM pass_limits WHERE contractor_id=? AND pass_type=? LIMIT 1");
+    $stmt = clms_db_prepare($conn, "SELECT id FROM pass_limits WHERE contractor_id=? AND pass_type=? LIMIT 1");
     if (!$stmt) {
-        return ['ok' => false, 'error' => mysqli_error($conn)];
+        return ['ok' => false, 'error' => clms_db_error($conn)];
     }
 
-    mysqli_stmt_bind_param($stmt, 'is', $contractorId, $passType);
-    if (!mysqli_stmt_execute($stmt)) {
-        $error = mysqli_stmt_error($stmt);
-        mysqli_stmt_close($stmt);
+    clms_db_stmt_bind_param($stmt, 'is', $contractorId, $passType);
+    if (!clms_db_stmt_execute($stmt)) {
+        $error = clms_db_stmt_error($stmt);
+        clms_db_stmt_close($stmt);
         return ['ok' => false, 'error' => $error];
     }
 
     $id = null;
-    mysqli_stmt_bind_result($stmt, $id);
-    mysqli_stmt_fetch($stmt);
-    mysqli_stmt_close($stmt);
+    clms_db_stmt_bind_result($stmt, $id);
+    clms_db_stmt_fetch($stmt);
+    clms_db_stmt_close($stmt);
 
     return ['ok' => true, 'id' => $id ? (int)$id : null];
 }
 
 function passLimitWriteAudit($conn, $userId, $contractorId, $passType, $maxAllowed, $override) {
-    $stmt = mysqli_prepare(
+    $stmt = clms_db_prepare(
         $conn,
         "INSERT INTO audit_logs (user_id, action, module, details, ip_address) VALUES (?,?,?,?,?)"
     );
 
     if (!$stmt) {
-        error_log('[update_pass_limit] Audit log skipped: ' . mysqli_error($conn));
+        error_log('[update_pass_limit] Audit log skipped: ' . clms_db_error($conn));
         return;
     }
 
@@ -117,13 +117,13 @@ function passLimitWriteAudit($conn, $userId, $contractorId, $passType, $maxAllow
     $ip = $_SERVER['REMOTE_ADDR'] ?? '';
     $action = 'set_pass_limit';
     $module = 'pass_limits';
-    mysqli_stmt_bind_param($stmt, 'issss', $userId, $action, $module, $details, $ip);
+    clms_db_stmt_bind_param($stmt, 'issss', $userId, $action, $module, $details, $ip);
 
-    if (!mysqli_stmt_execute($stmt)) {
-        error_log('[update_pass_limit] Audit log skipped: ' . mysqli_stmt_error($stmt));
+    if (!clms_db_stmt_execute($stmt)) {
+        error_log('[update_pass_limit] Audit log skipped: ' . clms_db_stmt_error($stmt));
     }
 
-    mysqli_stmt_close($stmt);
+    clms_db_stmt_close($stmt);
 }
 
 $data = json_decode(file_get_contents('php://input'), true);
@@ -202,34 +202,34 @@ if (!$existing['ok']) {
 }
 
 if ($existing['id']) {
-    $stmt = mysqli_prepare(
+    $stmt = clms_db_prepare(
         $conn,
         "UPDATE pass_limits SET max_allowed=?, rule=?, description=?, ratio_per_workmen=?, override_allowed=? WHERE id=?"
     );
     if (!$stmt) {
-        passLimitJson(['success' => false, 'error' => 'Update prepare failed: ' . mysqli_error($conn)], 500);
+        passLimitJson(['success' => false, 'error' => 'Update prepare failed: ' . clms_db_error($conn)], 500);
     }
 
-    mysqli_stmt_bind_param($stmt, 'issiii', $max_allowed, $rule, $description, $ratio, $override, $existing['id']);
+    clms_db_stmt_bind_param($stmt, 'issiii', $max_allowed, $rule, $description, $ratio, $override, $existing['id']);
 } else {
-    $stmt = mysqli_prepare(
+    $stmt = clms_db_prepare(
         $conn,
         "INSERT INTO pass_limits (contractor_id, pass_type, max_allowed, rule, description, ratio_per_workmen, override_allowed, current_count) VALUES (?,?,?,?,?,?,?,0)"
     );
     if (!$stmt) {
-        passLimitJson(['success' => false, 'error' => 'Insert prepare failed: ' . mysqli_error($conn)], 500);
+        passLimitJson(['success' => false, 'error' => 'Insert prepare failed: ' . clms_db_error($conn)], 500);
     }
 
-    mysqli_stmt_bind_param($stmt, 'isissii', $contractor_id, $pass_type, $max_allowed, $rule, $description, $ratio, $override);
+    clms_db_stmt_bind_param($stmt, 'isissii', $contractor_id, $pass_type, $max_allowed, $rule, $description, $ratio, $override);
 }
 
-if (!mysqli_stmt_execute($stmt)) {
-    $error = mysqli_stmt_error($stmt);
-    mysqli_stmt_close($stmt);
+if (!clms_db_stmt_execute($stmt)) {
+    $error = clms_db_stmt_error($stmt);
+    clms_db_stmt_close($stmt);
     passLimitJson(['success' => false, 'error' => 'Pass limit save failed: ' . $error], 500);
 }
 
-mysqli_stmt_close($stmt);
+clms_db_stmt_close($stmt);
 
 $user_id = (int)($_SESSION['user_id'] ?? 0);
 passLimitWriteAudit($conn, $user_id, $contractor_id, $pass_type, $max_allowed, $override);

@@ -9,24 +9,24 @@ $role = get_normalized_role();
 $name = $_SESSION['name'] ?? 'Pass Issuing Officer';
 
 function passDashTableExists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && mysqli_num_rows($res) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function passDashColumnExists($conn, $table, $column) {
     if (!passDashTableExists($conn, $table)) return false;
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function passDashEnsureColumn($conn, $table, $column, $definition) {
     if (!passDashTableExists($conn, $table) || passDashColumnExists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function passDashCol($conn, $table, $alias, $column, $fallback = 'NULL') {

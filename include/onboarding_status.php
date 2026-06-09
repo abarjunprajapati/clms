@@ -7,9 +7,9 @@
 if (!function_exists('clms_onboarding_table_exists')) {
 function clms_onboarding_table_exists($conn, $table) {
     if (!$conn || !$table) return false;
-    $table = mysqli_real_escape_string($conn, $table);
-    $result = mysqli_query($conn, "SHOW TABLES LIKE '{$table}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $result = clms_db_query($conn, "SHOW TABLES LIKE '{$table}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 }
 

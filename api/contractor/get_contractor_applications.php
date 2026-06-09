@@ -11,13 +11,13 @@ $sql = "SELECT ws.application_id, ws.current_status, a.contractor_id
         WHERE a.contractor_id = ?
         ORDER BY ws.updated_at DESC";
 
-$stmt = mysqli_prepare($conn, $sql);
-mysqli_stmt_bind_param($stmt, "i", $contractor_id);
-mysqli_stmt_execute($stmt);
-$result = mysqli_stmt_get_result($stmt);
+$stmt = clms_db_prepare($conn, $sql);
+clms_db_stmt_bind_param($stmt, "i", $contractor_id);
+clms_db_stmt_execute($stmt);
+$result = clms_db_stmt_get_result($stmt);
 
 $applications = [];
-while ($row = mysqli_fetch_assoc($result)) {
+while ($row = clms_db_fetch_assoc($result)) {
     $applications[] = $row;
 }
 

@@ -1,13 +1,13 @@
 <?php
 
 function clms_training_type_column_exists($conn, $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `master_training_types` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `master_training_types` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_ensure_training_type_master($conn) {
-    $created = mysqli_query($conn, "CREATE TABLE IF NOT EXISTS master_training_types (
+    $created = clms_db_query($conn, "CREATE TABLE IF NOT EXISTS master_training_types (
         id INT NOT NULL AUTO_INCREMENT,
         type_name VARCHAR(100) NOT NULL,
         duration_hours INT DEFAULT 8,
@@ -29,7 +29,7 @@ function clms_ensure_training_type_master($conn) {
         'created_at' => "ALTER TABLE `master_training_types` ADD COLUMN `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP AFTER `status`",
     ] as $column => $sql) {
         if (!clms_training_type_column_exists($conn, $column)) {
-            mysqli_query($conn, $sql);
+            clms_db_query($conn, $sql);
         }
     }
 

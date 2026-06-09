@@ -32,8 +32,8 @@ try {
         ];
 
         // Get pass limit rules
-        $result = mysqli_query($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0");
-        while ($row = mysqli_fetch_assoc($result)) {
+        $result = clms_db_query($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0");
+        while ($row = clms_db_fetch_assoc($result)) {
             $summary['pass_limits_rules'][] = [
                 'pass_type' => $row['pass_type'],
                 'max_allowed' => $row['max_allowed'],
@@ -44,8 +44,8 @@ try {
         }
 
         // Get contractor statistics
-        $result = mysqli_query($conn, "SELECT id, name FROM contractors LIMIT 20");
-        while ($contractor = mysqli_fetch_assoc($result)) {
+        $result = clms_db_query($conn, "SELECT id, name FROM contractors LIMIT 20");
+        while ($contractor = clms_db_fetch_assoc($result)) {
             $cid = $contractor['id'];
             
             // Count each type

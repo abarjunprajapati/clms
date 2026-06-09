@@ -13,9 +13,9 @@ function safetySessionJson($payload, $status = 200) {
 
 function safetySessionColumnExists($conn, $table, $column) {
     $table = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function safetySessionNotifyContractors($conn, $sessionId, $message) {
@@ -71,7 +71,7 @@ foreach ([
     'training_type' => "VARCHAR(100) DEFAULT 'Safety Induction'",
 ] as $column => $definition) {
     if (!safetySessionColumnExists($conn, 'training_schedule', $column)) {
-        @mysqli_query($conn, "ALTER TABLE training_schedule ADD COLUMN `$column` $definition");
+        @clms_db_query($conn, "ALTER TABLE training_schedule ADD COLUMN `$column` $definition");
     }
 }
 
@@ -94,7 +94,7 @@ $linked = db_fetch_all(
     [$sessionId]
 );
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 try {
     if ($action === 'cancel') {
         safetySessionNotifyContractors($conn, $sessionId, "Safety training session has been cancelled. Reason: $reason");
@@ -139,7 +139,7 @@ try {
             }
         }
         db_execute($conn, "DELETE FROM training_session_workers WHERE session_id = ?", 'i', [$sessionId]);
-        mysqli_commit($conn);
+        clms_db_commit($conn);
         safetySessionJson(['success' => true, 'message' => 'Training session cancelled. Workers returned to scheduling queue.']);
     }
 
@@ -208,10 +208,10 @@ try {
     }
 
     safetySessionNotifyContractors($conn, $sessionId, "Safety training schedule updated: " . date('d M Y', strtotime($date)) . " at " . substr($time, 0, 5) . ", venue: $location.");
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     safetySessionJson(['success' => true, 'message' => 'Training session rescheduled. Contractors must confirm the updated schedule.']);
 } catch (Throwable $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     safetySessionJson(['success' => false, 'message' => $e->getMessage()], 500);
 }
 ?>

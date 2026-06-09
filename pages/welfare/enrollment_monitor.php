@@ -10,7 +10,7 @@ $name = $_SESSION['name'] ?? 'Welfare Admin';
 
 function renderContent() {
     global $conn;
-    @mysqli_query($conn, "ALTER TABLE workmen ADD COLUMN nationality VARCHAR(100) NULL DEFAULT 'Indian'");
+    @clms_db_query($conn, "ALTER TABLE workmen ADD COLUMN nationality VARCHAR(100) NULL DEFAULT 'Indian'");
     $enrollments = db_fetch_all($conn, "SELECT w.*, c.contractor_name, w.temp_id as enrollment_temp_id, w.status as enrollment_status 
                                         FROM workmen w 
                                         JOIN contractors c ON w.contractor_id = c.id 

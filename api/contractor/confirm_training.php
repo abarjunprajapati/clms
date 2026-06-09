@@ -10,24 +10,24 @@ header('Content-Type: application/json');
 clms_get_portal_contractor($conn);
 
 function contractor_confirm_table_exists($conn, $table) {
-    $safeTable = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
-    return $res && mysqli_num_rows($res) > 0;
+    $safeTable = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$safeTable'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function contractor_confirm_column_exists($conn, $table, $column) {
     if (!contractor_confirm_table_exists($conn, $table)) return false;
     $safeTable = str_replace('`', '``', $table);
-    $safeColumn = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
-    return $res && mysqli_num_rows($res) > 0;
+    $safeColumn = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function contractor_confirm_ensure_column($conn, $table, $column, $definition) {
     if (contractor_confirm_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 if (contractor_confirm_table_exists($conn, 'training_requests')) {
@@ -56,7 +56,7 @@ if (!in_array($req['status'], ['scheduled', 'contractor_confirmed'], true)) {
     exit;
 }
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 try {
     if (empty($req['scheduled_date']) || empty($req['scheduled_venue'])) {
         throw new Exception('Safety schedule is incomplete. Please contact Safety Department.');
@@ -95,7 +95,7 @@ try {
                 (string)($req['batch_number'] ?? '')
             ]
         );
-        $session = ['id' => mysqli_insert_id($conn), 'session_status' => 'open'];
+        $session = ['id' => clms_db_insert_id($conn), 'session_status' => 'open'];
     }
     if (strtolower((string)($session['session_status'] ?? 'open')) === 'cancelled') {
         throw new Exception('This training session has been cancelled by Safety.');
@@ -157,10 +157,10 @@ try {
         "INSERT INTO audit_logs (user_id, action, module, details) VALUES (?,?,?,?)",
         'isss', [$user_id, 'training_confirmed', 'training_requests', "Request ID $req_id confirmed by contractor with remarks: $contractor_remarks"]
     );
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     echo json_encode(['success' => true, 'message' => 'Training confirmed. Safety team has been notified.']);
 } catch (Throwable $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
 ?>

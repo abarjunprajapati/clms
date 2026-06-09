@@ -13,20 +13,20 @@ function welfareTrainingReviewJson($payload, $status = 200) {
 
 function welfareTrainingReviewColumnExists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function welfareTrainingReviewEnsureColumn($conn, $table, $column, $definition) {
     if (welfareTrainingReviewColumnExists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function welfareTrainingReviewEnsureSchema($conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,
@@ -52,7 +52,7 @@ function welfareTrainingReviewEnsureSchema($conn) {
     ] as $column => $definition) {
         welfareTrainingReviewEnsureColumn($conn, 'training_requests', $column, $definition);
     }
-    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
     foreach ([
         'training_status' => "VARCHAR(50) DEFAULT 'pending'",
@@ -61,8 +61,8 @@ function welfareTrainingReviewEnsureSchema($conn) {
     ] as $column => $definition) {
         welfareTrainingReviewEnsureColumn($conn, 'workmen', $column, $definition);
     }
-    @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
-    @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+    @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+    @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
 }
 
 try {

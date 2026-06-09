@@ -9,7 +9,7 @@ header('Content-Type: application/json');
 
 ensureComplianceSchema($conn);
 $conn->query("ALTER TABLE compliance MODIFY status ENUM('pending','verified','rejected','reupload_required') DEFAULT 'pending'");
-mysqli_query($conn, "CREATE TABLE IF NOT EXISTS compliance_notices (
+clms_db_query($conn, "CREATE TABLE IF NOT EXISTS compliance_notices (
     id INT NOT NULL AUTO_INCREMENT,
     compliance_id INT NOT NULL,
     contractor_id INT NULL,

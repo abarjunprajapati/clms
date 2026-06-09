@@ -12,7 +12,7 @@ try {
     // Input validation
     $worker_id = isset($_POST['worker_id']) ? (int)$_POST['worker_id'] : 0;
     $action = isset($_POST['action']) ? $_POST['action'] : ''; // 'approve' or 'reject'
-    $remarks = isset($_POST['remarks']) ? mysqli_real_escape_string($conn, trim($_POST['remarks'])) : '';
+    $remarks = isset($_POST['remarks']) ? clms_db_real_escape_string($conn, trim($_POST['remarks'])) : '';
     $user_id = 1; // TODO: Get from session
 
     if (!$worker_id || !in_array($action, ['approve', 'reject'])) {
@@ -23,16 +23,16 @@ try {
         throw new Exception("Remarks are mandatory when rejecting a worker.");
     }
 
-    mysqli_begin_transaction($conn);
+    clms_db_begin_transaction($conn);
 
     $checkQuery = "SELECT verification_status, worker_status, contractor_id, pass_type, worker_type FROM worker_master WHERE worker_id = $worker_id FOR UPDATE";
-    $result = mysqli_query($conn, $checkQuery);
+    $result = clms_db_query($conn, $checkQuery);
     
-    if (mysqli_num_rows($result) === 0) {
+    if (clms_db_num_rows($result) === 0) {
         throw new Exception("Worker not found.");
     }
     
-    $worker = mysqli_fetch_assoc($result);
+    $worker = clms_db_fetch_assoc($result);
     $current_status = $worker['verification_status'];
     
     if ($current_status === 'Approved' && $action === 'approve') {
@@ -68,8 +68,8 @@ try {
                         updated_at = NOW()
                     WHERE worker_id = $worker_id";
                         
-    if (!mysqli_query($conn, $updateQuery)) {
-        throw new Exception("Failed to update worker status: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $updateQuery)) {
+        throw new Exception("Failed to update worker status: " . clms_db_error($conn));
     }
 
     // Sync status to workmen table
@@ -80,8 +80,8 @@ try {
                                safety_training_status = '$newSafetyStatus',
                                updated_at = NOW()
                            WHERE id = $worker_id";
-    if (!mysqli_query($conn, $updateWorkmanQuery)) {
-        throw new Exception("Failed to update workmen status: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $updateWorkmanQuery)) {
+        throw new Exception("Failed to update workmen status: " . clms_db_error($conn));
     }
 
     // Log the action
@@ -93,16 +93,16 @@ try {
     $logQuery = "INSERT INTO worker_audit_logs (worker_id, module_name, action_type, old_values, new_values, ip_address, browser_info, remarks, created_by) 
                  VALUES ($worker_id, 'Enrolled Workers', '" . ucfirst($action) . "', '$oldValues', '$newValues', '$ip', '$browser', '$remarks', $user_id)";
                  
-    if (!mysqli_query($conn, $logQuery)) {
-        throw new Exception("Failed to write audit log: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $logQuery)) {
+        throw new Exception("Failed to write audit log: " . clms_db_error($conn));
     }
 
-    mysqli_commit($conn);
+    clms_db_commit($conn);
 
     echo json_encode(['status' => 'success', 'message' => "Worker successfully {$action}ed"]);
 
 } catch (Exception $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }

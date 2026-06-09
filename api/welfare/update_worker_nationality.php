@@ -22,7 +22,7 @@ try {
         $nationality = 'Indian';
     }
 
-    @mysqli_query($conn, "ALTER TABLE workmen ADD COLUMN nationality VARCHAR(100) NULL DEFAULT 'Indian'");
+    @clms_db_query($conn, "ALTER TABLE workmen ADD COLUMN nationality VARCHAR(100) NULL DEFAULT 'Indian'");
 
     $stmt = $conn->prepare("UPDATE workmen SET nationality = ?, state = ?, district = ? WHERE id = ?");
     if (!$stmt) {

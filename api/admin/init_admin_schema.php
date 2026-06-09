@@ -13,9 +13,9 @@ $results = [];
 
 // Helper: add column if missing
 function addCol($conn, $table, $col, $def) {
-    $r = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$col'");
-    if ($r && mysqli_num_rows($r) == 0) {
-        mysqli_query($conn, "ALTER TABLE `$table` ADD COLUMN `$col` $def");
+    $r = clms_db_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$col'");
+    if ($r && clms_db_num_rows($r) == 0) {
+        clms_db_query($conn, "ALTER TABLE `$table` ADD COLUMN `$col` $def");
         return true;
     }
     return false;
@@ -33,7 +33,7 @@ $sql = "CREATE TABLE IF NOT EXISTS system_settings (
     updated_by INT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-$results['system_settings'] = mysqli_query($conn, $sql) ? 'OK' : mysqli_error($conn);
+$results['system_settings'] = clms_db_query($conn, $sql) ? 'OK' : clms_db_error($conn);
 
 // Seed default settings
 $defaults = [
@@ -95,7 +95,7 @@ $sql = "CREATE TABLE IF NOT EXISTS role_permissions (
     can_assign_roles TINYINT(1) DEFAULT 0,
     UNIQUE KEY uk_role_module (role_name, module)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-$results['role_permissions'] = mysqli_query($conn, $sql) ? 'OK' : mysqli_error($conn);
+$results['role_permissions'] = clms_db_query($conn, $sql) ? 'OK' : clms_db_error($conn);
 
 // Seed default permissions
 $roles = ['super_admin','welfare_admin','welfare_user','safety_user','front_line_user','pass_user','contractor'];
@@ -131,7 +131,7 @@ $sql = "CREATE TABLE IF NOT EXISTS super_admin_activity_logs (
     KEY idx_severity (severity),
     KEY idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-$results['super_admin_activity_logs'] = mysqli_query($conn, $sql) ? 'OK' : mysqli_error($conn);
+$results['super_admin_activity_logs'] = clms_db_query($conn, $sql) ? 'OK' : clms_db_error($conn);
 
 // ============================================================
 // 4. MASTER TABLES
@@ -227,7 +227,7 @@ $masters = [
 foreach($masters as $i => $sq) {
     preg_match('/CREATE TABLE IF NOT EXISTS (\w+)/', $sq, $m);
     $tbl = $m[1] ?? "master_$i";
-    $results[$tbl] = mysqli_query($conn, $sq) ? 'OK' : mysqli_error($conn);
+    $results[$tbl] = clms_db_query($conn, $sq) ? 'OK' : clms_db_error($conn);
 }
 
 // Seed master data
@@ -270,7 +270,7 @@ $sql = "CREATE TABLE IF NOT EXISTS notification_logs (
     KEY idx_status (status),
     KEY idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-$results['notification_logs'] = mysqli_query($conn, $sql) ? 'OK' : mysqli_error($conn);
+$results['notification_logs'] = clms_db_query($conn, $sql) ? 'OK' : clms_db_error($conn);
 
 // ============================================================
 // 6. SAP INTEGRATION LOGS (enhanced with retry)
@@ -299,7 +299,7 @@ $sql = "CREATE TABLE IF NOT EXISTS system_error_logs (
     KEY idx_resolved (resolved),
     KEY idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-$results['system_error_logs'] = mysqli_query($conn, $sql) ? 'OK' : mysqli_error($conn);
+$results['system_error_logs'] = clms_db_query($conn, $sql) ? 'OK' : clms_db_error($conn);
 
 // ============================================================
 // 8. ATTENDANCE EXCEPTIONS (missing punch, mismatch, etc.)
@@ -320,7 +320,7 @@ $sql = "CREATE TABLE IF NOT EXISTS attendance_exceptions (
     KEY idx_status (status),
     KEY idx_date (exception_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-$results['attendance_exceptions'] = mysqli_query($conn, $sql) ? 'OK' : mysqli_error($conn);
+$results['attendance_exceptions'] = clms_db_query($conn, $sql) ? 'OK' : clms_db_error($conn);
 
 // ============================================================
 // 9. ROLES TABLE — ensure it exists with descriptions
@@ -332,9 +332,9 @@ $sql = "CREATE TABLE IF NOT EXISTS roles (
     is_system TINYINT(1) DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-$results['roles'] = mysqli_query($conn, $sql) ? 'OK' : mysqli_error($conn);
+$results['roles'] = clms_db_query($conn, $sql) ? 'OK' : clms_db_error($conn);
 addCol($conn, 'roles', 'is_system', "TINYINT(1) DEFAULT 1");
-mysqli_query($conn, "ALTER TABLE users MODIFY role ENUM('contractor','welfare_admin','welfare_user','safety_user','front_line_user','pass_user','super_admin','execution_officer','execution') DEFAULT 'contractor'");
+clms_db_query($conn, "ALTER TABLE users MODIFY role ENUM('contractor','welfare_admin','welfare_user','safety_user','front_line_user','pass_user','super_admin','execution_officer','execution') DEFAULT 'contractor'");
 
 $roleDefs = [
     ['super_admin','Full system access. Highest authority with override and emergency control powers.',1],

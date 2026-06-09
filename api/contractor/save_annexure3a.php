@@ -126,43 +126,43 @@ function normalizeDateField($value, $label, $required = true) {
     failJson("$label invalid hai. Please calendar se complete date select karein (YYYY-MM-DD).");
 }
 
-function a3TableExists(mysqli $conn, string $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $result = mysqli_query($conn, "SHOW TABLES LIKE '{$table}'");
-    return $result && mysqli_num_rows($result) > 0;
+function a3TableExists($conn, string $table) {
+    $table = clms_db_real_escape_string($conn, $table);
+    $result = clms_db_query($conn, "SHOW TABLES LIKE '{$table}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
-function a3ColumnExistsInTable(mysqli $conn, string $table, string $column) {
+function a3ColumnExistsInTable($conn, string $table, string $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
-function a3EnsureColumnInTable(mysqli $conn, string $table, string $column, string $definition) {
+function a3EnsureColumnInTable($conn, string $table, string $column, string $definition) {
     if (!a3ColumnExistsInTable($conn, $table, $column)) {
         $safeTable = str_replace('`', '``', $table);
         $safeColumn = str_replace('`', '``', $column);
-        if (!mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
-            throw new Exception("Missing DB column `$table.$column` and auto-create failed: " . mysqli_error($conn));
+        if (!clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
+            throw new Exception("Missing DB column `$table.$column` and auto-create failed: " . clms_db_error($conn));
         }
     }
 }
 
-function a3ColumnExists(mysqli $conn, string $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM contractor_annexure3a LIKE '{$column}'");
-    return $result && mysqli_num_rows($result) > 0;
+function a3ColumnExists($conn, string $column) {
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM contractor_annexure3a LIKE '{$column}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
-function a3EnsureColumn(mysqli $conn, string $column, string $definition) {
+function a3EnsureColumn($conn, string $column, string $definition) {
     if (!a3ColumnExists($conn, $column)) {
-        mysqli_query($conn, "ALTER TABLE contractor_annexure3a ADD COLUMN `$column` $definition");
+        clms_db_query($conn, "ALTER TABLE contractor_annexure3a ADD COLUMN `$column` $definition");
     }
 }
 
-function a3EnsureSchema(mysqli $conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS contractor_annexure3a (
+function a3EnsureSchema($conn) {
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS contractor_annexure3a (
         id INT AUTO_INCREMENT PRIMARY KEY,
         vendor_code VARCHAR(50) NOT NULL,
         customer_code VARCHAR(50) NULL,
@@ -210,7 +210,7 @@ function a3EnsureSchema(mysqli $conn) {
     a3EnsureColumn($conn, 'updated_by', 'INT NULL');
     a3EnsureColumn($conn, 'updated_at', 'TIMESTAMP NULL DEFAULT NULL');
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS contractor_documents (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS contractor_documents (
         id INT AUTO_INCREMENT PRIMARY KEY,
         contractor_id INT NULL,
         annexure3a_id INT NULL,
@@ -232,7 +232,7 @@ function a3EnsureSchema(mysqli $conn) {
     a3EnsureColumnInTable($conn, 'contractor_documents', 'uploaded_at', 'TIMESTAMP NULL DEFAULT NULL');
     a3EnsureColumnInTable($conn, 'contractor_documents', 'updated_at', 'TIMESTAMP NULL DEFAULT NULL');
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS contractor_annexure3a_history (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS contractor_annexure3a_history (
         id INT AUTO_INCREMENT PRIMARY KEY,
         annexure3a_id INT NULL,
         vendor_code VARCHAR(50) NULL,
@@ -256,7 +256,7 @@ function a3EnsureSchema(mysqli $conn) {
     a3EnsureColumnInTable($conn, 'contractor_annexure3a_history', 'status', 'VARCHAR(30) NULL');
     a3EnsureColumnInTable($conn, 'contractor_annexure3a_history', 'reason', 'TEXT NULL');
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS application_workflow (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS application_workflow (
         id INT AUTO_INCREMENT PRIMARY KEY,
         application_id VARCHAR(50) NOT NULL UNIQUE,
         contractor_id INT NULL,

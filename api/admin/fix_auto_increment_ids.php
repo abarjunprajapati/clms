@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../include/config.php';
 header('Content-Type: application/json; charset=utf-8');
 
 $applyFix = isset($_GET['fix']) && $_GET['fix'] === '1';
-$database = mysqli_real_escape_string($conn, $Dbname ?? '');
+$database = clms_db_real_escape_string($conn, $Dbname ?? '');
 $report = [];
 $fixed = [];
 $skipped = [];
@@ -21,17 +21,17 @@ $sql = "
     ORDER BY TABLE_NAME
 ";
 
-$result = mysqli_query($conn, $sql);
+$result = clms_db_query($conn, $sql);
 if (!$result) {
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'message' => 'Unable to inspect schema: ' . mysqli_error($conn)
+        'message' => 'Unable to inspect schema: ' . clms_db_error($conn)
     ]);
     exit;
 }
 
-while ($row = mysqli_fetch_assoc($result)) {
+while ($row = clms_db_fetch_assoc($result)) {
     $table = $row['TABLE_NAME'];
     $columnType = $row['COLUMN_TYPE'];
     $isAuto = stripos($row['EXTRA'] ?? '', 'auto_increment') !== false;
@@ -48,13 +48,13 @@ while ($row = mysqli_fetch_assoc($result)) {
 
     if ($isAuto) {
         if ($applyFix) {
-            $maxRes = mysqli_query($conn, "SELECT COALESCE(MAX(`id`), 0) + 1 AS next_id FROM `$table`");
-            $maxRow = $maxRes ? mysqli_fetch_assoc($maxRes) : ['next_id' => 1];
+            $maxRes = clms_db_query($conn, "SELECT COALESCE(MAX(`id`), 0) + 1 AS next_id FROM `$table`");
+            $maxRow = $maxRes ? clms_db_fetch_assoc($maxRes) : ['next_id' => 1];
             $nextId = max(1, (int)($maxRow['next_id'] ?? 1));
-            if (!mysqli_query($conn, "ALTER TABLE `$table` AUTO_INCREMENT = $nextId")) {
+            if (!clms_db_query($conn, "ALTER TABLE `$table` AUTO_INCREMENT = $nextId")) {
                 $errors[] = [
                     'table' => $table,
-                    'error' => mysqli_error($conn)
+                    'error' => clms_db_error($conn)
                 ];
             }
         }
@@ -71,21 +71,21 @@ while ($row = mysqli_fetch_assoc($result)) {
 
     if ($applyFix) {
         $alter = "ALTER TABLE `$table` MODIFY `id` $columnType NOT NULL AUTO_INCREMENT";
-        if (!mysqli_query($conn, $alter)) {
+        if (!clms_db_query($conn, $alter)) {
             $errors[] = [
                 'table' => $table,
-                'error' => mysqli_error($conn)
+                'error' => clms_db_error($conn)
             ];
             continue;
         }
 
-        $maxRes = mysqli_query($conn, "SELECT COALESCE(MAX(`id`), 0) + 1 AS next_id FROM `$table`");
-        $maxRow = $maxRes ? mysqli_fetch_assoc($maxRes) : ['next_id' => 1];
+        $maxRes = clms_db_query($conn, "SELECT COALESCE(MAX(`id`), 0) + 1 AS next_id FROM `$table`");
+        $maxRow = $maxRes ? clms_db_fetch_assoc($maxRes) : ['next_id' => 1];
         $nextId = max(1, (int)($maxRow['next_id'] ?? 1));
-        if (!mysqli_query($conn, "ALTER TABLE `$table` AUTO_INCREMENT = $nextId")) {
+        if (!clms_db_query($conn, "ALTER TABLE `$table` AUTO_INCREMENT = $nextId")) {
             $errors[] = [
                 'table' => $table,
-                'error' => mysqli_error($conn)
+                'error' => clms_db_error($conn)
             ];
             continue;
         }

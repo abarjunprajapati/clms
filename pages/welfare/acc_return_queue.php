@@ -26,7 +26,7 @@ function renderContent() {
     global $conn;
     accReturnQueueEnsureSchema($conn);
     $rows = [];
-    $r = @mysqli_query($conn, "SELECT DISTINCT w.id, w.name, w.acc_number, w.acc_card_number, w.application_no, w.status, c.contractor_name,
+    $r = @clms_db_query($conn, "SELECT DISTINCT w.id, w.name, w.acc_number, w.acc_card_number, w.application_no, w.status, c.contractor_name,
                                       CASE
                                         WHEN w.status = 'acc_return_pending' THEN 'Relieving requested'
                                         WHEN w.status IN ('permanent_active', 'active') AND EXISTS (
@@ -55,7 +55,7 @@ function renderContent() {
                                     )
                                   )
                                 ORDER BY w.name");
-    if ($r) { while ($row = mysqli_fetch_assoc($r)) $rows[] = $row; }
+    if ($r) { while ($row = clms_db_fetch_assoc($r)) $rows[] = $row; }
     ?>
     <div class="content-header">
         <h2 class="page-title"><i class="fas fa-undo" style="color:#7c3aed;margin-right:8px"></i>ACC Card Return Queue</h2>

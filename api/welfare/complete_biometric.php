@@ -61,7 +61,7 @@ if ($accNo === '') {
 
 $aadhaarNo = preg_replace('/\D+/', '', (string)($workman['aadhaar'] ?? $workman['aadhaar_no'] ?? ''));
 if ($aadhaarNo !== '') {
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS biometric_aadhaar_map (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS biometric_aadhaar_map (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         aadhaar_no VARCHAR(20) NOT NULL,

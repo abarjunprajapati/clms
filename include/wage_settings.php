@@ -1,30 +1,30 @@
 <?php
 
 function clms_wage_setting_column_exists($conn, $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `system_settings` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `system_settings` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_wage_setting_table_exists($conn) {
-    $result = mysqli_query($conn, "SHOW TABLES LIKE 'system_settings'");
-    return $result && mysqli_num_rows($result) > 0;
+    $result = clms_db_query($conn, "SHOW TABLES LIKE 'system_settings'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_wage_setting_id_is_auto_increment($conn) {
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `system_settings` LIKE 'id'");
-    $row = $result ? mysqli_fetch_assoc($result) : null;
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `system_settings` LIKE 'id'");
+    $row = $result ? clms_db_fetch_assoc($result) : null;
     return $row && stripos($row['Extra'] ?? '', 'auto_increment') !== false;
 }
 
 function clms_wage_setting_next_id($conn) {
-    $result = mysqli_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM `system_settings`");
-    $row = $result ? mysqli_fetch_assoc($result) : null;
+    $result = clms_db_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM `system_settings`");
+    $row = $result ? clms_db_fetch_assoc($result) : null;
     return (int)($row['next_id'] ?? 1);
 }
 
 function clms_ensure_wage_settings($conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS system_settings (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS system_settings (
         id INT NOT NULL AUTO_INCREMENT,
         setting_key VARCHAR(100) NOT NULL UNIQUE,
         setting_value TEXT,
@@ -46,7 +46,7 @@ function clms_ensure_wage_settings($conn) {
 
     foreach ($columns as $column => $sql) {
         if (!clms_wage_setting_column_exists($conn, $column)) {
-            mysqli_query($conn, $sql);
+            clms_db_query($conn, $sql);
         }
     }
 
@@ -87,19 +87,19 @@ function clms_normalize_wage_category($category) {
 }
 
 function clms_wage_rate_column_exists($conn, $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `certified_wage_rates` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `certified_wage_rates` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_wage_rate_table_exists($conn) {
-    $result = mysqli_query($conn, "SHOW TABLES LIKE 'certified_wage_rates'");
-    return $result && mysqli_num_rows($result) > 0;
+    $result = clms_db_query($conn, "SHOW TABLES LIKE 'certified_wage_rates'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_wage_rate_id_is_auto_increment($conn) {
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `certified_wage_rates` LIKE 'id'");
-    $row = $result ? mysqli_fetch_assoc($result) : null;
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `certified_wage_rates` LIKE 'id'");
+    $row = $result ? clms_db_fetch_assoc($result) : null;
     return $row && stripos($row['Extra'] ?? '', 'auto_increment') !== false;
 }
 
@@ -109,7 +109,7 @@ function clms_wage_rate_next_id($conn) {
 }
 
 function clms_ensure_certified_wage_rates($conn) {
-    $created = mysqli_query($conn, "CREATE TABLE IF NOT EXISTS certified_wage_rates (
+    $created = clms_db_query($conn, "CREATE TABLE IF NOT EXISTS certified_wage_rates (
         id INT NOT NULL AUTO_INCREMENT,
         category VARCHAR(50) NOT NULL,
         wage_from_date DATE NOT NULL,
@@ -139,7 +139,7 @@ function clms_ensure_certified_wage_rates($conn) {
 
     foreach ($columns as $column => $sql) {
         if (!clms_wage_rate_column_exists($conn, $column)) {
-            mysqli_query($conn, $sql);
+            clms_db_query($conn, $sql);
         }
     }
 

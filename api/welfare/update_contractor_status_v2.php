@@ -49,9 +49,9 @@ register_shutdown_function(function () {
 
 function contractor_status_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $safeColumn = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
-    return $result && mysqli_num_rows($result) > 0;
+    $safeColumn = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function contractor_status_ensure_column($conn, $table, $column, $definition) {
@@ -60,8 +60,8 @@ function contractor_status_ensure_column($conn, $table, $column, $definition) {
     }
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    if (!@mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
-        error_log("[update_contractor_status_v2] Failed adding column {$table}.{$column}: " . mysqli_error($conn));
+    if (!@clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
+        error_log("[update_contractor_status_v2] Failed adding column {$table}.{$column}: " . clms_db_error($conn));
     }
 }
 

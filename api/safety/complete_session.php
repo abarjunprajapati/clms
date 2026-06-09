@@ -16,7 +16,7 @@ if (!$session_id) {
     exit;
 }
 
-mysqli_begin_transaction($conn);
+clms_db_begin_transaction($conn);
 try {
     $pendingCount = db_count(
         $conn,
@@ -62,10 +62,10 @@ try {
     
     logAuditAction($conn, $_SESSION['user_id'], $_SESSION['role'], "completed_session", "safety", "Session ID: $session_id finalized");
 
-    mysqli_commit($conn);
+    clms_db_commit($conn);
     header("Location: ../../pages/safety/manage_session.php?id=$session_id&success=Session finalized and locked");
 } catch (Exception $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     header("Location: ../../pages/safety/manage_session.php?id=$session_id&error=" . urlencode($e->getMessage()));
 }
 

@@ -173,7 +173,7 @@ try {
     $conn->commit();
 } catch (Throwable $e) {
     if ($started) {
-        @mysqli_rollback($conn);
+        @clms_db_rollback($conn);
     }
     transferJson(false, 'Transfer failed: ' . $e->getMessage(), null, 500);
 }

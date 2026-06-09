@@ -25,10 +25,10 @@ $warningQuery = "
       AND wm.worker_status != 'Deleted'
 ";
 
-$res = mysqli_query($conn, $warningQuery);
+$res = clms_db_query($conn, $warningQuery);
 $warningCount = 0;
 if ($res) {
-    while ($doc = mysqli_fetch_assoc($res)) {
+    while ($doc = clms_db_fetch_assoc($res)) {
         $workerName = $doc['worker_name'] ?: "Aadhaar: " . $doc['aadhaar_no'];
         $msg = "Document '{$doc['document_type']}' for worker '{$workerName}' will expire on {$doc['expiry_date']} (in 30 days). Please upload a renewed document.";
         
@@ -47,8 +47,8 @@ $expiryQuery = "
     WHERE expiry_date <= '$today' 
       AND verification_status = 'Verified'
 ";
-mysqli_query($conn, $expiryQuery);
-$expiredDocsCount = mysqli_affected_rows($conn);
+clms_db_query($conn, $expiryQuery);
+$expiredDocsCount = clms_db_affected_rows($conn);
 echo "Marked $expiredDocsCount documents as Expired.\n";
 
 // 3. Suspend passes/workers if safety-critical documents have expired
@@ -64,14 +64,14 @@ $criticalExpiredQuery = "
       AND wm.worker_status IN ('Active', 'Pass Pending')
 ";
 
-$resCritical = mysqli_query($conn, $criticalExpiredQuery);
+$resCritical = clms_db_query($conn, $criticalExpiredQuery);
 $suspendCount = 0;
 if ($resCritical) {
-    while ($row = mysqli_fetch_assoc($resCritical)) {
+    while ($row = clms_db_fetch_assoc($resCritical)) {
         $worker_id = (int)$row['worker_id'];
         
         // Begin Transaction for each suspension to be safe
-        mysqli_begin_transaction($conn);
+        clms_db_begin_transaction($conn);
         try {
             // Update worker master status to Expired
             $updateMaster = "
@@ -80,7 +80,7 @@ if ($resCritical) {
                     updated_at = NOW()
                 WHERE worker_id = $worker_id
             ";
-            mysqli_query($conn, $updateMaster);
+            clms_db_query($conn, $updateMaster);
 
             // Suspend worker passes
             $updatePasses = "
@@ -88,7 +88,7 @@ if ($resCritical) {
                 SET pass_status = 'Expired' 
                 WHERE worker_id = $worker_id AND pass_status IN ('Approved', 'Issued')
             ";
-            mysqli_query($conn, $updatePasses);
+            clms_db_query($conn, $updatePasses);
 
             // Update mirrored workmen status to expired
             $updateWorkmen = "
@@ -96,7 +96,7 @@ if ($resCritical) {
                 SET status = 'expired' 
                 WHERE id = $worker_id
             ";
-            mysqli_query($conn, $updateWorkmen);
+            clms_db_query($conn, $updateWorkmen);
 
             // Log Audit action
             $ip = '127.0.0.1';
@@ -105,9 +105,9 @@ if ($resCritical) {
                 INSERT INTO worker_audit_logs (worker_id, module_name, action_type, old_values, new_values, ip_address, browser_info, remarks, created_by) 
                 VALUES ($worker_id, 'Document Expiry Cron', 'Suspend Worker', '{\"status\":\"Active\"}', '{\"status\":\"Expired\"}', '$ip', '$browser', 'Suspended due to critical document expiry', 0)
             ";
-            mysqli_query($conn, $logQuery);
+            clms_db_query($conn, $logQuery);
 
-            mysqli_commit($conn);
+            clms_db_commit($conn);
 
             // Notify contractor
             if ($row['contractor_user_id']) {
@@ -117,7 +117,7 @@ if ($resCritical) {
                 $suspendCount++;
             }
         } catch (Exception $ex) {
-            mysqli_rollback($conn);
+            clms_db_rollback($conn);
             echo "Error suspending worker ID $worker_id: " . $ex->getMessage() . "\n";
         }
     }

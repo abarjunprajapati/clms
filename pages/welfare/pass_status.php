@@ -144,7 +144,7 @@ function renderContent() {
 // Simple quote helper since db_quote might not be in config.php
 function db_quote($val) {
     global $conn;
-    return "'" . mysqli_real_escape_string($conn, $val) . "'";
+    return "'" . clms_db_real_escape_string($conn, $val) . "'";
 }
 
 renderLayout("Pass Status Tracking", 'renderContent', $role, $name);

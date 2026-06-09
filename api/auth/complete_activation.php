@@ -32,7 +32,7 @@ try {
     }
 
     // --- START TRANSACTION ---
-    mysqli_begin_transaction($conn);
+    clms_db_begin_transaction($conn);
 
     if ($role === 'customer') {
         // --- CUSTOMER ACTIVATION ---
@@ -73,8 +73,8 @@ try {
             $new_user_id = $user['id'];
         } else {
             $ok = db_execute($conn, "INSERT INTO users (contractor_id, password, name, role, email, mobile, status) VALUES (?, ?, ?, 'contractor', ?, ?, 'active')", 'sssss', [$code, $hashed_password, $name, $email, $mobile]);
-            if (!$ok) throw new Exception("Failed to create user record. Error: " . mysqli_error($conn));
-            $new_user_id = mysqli_insert_id($conn);
+            if (!$ok) throw new Exception("Failed to create user record. Error: " . clms_db_error($conn));
+            $new_user_id = clms_db_insert_id($conn);
         }
 
         // Sync/Create Contractor Profile
@@ -89,7 +89,7 @@ try {
     }
 
     // --- COMMIT TRANSACTION ---
-    mysqli_commit($conn);
+    clms_db_commit($conn);
 
     // Clear activation session
     unset($_SESSION['activation_otp']);
@@ -109,7 +109,7 @@ try {
     }
 
 } catch (Exception $e) {
-    if (isset($conn)) mysqli_rollback($conn);
+    if (isset($conn)) clms_db_rollback($conn);
     apiError($e->getMessage());
 }
 ?>

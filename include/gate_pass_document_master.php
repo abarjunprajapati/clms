@@ -13,13 +13,13 @@ function clms_default_gate_pass_documents() {
 }
 
 function clms_gate_pass_doc_column_exists($conn, $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `gate_pass_document_masters` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `gate_pass_document_masters` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_ensure_gate_pass_document_masters($conn) {
-    $created = mysqli_query($conn, "CREATE TABLE IF NOT EXISTS gate_pass_document_masters (
+    $created = clms_db_query($conn, "CREATE TABLE IF NOT EXISTS gate_pass_document_masters (
         id INT NOT NULL AUTO_INCREMENT,
         upload_key VARCHAR(80) NOT NULL UNIQUE,
         category VARCHAR(40) NOT NULL,
@@ -52,7 +52,7 @@ function clms_ensure_gate_pass_document_masters($conn) {
     ];
     foreach ($columns as $column => $sql) {
         if (!clms_gate_pass_doc_column_exists($conn, $column)) {
-            mysqli_query($conn, $sql);
+            clms_db_query($conn, $sql);
         }
     }
 

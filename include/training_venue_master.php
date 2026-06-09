@@ -1,13 +1,13 @@
 <?php
 
 function clms_training_venue_column_exists($conn, $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `training_venue_masters` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `training_venue_masters` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_ensure_training_venue_masters($conn) {
-    $created = mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_venue_masters (
+    $created = clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_venue_masters (
         id INT NOT NULL AUTO_INCREMENT,
         venue_name VARCHAR(300) NOT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -27,7 +27,7 @@ function clms_ensure_training_venue_masters($conn) {
         'updated_at' => "ALTER TABLE `training_venue_masters` ADD COLUMN `updated_at` DATETIME NULL AFTER `created_at`",
     ] as $column => $sql) {
         if (!clms_training_venue_column_exists($conn, $column)) {
-            mysqli_query($conn, $sql);
+            clms_db_query($conn, $sql);
         }
     }
 

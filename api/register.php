@@ -44,9 +44,9 @@ try {
     if (!in_array($status, ['active', 'inactive'])) apiError('Invalid status', 400);
     if ($role === 'execution_officer' && $employee_code === '') apiError('Employee E-Code is required for Execution Officer', 400);
 
-    $colRes = mysqli_query($conn, "SHOW COLUMNS FROM users LIKE 'employee_code'");
-    if (!$colRes || mysqli_num_rows($colRes) === 0) {
-        @mysqli_query($conn, "ALTER TABLE users ADD COLUMN employee_code VARCHAR(50) NULL");
+    $colRes = clms_db_query($conn, "SHOW COLUMNS FROM users LIKE 'employee_code'");
+    if (!$colRes || clms_db_num_rows($colRes) === 0) {
+        @clms_db_query($conn, "ALTER TABLE users ADD COLUMN employee_code VARCHAR(50) NULL");
     }
 
     // Check if contractor_id already exists
@@ -66,7 +66,7 @@ try {
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
     // Start transaction
-    mysqli_begin_transaction($conn);
+    clms_db_begin_transaction($conn);
 
     try {
         // Insert user with must_change_password = 1
@@ -94,9 +94,9 @@ try {
             $stmtEO->close();
         }
 
-        mysqli_commit($conn);
+        clms_db_commit($conn);
     } catch (Exception $e) {
-        mysqli_rollback($conn);
+        clms_db_rollback($conn);
         apiError($e->getMessage(), 500);
     }
 

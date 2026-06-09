@@ -33,16 +33,16 @@ $activeCertifiedWages = clms_get_active_certified_wage_map($conn);
 $activeAgeRange = clms_get_active_age_range($conn);
 
 function enrolment_table_exists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $result = mysqli_query($conn, "SHOW TABLES LIKE '{$table}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $result = clms_db_query($conn, "SHOW TABLES LIKE '{$table}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function enrolment_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function enrolment_expr($conn, $table, $column, $alias = null, $default = "''") {
@@ -80,15 +80,15 @@ function enrolment_add_work_option(&$workOptions, &$seenWorkOrders, $workOrderNo
 }
 
 function enrolment_fetch_one($conn, $sql) {
-    $result = mysqli_query($conn, $sql);
-    return ($result && mysqli_num_rows($result) > 0) ? mysqli_fetch_assoc($result) : null;
+    $result = clms_db_query($conn, $sql);
+    return ($result && clms_db_num_rows($result) > 0) ? clms_db_fetch_assoc($result) : null;
 }
 
 function enrolment_fetch_all($conn, $sql) {
-    $result = mysqli_query($conn, $sql);
+    $result = clms_db_query($conn, $sql);
     $rows = [];
     if ($result) {
-        while ($row = mysqli_fetch_assoc($result)) {
+        while ($row = clms_db_fetch_assoc($result)) {
             $rows[] = $row;
         }
     }
@@ -112,10 +112,10 @@ function enrolment_insert_contractor_from_a3($conn, $a3) {
 
     $whereParts = [];
     if ($vendorCode !== '' && enrolment_column_exists($conn, 'contractors', 'vendor_code')) {
-        $whereParts[] = "vendor_code = '" . mysqli_real_escape_string($conn, $vendorCode) . "'";
+        $whereParts[] = "vendor_code = '" . clms_db_real_escape_string($conn, $vendorCode) . "'";
     }
     if ($workOrderNo !== '' && enrolment_column_exists($conn, 'contractors', 'work_order_no')) {
-        $whereParts[] = "work_order_no = '" . mysqli_real_escape_string($conn, $workOrderNo) . "'";
+        $whereParts[] = "work_order_no = '" . clms_db_real_escape_string($conn, $workOrderNo) . "'";
     }
 
     if ($whereParts) {
@@ -127,7 +127,7 @@ function enrolment_insert_contractor_from_a3($conn, $a3) {
 
     $displayName = $vendorCode ?: ($workOrderNo ?: 'Approved Contractor');
     if ($vendorCode !== '' && enrolment_table_exists($conn, 'sap_vendors')) {
-        $safeVendor = mysqli_real_escape_string($conn, $vendorCode);
+        $safeVendor = clms_db_real_escape_string($conn, $vendorCode);
         $vendorNameExpr = enrolment_column_exists($conn, 'sap_vendors', 'vendor_name') ? 'vendor_name' : "'' AS vendor_name";
         $contractorNameExpr = enrolment_column_exists($conn, 'sap_vendors', 'contractor_name') ? 'contractor_name' : "'' AS contractor_name";
         $nameExpr = enrolment_column_exists($conn, 'sap_vendors', 'name') ? 'name' : "'' AS name";
@@ -157,15 +157,15 @@ function enrolment_insert_contractor_from_a3($conn, $a3) {
             continue;
         }
         $columns[] = '`' . str_replace('`', '``', $column) . '`';
-        $escapedValues[] = "'" . mysqli_real_escape_string($conn, (string)$value) . "'";
+        $escapedValues[] = "'" . clms_db_real_escape_string($conn, (string)$value) . "'";
     }
 
     if (!$columns) {
         return 0;
     }
 
-    $ok = mysqli_query($conn, "INSERT INTO contractors (" . implode(',', $columns) . ") VALUES (" . implode(',', $escapedValues) . ")");
-    return $ok ? (int)mysqli_insert_id($conn) : 0;
+    $ok = clms_db_query($conn, "INSERT INTO contractors (" . implode(',', $columns) . ") VALUES (" . implode(',', $escapedValues) . ")");
+    return $ok ? (int)clms_db_insert_id($conn) : 0;
 }
 
 function enrolment_worker_type_condition($conn, $table, $type) {
@@ -187,7 +187,7 @@ function enrolment_worker_type_condition($conn, $table, $type) {
         return '1=1';
     }
     $quoted = array_map(function($value) use ($conn) {
-        return "'" . mysqli_real_escape_string($conn, $value) . "'";
+        return "'" . clms_db_real_escape_string($conn, $value) . "'";
     }, $values);
 
     return 'worker_type IN (' . implode(',', $quoted) . ')';
@@ -199,7 +199,7 @@ function enrolment_customer_contractor_ids($conn) {
         return [];
     }
 
-    $customerCode = mysqli_real_escape_string($conn, $customerCode);
+    $customerCode = clms_db_real_escape_string($conn, $customerCode);
     $ids = [];
 
     if (enrolment_table_exists($conn, 'contractor_annexure3a')) {
@@ -250,7 +250,7 @@ function enrolment_get_contractor_from_approved_a3($conn, $vendorCode) {
         return null;
     }
 
-    $safeVendor = mysqli_real_escape_string($conn, $vendorCode);
+    $safeVendor = clms_db_real_escape_string($conn, $vendorCode);
     $a3 = enrolment_fetch_one($conn, "
         SELECT *
         FROM contractor_annexure3a
@@ -293,7 +293,7 @@ function enrolment_get_customer_portal_contractor($conn) {
     }
 
     if (enrolment_column_exists($conn, 'contractors', 'status') && strtolower((string)($portal['status'] ?? '')) !== 'approved') {
-        mysqli_query($conn, "UPDATE contractors SET status = 'approved' WHERE id = " . (int)$portal['id'] . " LIMIT 1");
+        clms_db_query($conn, "UPDATE contractors SET status = 'approved' WHERE id = " . (int)$portal['id'] . " LIMIT 1");
     }
 
     $contractorSelect = enrolment_contractor_select_expr($conn);
@@ -319,7 +319,7 @@ function renderContent() {
         $contractorSelect = enrolment_contractor_select_expr($conn);
         $where = enrolment_column_exists($conn, 'contractors', 'user_id')
             ? "user_id = " . (int)$user_id
-            : "vendor_code = '" . mysqli_real_escape_string($conn, $vendor_code) . "'";
+            : "vendor_code = '" . clms_db_real_escape_string($conn, $vendor_code) . "'";
         $contractor = enrolment_fetch_one($conn, "SELECT $contractorSelect FROM contractors WHERE $where LIMIT 1");
         if (!$contractor) {
             $contractor = enrolment_get_contractor_from_approved_a3($conn, $vendor_code);
@@ -410,7 +410,7 @@ function renderContent() {
     }
 
     if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_po_master') && enrolment_column_exists($conn, 'sap_po_master', 'po_number')) {
-        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
+        $safeVendor = clms_db_real_escape_string($conn, $vendorCodeForSap);
         $vendorFilters = [];
         if (enrolment_column_exists($conn, 'sap_po_master', 'vendor_code')) {
             $vendorFilters[] = "vendor_code = '$safeVendor'";
@@ -435,7 +435,7 @@ function renderContent() {
     }
 
     if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_pwo_master') && enrolment_column_exists($conn, 'sap_pwo_master', 'pwo_number')) {
-        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
+        $safeVendor = clms_db_real_escape_string($conn, $vendorCodeForSap);
         $vendorFilters = [];
         if (enrolment_column_exists($conn, 'sap_pwo_master', 'vendor_code')) {
             $vendorFilters[] = "vendor_code = '$safeVendor'";
@@ -460,7 +460,7 @@ function renderContent() {
         }
     }
     if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_sale_order_master') && enrolment_column_exists($conn, 'sap_sale_order_master', 'sale_order_no')) {
-        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
+        $safeVendor = clms_db_real_escape_string($conn, $vendorCodeForSap);
         $vendorFilters = [];
         if (enrolment_column_exists($conn, 'sap_sale_order_master', 'vendor_code')) {
             $vendorFilters[] = "vendor_code = '$safeVendor'";
@@ -484,7 +484,7 @@ function renderContent() {
         }
     }
     if (empty($workOptions) && $vendorCodeForSap !== '' && enrolment_table_exists($conn, 'work_orders')) {
-        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
+        $safeVendor = clms_db_real_escape_string($conn, $vendorCodeForSap);
         $workOrderRows = enrolment_fetch_all($conn, "
             SELECT work_order_no, project_name, department, work_order_no AS project_no
             FROM work_orders
@@ -503,7 +503,7 @@ function renderContent() {
             enrolment_expr($conn, 'work_orders', 'project_name', 'project_name'),
             enrolment_expr($conn, 'work_orders', 'department', 'department'),
         ]);
-        $woNo = mysqli_real_escape_string($conn, $contractor['work_order_no']);
+        $woNo = clms_db_real_escape_string($conn, $contractor['work_order_no']);
         $wo_row = enrolment_fetch_one($conn, "SELECT $woSelect FROM work_orders WHERE work_order_no = '$woNo' LIMIT 1");
         $project_name = $wo_row['project_name'] ?? '';
         if ($department_name === '') {

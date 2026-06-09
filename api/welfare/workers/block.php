@@ -12,23 +12,23 @@ try {
     // Input validation
     $worker_id = isset($_POST['worker_id']) ? (int)$_POST['worker_id'] : 0;
     $action = isset($_POST['action']) ? $_POST['action'] : ''; // 'block' or 'unblock'
-    $reason = isset($_POST['reason']) ? mysqli_real_escape_string($conn, trim($_POST['reason'])) : '';
+    $reason = isset($_POST['reason']) ? clms_db_real_escape_string($conn, trim($_POST['reason'])) : '';
     $user_id = 1; // TODO: Get from session
 
     if (!$worker_id || !in_array($action, ['block', 'unblock']) || empty($reason)) {
         throw new Exception("Worker ID, action (block/unblock), and reason are required.");
     }
 
-    mysqli_begin_transaction($conn);
+    clms_db_begin_transaction($conn);
 
     $checkQuery = "SELECT worker_status FROM worker_master WHERE worker_id = $worker_id FOR UPDATE";
-    $result = mysqli_query($conn, $checkQuery);
+    $result = clms_db_query($conn, $checkQuery);
     
-    if (mysqli_num_rows($result) === 0) {
+    if (clms_db_num_rows($result) === 0) {
         throw new Exception("Worker not found.");
     }
     
-    $worker = mysqli_fetch_assoc($result);
+    $worker = clms_db_fetch_assoc($result);
     $current_status = $worker['worker_status'];
     
     if ($action === 'block' && $current_status === 'Blocked') {
@@ -65,19 +65,19 @@ try {
                          WHERE worker_id = $worker_id AND unblocked_at IS NULL ORDER BY blocked_at DESC LIMIT 1";
     }
                     
-    if (!mysqli_query($conn, $updateQuery)) {
-        throw new Exception("Failed to update worker status: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $updateQuery)) {
+        throw new Exception("Failed to update worker status: " . clms_db_error($conn));
     }
     
     // Sync block/unblock to workmen table
     $workmanStatus = $action === 'block' ? 'blocked' : 'active';
     $updateWorkmanStatus = "UPDATE workmen SET status = '$workmanStatus' WHERE id = $worker_id";
-    if (!mysqli_query($conn, $updateWorkmanStatus)) {
-        throw new Exception("Failed to update workmen block status: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $updateWorkmanStatus)) {
+        throw new Exception("Failed to update workmen block status: " . clms_db_error($conn));
     }
     
-    if (!mysqli_query($conn, $historyQuery)) {
-        throw new Exception("Failed to update block history: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $historyQuery)) {
+        throw new Exception("Failed to update block history: " . clms_db_error($conn));
     }
 
     // Log the action
@@ -89,16 +89,16 @@ try {
     $logQuery = "INSERT INTO worker_audit_logs (worker_id, module_name, action_type, old_values, new_values, ip_address, browser_info, remarks, created_by) 
                  VALUES ($worker_id, 'Enrolled Workers', '" . ucfirst($action) . "', '$oldValues', '$newValues', '$ip', '$browser', '$reason', $user_id)";
                  
-    if (!mysqli_query($conn, $logQuery)) {
-        throw new Exception("Failed to write audit log: " . mysqli_error($conn));
+    if (!clms_db_query($conn, $logQuery)) {
+        throw new Exception("Failed to write audit log: " . clms_db_error($conn));
     }
 
-    mysqli_commit($conn);
+    clms_db_commit($conn);
 
     echo json_encode(['status' => 'success', 'message' => "Worker successfully {$action}ed"]);
 
 } catch (Exception $e) {
-    mysqli_rollback($conn);
+    clms_db_rollback($conn);
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }

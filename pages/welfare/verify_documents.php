@@ -6,9 +6,9 @@ include __DIR__ . '/../../include/layout.php';
 require_once __DIR__ . '/../../include/gate_pass_document_master.php';
 
 function welfareDocsTableExists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $result = mysqli_query($conn, "SHOW TABLES LIKE '{$table}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $result = clms_db_query($conn, "SHOW TABLES LIKE '{$table}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function welfareEnsureContractorDocumentsSchema($conn) {
@@ -40,7 +40,7 @@ function welfareEnsureContractorDocumentsSchema($conn) {
     ];
 
     foreach ($columns as $column => $definition) {
-        $safeColumn = mysqli_real_escape_string($conn, $column);
+        $safeColumn = clms_db_real_escape_string($conn, $column);
         $exists = $conn->query("SHOW COLUMNS FROM contractor_documents LIKE '$safeColumn'");
         if ($exists && $exists->num_rows == 0) {
             $conn->query("ALTER TABLE contractor_documents ADD COLUMN `$column` $definition");
@@ -51,14 +51,14 @@ function welfareEnsureContractorDocumentsSchema($conn) {
 }
 
 function welfareEnsureDocumentsSchema($conn) {
-    @mysqli_query($conn, "ALTER TABLE documents ADD COLUMN gate_pass_request_id INT NULL");
-    @mysqli_query($conn, "ALTER TABLE documents MODIFY document_type VARCHAR(255) NULL");
-    @mysqli_query($conn, "ALTER TABLE documents MODIFY status VARCHAR(30) DEFAULT 'pending'");
-    @mysqli_query($conn, "ALTER TABLE documents ADD COLUMN remarks TEXT NULL");
+    @clms_db_query($conn, "ALTER TABLE documents ADD COLUMN gate_pass_request_id INT NULL");
+    @clms_db_query($conn, "ALTER TABLE documents MODIFY document_type VARCHAR(255) NULL");
+    @clms_db_query($conn, "ALTER TABLE documents MODIFY status VARCHAR(30) DEFAULT 'pending'");
+    @clms_db_query($conn, "ALTER TABLE documents ADD COLUMN remarks TEXT NULL");
 }
 
 function welfareDocumentColumnExists($conn, $column) {
-    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $safeColumn = clms_db_real_escape_string($conn, $column);
     $res = $conn->query("SHOW COLUMNS FROM documents LIKE '$safeColumn'");
     return $res && $res->num_rows > 0;
 }
@@ -305,15 +305,15 @@ function renderContent() {
         $docsForRequest = welfareGatePassDocsForRequest($conn, $workmanId, $requestId, $gatePassDocTypesSql);
         $docState = welfareGatePassMandatoryState($docsForRequest);
         if ($docState['approved']) {
-            @mysqli_query($conn, "UPDATE workmen SET status = 'verified', pass_issuer_verified = 1, updated_at = NOW() WHERE id = $workmanId");
-            @mysqli_query($conn, "UPDATE gate_pass_request_workers SET status = 'approved', updated_at = NOW() WHERE request_id = $requestId AND workman_id = $workmanId");
-            @mysqli_query($conn, "UPDATE gate_pass_requests SET status = 'approved', updated_at = NOW() WHERE id = $requestId");
+            @clms_db_query($conn, "UPDATE workmen SET status = 'verified', pass_issuer_verified = 1, updated_at = NOW() WHERE id = $workmanId");
+            @clms_db_query($conn, "UPDATE gate_pass_request_workers SET status = 'approved', updated_at = NOW() WHERE request_id = $requestId AND workman_id = $workmanId");
+            @clms_db_query($conn, "UPDATE gate_pass_requests SET status = 'approved', updated_at = NOW() WHERE id = $requestId");
             unset($pendingApps[$idx]);
         } elseif (!empty($docState['missing'])) {
             welfareEnsureMissingGatePassDocsForReupload($conn, $workmanId, $requestId, $docState['missing']);
             $safeReason = $conn->real_escape_string('Missing mandatory document(s): ' . implode(', ', $docState['missing']));
-            @mysqli_query($conn, "UPDATE gate_pass_request_workers SET status = 'reupload_required', updated_at = NOW() WHERE request_id = $requestId AND workman_id = $workmanId");
-            @mysqli_query($conn, "UPDATE gate_pass_requests SET status = 'reupload_required', rejection_reason = '$safeReason', updated_at = NOW() WHERE id = $requestId");
+            @clms_db_query($conn, "UPDATE gate_pass_request_workers SET status = 'reupload_required', updated_at = NOW() WHERE request_id = $requestId AND workman_id = $workmanId");
+            @clms_db_query($conn, "UPDATE gate_pass_requests SET status = 'reupload_required', rejection_reason = '$safeReason', updated_at = NOW() WHERE id = $requestId");
             $pendingApps[$idx]['request_status'] = 'reupload_required';
             $pendingApps[$idx]['worker_request_status'] = 'reupload_required';
             $pendingApps[$idx]['rejected_doc_count'] = max(1, (int)($pendingApps[$idx]['rejected_doc_count'] ?? 0));

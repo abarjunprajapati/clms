@@ -23,6 +23,6 @@ if ($ok) {
     );
     echo json_encode(['success' => true, 'message' => 'Pass limit removed.']);
 } else {
-    echo json_encode(['success' => false, 'error' => 'Delete failed: ' . mysqli_error($conn)]);
+    echo json_encode(['success' => false, 'error' => 'Delete failed: ' . clms_db_error($conn)]);
 }
 

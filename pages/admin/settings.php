@@ -8,8 +8,8 @@ function renderContent() {
     global $conn;
     
     // Ensure system_settings table exists
-    $tableCheck = mysqli_query($conn, "SHOW TABLES LIKE 'system_settings'");
-    if (mysqli_num_rows($tableCheck) == 0) {
+    $tableCheck = clms_db_query($conn, "SHOW TABLES LIKE 'system_settings'");
+    if (clms_db_num_rows($tableCheck) == 0) {
         echo '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> System settings table not found. <a href="../../api/admin/init_admin_schema.php" target="_blank" class="btn btn-sm btn-primary" style="margin-left:10px;">Initialize Schema</a></div>';
         return;
     }

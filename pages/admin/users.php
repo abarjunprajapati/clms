@@ -6,9 +6,9 @@ include __DIR__ . '/../../include/layout.php';
 
 function renderContent() {
     global $conn;
-    $employeeCol = mysqli_query($conn, "SHOW COLUMNS FROM users LIKE 'employee_code'");
-    if (!$employeeCol || mysqli_num_rows($employeeCol) === 0) {
-        @mysqli_query($conn, "ALTER TABLE users ADD COLUMN employee_code VARCHAR(50) NULL");
+    $employeeCol = clms_db_query($conn, "SHOW COLUMNS FROM users LIKE 'employee_code'");
+    if (!$employeeCol || clms_db_num_rows($employeeCol) === 0) {
+        @clms_db_query($conn, "ALTER TABLE users ADD COLUMN employee_code VARCHAR(50) NULL");
     }
     $users = db_fetch_all($conn, "SELECT id, contractor_id, employee_code, name, role, email, mobile, status, must_change_password, created_at FROM users ORDER BY created_at DESC");
     $currentUserId = $_SESSION['user_id'];

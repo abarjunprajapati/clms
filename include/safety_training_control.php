@@ -4,24 +4,24 @@ require_once __DIR__ . '/training_venue_master.php';
 require_once __DIR__ . '/training_type_master.php';
 
 function clms_safety_table_exists($conn, $table) {
-    $safe = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$safe'");
-    return $res && mysqli_num_rows($res) > 0;
+    $safe = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$safe'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function clms_safety_column_exists($conn, $table, $column) {
     if (!clms_safety_table_exists($conn, $table)) return false;
     $safeTable = str_replace('`', '``', $table);
-    $safeColumn = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
-    return $res && mysqli_num_rows($res) > 0;
+    $safeColumn = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function clms_safety_ensure_column($conn, $table, $column, $definition) {
     if (!clms_safety_table_exists($conn, $table) || clms_safety_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function clms_safety_ensure_control_schema($conn) {
@@ -48,7 +48,7 @@ function clms_safety_ensure_control_schema($conn) {
         clms_safety_ensure_column($conn, 'training_requests', $column, $definition);
     }
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS safety_instructor_masters (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS safety_instructor_masters (
         id INT NOT NULL AUTO_INCREMENT,
         instructor_code VARCHAR(30) NULL,
         instructor_name VARCHAR(150) NOT NULL,
@@ -62,7 +62,7 @@ function clms_safety_ensure_control_schema($conn) {
         UNIQUE KEY uq_instructor_name (instructor_name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_language_masters (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_language_masters (
         id INT NOT NULL AUTO_INCREMENT,
         language_name VARCHAR(80) NOT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -74,7 +74,7 @@ function clms_safety_ensure_control_schema($conn) {
         UNIQUE KEY uq_training_language (language_name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_fee_masters (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_fee_masters (
         id INT NOT NULL AUTO_INCREMENT,
         fee_source VARCHAR(20) NOT NULL,
         amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -86,7 +86,7 @@ function clms_safety_ensure_control_schema($conn) {
         UNIQUE KEY uq_training_fee_source (fee_source)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_class_batches (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_class_batches (
         id INT NOT NULL AUTO_INCREMENT,
         batch_token VARCHAR(6) NOT NULL,
         batch_number VARCHAR(50) NOT NULL,
@@ -111,7 +111,7 @@ function clms_safety_ensure_control_schema($conn) {
         UNIQUE KEY uq_training_batch_token (batch_token)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_batch_workers (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_batch_workers (
         id INT NOT NULL AUTO_INCREMENT,
         batch_id INT NOT NULL,
         training_request_id INT NOT NULL,
@@ -266,8 +266,9 @@ function clms_safety_create_batch($conn, $data, $userId) {
             'sssisiissssisissi',
             array($token, $batchNumber, $trainingDate, $venueId, $venue['venue_name'], $capacity, $languageId, $language['language_name'], $sessionName, $timeFrom ?: null, $timeTo ?: null, $typeId, $type['type_name'], $instructorId ?: null, $instructor['instructor_name'] ?? '', $saveMode, $userId)
         );
+        $batchId = (int)clms_db_insert_id($conn);
         $conn->commit();
-        return array('batch_number' => $batchNumber, 'selected' => 0);
+        return array('batch_id' => $batchId, 'batch_number' => $batchNumber, 'selected' => 0);
     } catch (Throwable $e) {
         $conn->rollback();
         throw $e;
@@ -309,7 +310,7 @@ function clms_safety_schedule_batch($conn, $batchId, $selectedRequestIds, $userI
                 'sssisss',
                 array($batch['training_date'], $finalTime, $batch['venue_name'], $capacity, $batch['instructor_name'] ?? '', $batch['batch_number'], $batch['training_type'])
             );
-            $sessionId = (int)mysqli_insert_id($conn);
+            $sessionId = (int)clms_db_insert_id($conn);
         } else {
             $sessionId = (int)$session['id'];
             db_execute(

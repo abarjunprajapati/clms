@@ -1,18 +1,18 @@
 <?php
 
 function clms_temp_validity_column_exists($conn, $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `temporary_pass_validities` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `temporary_pass_validities` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_temp_validity_table_exists($conn) {
-    $result = mysqli_query($conn, "SHOW TABLES LIKE 'temporary_pass_validities'");
-    return $result && mysqli_num_rows($result) > 0;
+    $result = clms_db_query($conn, "SHOW TABLES LIKE 'temporary_pass_validities'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_ensure_temporary_pass_validities($conn) {
-    $created = mysqli_query($conn, "CREATE TABLE IF NOT EXISTS temporary_pass_validities (
+    $created = clms_db_query($conn, "CREATE TABLE IF NOT EXISTS temporary_pass_validities (
         id INT NOT NULL AUTO_INCREMENT,
         validity_days INT NOT NULL DEFAULT 7,
         validity_from_date DATE NOT NULL,
@@ -39,7 +39,7 @@ function clms_ensure_temporary_pass_validities($conn) {
     ];
     foreach ($columns as $column => $sql) {
         if (!clms_temp_validity_column_exists($conn, $column)) {
-            mysqli_query($conn, $sql);
+            clms_db_query($conn, $sql);
         }
     }
 

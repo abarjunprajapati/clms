@@ -23,14 +23,14 @@ try {
               AND YEAR(attendance_date) = $year
               ORDER BY attendance_date ASC";
               
-    $result = mysqli_query($conn, $query);
+    $result = clms_db_query($conn, $query);
     if (!$result) {
-        throw new Exception(mysqli_error($conn));
+        throw new Exception(clms_db_error($conn));
     }
     
     $data = [];
     $total_present = 0;
-    while ($row = mysqli_fetch_assoc($result)) {
+    while ($row = clms_db_fetch_assoc($result)) {
         $data[] = $row;
         if (!empty($row['in_time'])) {
             $total_present++;

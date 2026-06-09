@@ -11,9 +11,9 @@ $name = $_SESSION['name'] ?? 'Pass Issuing Officer';
 function passValidityColumnExists($table, $column) {
     global $conn;
     $table = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function renderContent() {
@@ -44,13 +44,13 @@ function renderContent() {
                     OR
                     (w.status IN ('permanent_active', 'permanent_issued', 'acc_generated') AND $expiryExpr <= DATE_ADD(CURDATE(), INTERVAL 7 DAY))
                   ORDER BY $expiryExpr ASC";
-        $result = mysqli_query($conn, $query);
+        $result = clms_db_query($conn, $query);
         if ($result) {
-            while ($row = mysqli_fetch_assoc($result)) {
+            while ($row = clms_db_fetch_assoc($result)) {
                 $expiring[] = $row;
             }
         } else {
-            $queryError = mysqli_error($conn);
+            $queryError = clms_db_error($conn);
         }
     }
     ?>

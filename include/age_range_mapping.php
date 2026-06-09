@@ -1,13 +1,13 @@
 <?php
 
 function clms_age_range_column_exists($conn, $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `age_range_mappings` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `age_range_mappings` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function clms_ensure_age_range_mappings($conn) {
-    $created = mysqli_query($conn, "CREATE TABLE IF NOT EXISTS age_range_mappings (
+    $created = clms_db_query($conn, "CREATE TABLE IF NOT EXISTS age_range_mappings (
         id INT NOT NULL AUTO_INCREMENT,
         min_age INT NOT NULL DEFAULT 18,
         max_age INT NOT NULL DEFAULT 60,
@@ -34,7 +34,7 @@ function clms_ensure_age_range_mappings($conn) {
     ];
     foreach ($columns as $column => $sql) {
         if (!clms_age_range_column_exists($conn, $column)) {
-            mysqli_query($conn, $sql);
+            clms_db_query($conn, $sql);
         }
     }
 

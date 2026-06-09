@@ -76,14 +76,14 @@ echo "====== ANNEXURE 5/A - INTEGRATION VERIFICATION ======\n\n";
 
 // Check if pass_limits table exists
 $check_table = "SELECT 1 FROM pass_limits LIMIT 1";
-if (mysqli_query($conn, $check_table)) {
+if (clms_db_query($conn, $check_table)) {
     echo "✅ Table 'pass_limits' exists\n";
     
     // Get all rules
-    $rules = mysqli_query($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0");
+    $rules = clms_db_query($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0");
     echo "\n📋 Default Rules in Database:\n";
     
-    while ($row = mysqli_fetch_assoc($rules)) {
+    while ($row = clms_db_fetch_assoc($rules)) {
         echo sprintf(
             "  • %-15s → Max: %-5s | Ratio: %-3s | Rule: %s\n",
             $row['pass_type'],

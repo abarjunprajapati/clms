@@ -35,7 +35,7 @@ try {
 
     // Handle Foreign Key dependencies
     // Instead of ON DELETE CASCADE, we set references to NULL to preserve history
-    mysqli_begin_transaction($conn);
+    clms_db_begin_transaction($conn);
     try {
         // List of tables and their columns that reference users.id
         $dependencies = [
@@ -71,10 +71,10 @@ try {
             foreach ($cols as $column) {
                 // Check if table AND column exist before updating
                 $check_sql = "SHOW COLUMNS FROM `$table` LIKE '$column'";
-                $column_exists = mysqli_query($conn, $check_sql);
+                $column_exists = clms_db_query($conn, $check_sql);
                 
-                if ($column_exists && mysqli_num_rows($column_exists) > 0) {
-                    mysqli_query($conn, "UPDATE `$table` SET `$column` = NULL WHERE `$column` = $user_id");
+                if ($column_exists && clms_db_num_rows($column_exists) > 0) {
+                    clms_db_query($conn, "UPDATE `$table` SET `$column` = NULL WHERE `$column` = $user_id");
                 }
             }
         }
@@ -86,17 +86,17 @@ try {
             $err = $stmt->error;
             // If it still fails due to foreign key, we can't delete but we can deactivate
             if (strpos($err, 'foreign key constraint') !== false) {
-                mysqli_query($conn, "UPDATE users SET status = 'INACTIVE', remarks = 'Cannot delete due to system dependencies' WHERE id = $user_id");
-                mysqli_commit($conn);
+                clms_db_query($conn, "UPDATE users SET status = 'INACTIVE', remarks = 'Cannot delete due to system dependencies' WHERE id = $user_id");
+                clms_db_commit($conn);
                 apiSuccess(['user_id' => $user_id, 'mode' => 'deactivated'], 'User has active dependencies. Account has been deactivated instead.');
                 exit;
             }
             throw new Exception($err);
         }
 
-        mysqli_commit($conn);
+        clms_db_commit($conn);
     } catch (Exception $e) {
-        mysqli_rollback($conn);
+        clms_db_rollback($conn);
         apiError('Failed to delete user: ' . $e->getMessage(), 500);
     }
 

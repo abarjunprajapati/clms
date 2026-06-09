@@ -19,8 +19,8 @@ if (!$session) {
 }
 
 function safetySessionSetting($conn, $key, $default) {
-    $table = mysqli_query($conn, "SHOW TABLES LIKE 'system_settings'");
-    if (!$table || mysqli_num_rows($table) === 0) {
+    $table = clms_db_query($conn, "SHOW TABLES LIKE 'system_settings'");
+    if (!$table || clms_db_num_rows($table) === 0) {
         return $default;
     }
 

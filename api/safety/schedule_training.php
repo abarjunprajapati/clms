@@ -113,7 +113,7 @@ try {
     );
 
     if (!$session) {
-        // Create new session - Using mysqli_query to ensure we can get insert_id easily
+        // Create new session - Using clms_db_query to ensure we can get insert_id easily
         $session_id = safety_schedule_insert_row($conn, 'training_schedule', [
             'session_date' => $scheduled_date,
             'session_time' => $final_time,
@@ -177,36 +177,36 @@ try {
 }
 
 function safety_schedule_table_exists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && mysqli_num_rows($res) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function safety_schedule_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function safety_schedule_column_meta($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return ($res && mysqli_num_rows($res) > 0) ? mysqli_fetch_assoc($res) : null;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return ($res && clms_db_num_rows($res) > 0) ? clms_db_fetch_assoc($res) : null;
 }
 
 function safety_schedule_ensure_column($conn, $table, $column, $definition) {
     if (!safety_schedule_table_exists($conn, $table) || safety_schedule_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    if (!mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
-        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . mysqli_error($conn));
+    if (!clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
+        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . clms_db_error($conn));
     }
 }
 
 function safety_schedule_ensure_schema($conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_schedule (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_schedule (
         id INT NOT NULL AUTO_INCREMENT,
         session_date DATE NULL,
         session_time TIME NULL,
@@ -221,7 +221,7 @@ function safety_schedule_ensure_schema($conn) {
         PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_session_workers (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_session_workers (
         id INT NOT NULL AUTO_INCREMENT,
         session_id INT NOT NULL,
         workman_id INT NOT NULL,
@@ -279,7 +279,7 @@ function safety_schedule_ensure_schema($conn) {
     foreach (['training_schedule', 'training_session_workers'] as $table) {
         $meta = safety_schedule_column_meta($conn, $table, 'id');
         if ($meta && stripos($meta['Extra'] ?? '', 'auto_increment') === false) {
-            @mysqli_query($conn, "ALTER TABLE `$table` MODIFY id INT NOT NULL AUTO_INCREMENT");
+            @clms_db_query($conn, "ALTER TABLE `$table` MODIFY id INT NOT NULL AUTO_INCREMENT");
         }
     }
 
@@ -288,22 +288,22 @@ function safety_schedule_ensure_schema($conn) {
         safety_schedule_ensure_column($conn, 'workmen', 'training_status', "VARCHAR(50) DEFAULT 'pending'");
     }
 
-    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
-    @mysqli_query($conn, "ALTER TABLE training_schedule MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
+    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
+    @clms_db_query($conn, "ALTER TABLE training_schedule MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
 }
 
 function safety_schedule_filter_row($conn, $table, $row) {
     $safeTable = str_replace('`', '``', $table);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable`");
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable`");
     $cols = [];
-    if ($res) while ($c = mysqli_fetch_assoc($res)) $cols[$c['Field']] = true;
+    if ($res) while ($c = clms_db_fetch_assoc($res)) $cols[$c['Field']] = true;
     return array_intersect_key($row, $cols);
 }
 
 function safety_schedule_next_id($conn, $table) {
     $safeTable = str_replace('`', '``', $table);
-    $res = mysqli_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 next_id FROM `$safeTable`");
-    $row = $res ? mysqli_fetch_assoc($res) : null;
+    $res = clms_db_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 next_id FROM `$safeTable`");
+    $row = $res ? clms_db_fetch_assoc($res) : null;
     return (int)($row['next_id'] ?? 1);
 }
 

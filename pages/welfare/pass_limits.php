@@ -57,14 +57,14 @@ function welfarePassLimitDefaultRules() {
 }
 
 function welfarePassLimitColumnExists($conn, $column) {
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `pass_limits` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `pass_limits` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 function welfarePassLimitIdAutoIncrement($conn) {
-    $idResult = mysqli_query($conn, "SHOW COLUMNS FROM `pass_limits` LIKE 'id'");
-    $idMeta = $idResult ? mysqli_fetch_assoc($idResult) : null;
+    $idResult = clms_db_query($conn, "SHOW COLUMNS FROM `pass_limits` LIKE 'id'");
+    $idMeta = $idResult ? clms_db_fetch_assoc($idResult) : null;
     return $idMeta && stripos($idMeta['Extra'] ?? '', 'auto_increment') !== false;
 }
 
@@ -74,7 +74,7 @@ function welfarePassLimitNextId($conn) {
 }
 
 function welfarePassLimitEnsureDefaults($conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS pass_limits (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS pass_limits (
         id INT NOT NULL AUTO_INCREMENT,
         contractor_id INT NOT NULL DEFAULT 0,
         pass_type VARCHAR(50) NOT NULL,
@@ -88,10 +88,10 @@ function welfarePassLimitEnsureDefaults($conn) {
         PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    $idResult = mysqli_query($conn, "SHOW COLUMNS FROM `pass_limits` LIKE 'id'");
-    $idMeta = $idResult ? mysqli_fetch_assoc($idResult) : null;
+    $idResult = clms_db_query($conn, "SHOW COLUMNS FROM `pass_limits` LIKE 'id'");
+    $idMeta = $idResult ? clms_db_fetch_assoc($idResult) : null;
     if ($idMeta && stripos($idMeta['Extra'] ?? '', 'auto_increment') === false) {
-        mysqli_query($conn, "ALTER TABLE `pass_limits` MODIFY `id` INT(11) NOT NULL AUTO_INCREMENT");
+        clms_db_query($conn, "ALTER TABLE `pass_limits` MODIFY `id` INT(11) NOT NULL AUTO_INCREMENT");
     }
 
     $columns = [
@@ -104,12 +104,12 @@ function welfarePassLimitEnsureDefaults($conn) {
     ];
     foreach ($columns as $column => $sql) {
         if (!welfarePassLimitColumnExists($conn, $column)) {
-            mysqli_query($conn, $sql);
+            clms_db_query($conn, $sql);
         }
     }
 
     $hasAutoId = welfarePassLimitIdAutoIncrement($conn);
-    $stmt = mysqli_prepare($conn, $hasAutoId ? "
+    $stmt = clms_db_prepare($conn, $hasAutoId ? "
         INSERT INTO pass_limits
             (contractor_id, pass_type, max_allowed, ratio_per_workmen, rule, description, override_allowed, current_count)
         VALUES
@@ -136,14 +136,14 @@ function welfarePassLimitEnsureDefaults($conn) {
         $description = $rule['description'];
         $override = (int)$rule['override_allowed'];
         if ($hasAutoId) {
-            mysqli_stmt_bind_param($stmt, 'siissi', $passType, $maxAllowed, $ratio, $ruleText, $description, $override);
+            clms_db_stmt_bind_param($stmt, 'siissi', $passType, $maxAllowed, $ratio, $ruleText, $description, $override);
         } else {
             $nextId = welfarePassLimitNextId($conn);
-            mysqli_stmt_bind_param($stmt, 'isiissi', $nextId, $passType, $maxAllowed, $ratio, $ruleText, $description, $override);
+            clms_db_stmt_bind_param($stmt, 'isiissi', $nextId, $passType, $maxAllowed, $ratio, $ruleText, $description, $override);
         }
-        mysqli_stmt_execute($stmt);
+        clms_db_stmt_execute($stmt);
     }
-    mysqli_stmt_close($stmt);
+    clms_db_stmt_close($stmt);
 }
 
 function renderContent() {

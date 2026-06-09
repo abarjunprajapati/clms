@@ -13,9 +13,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 function ensureGatePassDocumentSchema($conn) {
-    @mysqli_query($conn, "ALTER TABLE documents ADD COLUMN gate_pass_request_id INT NULL");
-    @mysqli_query($conn, "ALTER TABLE documents MODIFY document_type VARCHAR(255) NULL");
-    @mysqli_query($conn, "ALTER TABLE documents MODIFY status VARCHAR(30) DEFAULT 'pending'");
+    @clms_db_query($conn, "ALTER TABLE documents ADD COLUMN gate_pass_request_id INT NULL");
+    @clms_db_query($conn, "ALTER TABLE documents MODIFY document_type VARCHAR(255) NULL");
+    @clms_db_query($conn, "ALTER TABLE documents MODIFY status VARCHAR(30) DEFAULT 'pending'");
 }
 
 function uploadAnnexure6ADoc($conn, $workmanId, $requestId, $docType, $key) {

@@ -10,11 +10,11 @@ if (($_SESSION['role'] ?? '') !== 'customer') {
 
 $customer_code = $_SESSION['customer_code'] ?? '';
 
-function customerColumnExists(mysqli $conn, string $table, string $column): bool {
-    $table = mysqli_real_escape_string($conn, $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
-    return $result && mysqli_num_rows($result) > 0;
+function customerColumnExists($conn, string $table, string $column): bool {
+    $table = clms_db_real_escape_string($conn, $table);
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
 try {

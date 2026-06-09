@@ -43,7 +43,7 @@ $success = db_execute($conn,
 );
 
 if ($success) {
-    $new_user_id = mysqli_insert_id($conn);
+    $new_user_id = clms_db_insert_id($conn);
 
     // 3. Auto-insert into contractors (Annexure 2A) table
     if ($type === 'vendor') {

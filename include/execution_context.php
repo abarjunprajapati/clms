@@ -7,18 +7,18 @@
 
 if (!function_exists('clms_execution_table_exists')) {
 function clms_execution_table_exists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $result = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-    return $result && mysqli_num_rows($result) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $result = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 }
 
 if (!function_exists('clms_execution_column_exists')) {
 function clms_execution_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $result && mysqli_num_rows($result) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 }
 
@@ -43,14 +43,14 @@ function clms_execution_insert_if_columns($conn, $table, array $values) {
 
     $placeholders = implode(',', array_fill(0, count($columns), '?'));
     $sql = "INSERT INTO `$table` (" . implode(',', $columns) . ") VALUES ($placeholders)";
-    $stmt = mysqli_prepare($conn, $sql);
+    $stmt = clms_db_prepare($conn, $sql);
     if (!$stmt) {
         return 0;
     }
-    mysqli_stmt_bind_param($stmt, $types, ...$params);
-    $ok = mysqli_stmt_execute($stmt);
-    $id = $ok ? (int)mysqli_insert_id($conn) : 0;
-    mysqli_stmt_close($stmt);
+    clms_db_stmt_bind_param($stmt, $types, ...$params);
+    $ok = clms_db_stmt_execute($stmt);
+    $id = $ok ? (int)clms_db_insert_id($conn) : 0;
+    clms_db_stmt_close($stmt);
     return $id;
 }
 }
@@ -62,13 +62,13 @@ function clms_execution_ensure_column($conn, $table, $column, $definition) {
     }
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 }
 
 if (!function_exists('clms_execution_ensure_schema')) {
 function clms_execution_ensure_schema($conn) {
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_officers (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_officers (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         employee_code VARCHAR(50) NULL,
         name VARCHAR(150) NULL,
@@ -82,7 +82,7 @@ function clms_execution_ensure_schema($conn) {
         UNIQUE KEY uq_execution_employee_code (employee_code)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_officer_contractors (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_officer_contractors (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         execution_officer_id BIGINT NULL,
         contractor_id BIGINT NULL,
@@ -90,7 +90,7 @@ function clms_execution_ensure_schema($conn) {
         assigned_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_officer_workorders (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_officer_workorders (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         execution_officer_id BIGINT NULL,
         work_order_id BIGINT NULL,
@@ -99,7 +99,7 @@ function clms_execution_ensure_schema($conn) {
         status VARCHAR(30) DEFAULT 'active'
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_worker_deployments (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_worker_deployments (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         workman_id BIGINT NULL,
         contractor_id BIGINT NULL,
@@ -111,7 +111,7 @@ function clms_execution_ensure_schema($conn) {
         status VARCHAR(30) DEFAULT 'active'
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS master_departments (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS master_departments (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         dept_name VARCHAR(150) NULL,
         department_name VARCHAR(150) NULL,
@@ -119,7 +119,7 @@ function clms_execution_ensure_schema($conn) {
         created_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS attendance (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS attendance (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         workman_id BIGINT NULL,
         check_in DATETIME NULL,
@@ -129,7 +129,7 @@ function clms_execution_ensure_schema($conn) {
         created_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS attendance_exceptions (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS attendance_exceptions (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         workman_id BIGINT NULL,
         contractor_id BIGINT NULL,
@@ -139,7 +139,7 @@ function clms_execution_ensure_schema($conn) {
         created_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_observations (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_observations (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         execution_officer_id BIGINT NULL,
         contractor_id BIGINT NULL,
@@ -152,7 +152,7 @@ function clms_execution_ensure_schema($conn) {
         created_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_escalations (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_escalations (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         execution_officer_id BIGINT NULL,
         escalated_to VARCHAR(50) NULL,
@@ -165,7 +165,7 @@ function clms_execution_ensure_schema($conn) {
         created_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_actions (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_actions (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         execution_officer_id BIGINT NULL,
         workman_id BIGINT NULL,
@@ -176,7 +176,7 @@ function clms_execution_ensure_schema($conn) {
         created_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_recommendations (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_recommendations (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         execution_officer_id BIGINT NULL,
         workman_id BIGINT NULL,
@@ -185,7 +185,7 @@ function clms_execution_ensure_schema($conn) {
         created_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_audit_logs (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_audit_logs (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         execution_officer_id BIGINT NULL,
         action VARCHAR(100) NULL,
@@ -195,7 +195,7 @@ function clms_execution_ensure_schema($conn) {
         created_at DATETIME NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS execution_notifications (
+    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS execution_notifications (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         execution_officer_id BIGINT NULL,
         recipient_role VARCHAR(50) NULL,

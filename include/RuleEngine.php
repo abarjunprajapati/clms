@@ -26,21 +26,21 @@ class RuleEngine {
 
     public static function validateAction($application_id, $action, $conn) {
         // Fetch current application data
-        $stmt = mysqli_prepare($conn, "SELECT current_status FROM workflow_status WHERE application_id = ?");
-        mysqli_stmt_bind_param($stmt, "s", $application_id);
-        mysqli_stmt_execute($stmt);
-        $result = mysqli_stmt_get_result($stmt);
-        $statusRow = mysqli_fetch_assoc($result);
+        $stmt = clms_db_prepare($conn, "SELECT current_status FROM workflow_status WHERE application_id = ?");
+        clms_db_stmt_bind_param($stmt, "s", $application_id);
+        clms_db_stmt_execute($stmt);
+        $result = clms_db_stmt_get_result($stmt);
+        $statusRow = clms_db_fetch_assoc($result);
         $currentStatus = $statusRow['current_status'] ?? 'draft';
 
         switch ($action) {
             case 'apply_gate_pass':
                 // RULE 1: No Training -> No Gate Pass
-                $trainingStmt = mysqli_prepare($conn, "SELECT result FROM training_results WHERE application_id = ?");
-                mysqli_stmt_bind_param($trainingStmt, "s", $application_id);
-                mysqli_stmt_execute($trainingStmt);
-                $trainingRes = mysqli_stmt_get_result($trainingStmt);
-                $trainingRow = mysqli_fetch_assoc($trainingRes);
+                $trainingStmt = clms_db_prepare($conn, "SELECT result FROM training_results WHERE application_id = ?");
+                clms_db_stmt_bind_param($trainingStmt, "s", $application_id);
+                clms_db_stmt_execute($trainingStmt);
+                $trainingRes = clms_db_stmt_get_result($trainingStmt);
+                $trainingRow = clms_db_fetch_assoc($trainingRes);
                 if (!$trainingRow || $trainingRow['result'] !== 'pass') {
                     return ["success" => false, "error" => "Training required before Gate Pass application"];
                 }
@@ -56,11 +56,11 @@ class RuleEngine {
 
             case 'verify_documents':
                 // RULE 3: No Documents -> Reject
-                $docStmt = mysqli_prepare($conn, "SELECT COUNT(*) as count FROM documents WHERE application_id = ?");
-                mysqli_stmt_bind_param($docStmt, "s", $application_id);
-                mysqli_stmt_execute($docStmt);
-                $docRes = mysqli_stmt_get_result($docStmt);
-                $docRow = mysqli_fetch_assoc($docRes);
+                $docStmt = clms_db_prepare($conn, "SELECT COUNT(*) as count FROM documents WHERE application_id = ?");
+                clms_db_stmt_bind_param($docStmt, "s", $application_id);
+                clms_db_stmt_execute($docStmt);
+                $docRes = clms_db_stmt_get_result($docStmt);
+                $docRow = clms_db_fetch_assoc($docRes);
                 if ($docRow['count'] == 0) {
                     return ["success" => false, "error" => "Documents missing. Rejection required."];
                 }
@@ -71,11 +71,11 @@ class RuleEngine {
     }
 
     public static function updateStatus($application_id, $newStatus, $conn) {
-        $stmt = mysqli_prepare($conn, "INSERT INTO workflow_status (application_id, current_status) 
+        $stmt = clms_db_prepare($conn, "INSERT INTO workflow_status (application_id, current_status) 
                                       VALUES (?, ?) 
                                       ON DUPLICATE KEY UPDATE current_status = ?, updated_at = CURRENT_TIMESTAMP");
-        mysqli_stmt_bind_param($stmt, "sss", $application_id, $newStatus, $newStatus);
-        return mysqli_stmt_execute($stmt);
+        clms_db_stmt_bind_param($stmt, "sss", $application_id, $newStatus, $newStatus);
+        return clms_db_stmt_execute($stmt);
     }
 }
 

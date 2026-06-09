@@ -29,14 +29,14 @@ try {
                 VALUES (?, ?, ?, ?, ?, ?, ?)";
         $ok = db_execute($conn, $sql, 'sssssss', [$wo_no, $c_code, $v_code, $proj, $dept, $start, $end]);
         if (!$ok) {
-            throw new Exception("Database insert failed: " . mysqli_error($conn));
+            throw new Exception("Database insert failed: " . clms_db_error($conn));
         }
         apiSuccess(['message' => 'Work Order Mapping created successfully.']);
 
     } elseif ($action === 'delete') {
         $id = $data['id'] ?? 0;
         $ok = db_execute($conn, "DELETE FROM work_orders WHERE id = ?", 'i', [$id]);
-        if (!$ok) throw new Exception("Database delete failed: " . mysqli_error($conn));
+        if (!$ok) throw new Exception("Database delete failed: " . clms_db_error($conn));
         apiSuccess(['message' => 'Mapping deleted.']);
 
     } elseif ($action === 'toggle_status') {
@@ -44,7 +44,7 @@ try {
         $row = db_single($conn, "SELECT wo_status FROM work_orders WHERE id = ?", 'i', [$id]);
         $new_status = ($row['wo_status'] === 'ACTIVE') ? 'CLOSED' : 'ACTIVE';
         $ok = db_execute($conn, "UPDATE work_orders SET wo_status = ? WHERE id = ?", 'si', [$new_status, $id]);
-        if (!$ok) throw new Exception("Database update failed: " . mysqli_error($conn));
+        if (!$ok) throw new Exception("Database update failed: " . clms_db_error($conn));
         apiSuccess(['message' => "Status updated to $new_status"]);
     } else {
         apiError('Invalid action');

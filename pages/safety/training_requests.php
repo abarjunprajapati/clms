@@ -9,27 +9,27 @@ $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Safety Officer';
 
 function safety_training_page_table_exists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && mysqli_num_rows($res) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function safety_training_page_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function safety_training_page_ensure_column($conn, $table, $column, $definition) {
     if (!safety_training_page_table_exists($conn, $table) || safety_training_page_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function safety_training_page_ensure_schema($conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,
@@ -62,20 +62,20 @@ function safety_training_page_ensure_schema($conn) {
     ] as $column => $definition) {
         safety_training_page_ensure_column($conn, 'training_requests', $column, $definition);
     }
-    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
-    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
+    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
 
     if (safety_training_page_table_exists($conn, 'workmen')) {
         safety_training_page_ensure_column($conn, 'workmen', 'safety_training_status', "VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
         safety_training_page_ensure_column($conn, 'workmen', 'training_status', "VARCHAR(50) DEFAULT 'pending'");
-        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
-        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
     }
     if (safety_training_page_table_exists($conn, 'contractors')) {
         safety_training_page_ensure_column($conn, 'contractors', 'work_order_no', 'VARCHAR(100) NULL');
     }
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_schedule (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_schedule (
         id INT NOT NULL AUTO_INCREMENT,
         session_date DATE NULL,
         session_time TIME NULL,
@@ -90,7 +90,7 @@ function safety_training_page_ensure_schema($conn) {
         PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_session_workers (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_session_workers (
         id INT NOT NULL AUTO_INCREMENT,
         session_id INT NOT NULL,
         workman_id INT NOT NULL,
@@ -130,7 +130,7 @@ function safety_training_page_seed_pending_requests($conn) {
         FROM workmen w
         WHERE " . implode(' AND ', $where);
 
-    @mysqli_query($conn, $sql);
+    @clms_db_query($conn, $sql);
 }
 
 function safety_training_page_sync_request_statuses($conn) {
@@ -138,7 +138,7 @@ function safety_training_page_sync_request_statuses($conn) {
         return;
     }
 
-    @mysqli_query($conn, "
+    @clms_db_query($conn, "
         UPDATE training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         SET tr.status = 'passed', tr.updated_at = NOW()
@@ -149,7 +149,7 @@ function safety_training_page_sync_request_statuses($conn) {
           )
     ");
 
-    @mysqli_query($conn, "
+    @clms_db_query($conn, "
         UPDATE training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         SET tr.status = 'failed', tr.updated_at = NOW()
@@ -160,7 +160,7 @@ function safety_training_page_sync_request_statuses($conn) {
           )
     ");
 
-    @mysqli_query($conn, "
+    @clms_db_query($conn, "
         UPDATE training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         SET tr.status = 'scheduled', tr.updated_at = NOW()
@@ -242,7 +242,7 @@ function safety_training_page_repair_sessions($conn) {
                         (string)($row['batch_number'] ?? '')
                     ]
                 );
-                $session = ['id' => mysqli_insert_id($conn), 'session_status' => 'open'];
+                $session = ['id' => clms_db_insert_id($conn), 'session_status' => 'open'];
             }
 
             $sessionId = (int)($session['id'] ?? 0);
@@ -518,7 +518,7 @@ function renderContent() {
                        <div style="font-size:11px; margin-top:2px; color:var(--text-muted);"><?= htmlspecialchars($r['preferred_detail'] ?? 'No preferred date selected') ?></div>
                      </td>
                      <td>
-                       <button class="btn btn-sm btn-primary" onclick="openScheduleModal(<?= htmlspecialchars(json_encode($r), ENT_QUOTES, 'UTF-8') ?>)">Assign Batch</button>
+                       <a class="btn btn-sm btn-primary" href="training_class_master.php?request_id=<?= (int)($r['request_id'] ?? $r['id']) ?>">Assign Batch</a>
                      </td>
                    </tr>
                    <?php endforeach; ?>

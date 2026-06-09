@@ -10,27 +10,27 @@ $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Welfare Admin';
 
 function welfareTrainingTableExists($conn, $table) {
-    $table = mysqli_real_escape_string($conn, $table);
-    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && mysqli_num_rows($res) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function welfareTrainingColumnExists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && mysqli_num_rows($res) > 0;
+    $column = clms_db_real_escape_string($conn, $column);
+    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && clms_db_num_rows($res) > 0;
 }
 
 function welfareTrainingEnsureColumn($conn, $table, $column, $definition) {
     if (!welfareTrainingTableExists($conn, $table) || welfareTrainingColumnExists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function welfareTrainingEnsureSchema($conn) {
-    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,
@@ -63,7 +63,7 @@ function welfareTrainingEnsureSchema($conn) {
     ] as $column => $definition) {
         welfareTrainingEnsureColumn($conn, 'training_requests', $column, $definition);
     }
-    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
     if (welfareTrainingTableExists($conn, 'workmen')) {
         foreach ([
@@ -77,9 +77,9 @@ function welfareTrainingEnsureSchema($conn) {
         ] as $column => $definition) {
             welfareTrainingEnsureColumn($conn, 'workmen', $column, $definition);
         }
-        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
-        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
-        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
+        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
     }
 }
 
@@ -100,7 +100,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
         return;
     }
 
-    @mysqli_query($conn, "
+    @clms_db_query($conn, "
         INSERT INTO training_requests
             (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
         SELECT
@@ -144,7 +144,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
           )
     ");
 
-    @mysqli_query($conn, "
+    @clms_db_query($conn, "
         UPDATE training_requests tr
         JOIN workmen w ON w.id = tr.workman_id
         SET tr.status = 'welfare_pending',
@@ -177,7 +177,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
           )
     ");
 
-    @mysqli_query($conn, "
+    @clms_db_query($conn, "
         UPDATE training_requests tr
         JOIN training_requests rejected
           ON rejected.workman_id = tr.workman_id

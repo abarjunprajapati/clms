@@ -13,9 +13,9 @@ function pendingTrainingTableExists($conn, $table) {
         return $cache[$table];
     }
 
-    $safeTable = mysqli_real_escape_string($conn, $table);
-    $result = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
-    $cache[$table] = $result && mysqli_num_rows($result) > 0;
+    $safeTable = clms_db_real_escape_string($conn, $table);
+    $result = clms_db_query($conn, "SHOW TABLES LIKE '$safeTable'");
+    $cache[$table] = $result && clms_db_num_rows($result) > 0;
     return $cache[$table];
 }
 
@@ -31,9 +31,9 @@ function pendingTrainingColumnExists($conn, $table, $column) {
         return false;
     }
 
-    $safeColumn = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$safeColumn'");
-    $cache[$key] = $result && mysqli_num_rows($result) > 0;
+    $safeColumn = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$safeColumn'");
+    $cache[$key] = $result && clms_db_num_rows($result) > 0;
     return $cache[$key];
 }
 

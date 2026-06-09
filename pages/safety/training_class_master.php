@@ -12,7 +12,9 @@ clms_safety_ensure_control_schema($conn);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $result = clms_safety_create_batch($conn, $_POST, (int)($_SESSION['user_id'] ?? 0));
-        $_SESSION['success'] = 'Batch ' . $result['batch_number'] . ' created. Open Training Schedule to assign workers.';
+        $_SESSION['success'] = 'Batch ' . $result['batch_number'] . ' created. Select workers and schedule the class.';
+        header('Location: training_schedule.php?batch_id=' . (int)($result['batch_id'] ?? 0));
+        exit;
     } catch (Throwable $e) {
         $_SESSION['error'] = $e->getMessage();
     }
@@ -27,20 +29,36 @@ function renderContent() {
     $types = clms_safety_active_rows(clms_get_training_type_rows($conn, false));
     $instructors = clms_safety_active_rows(db_fetch_all($conn, "SELECT id, instructor_code, instructor_name, status FROM safety_instructor_masters ORDER BY instructor_name ASC"));
     $batches = db_fetch_all($conn, "SELECT b.*, COALESCE(wc.total_workers, 0) total_workers FROM training_class_batches b LEFT JOIN (SELECT batch_id, COUNT(*) total_workers FROM training_batch_workers WHERE ticked = 1 GROUP BY batch_id) wc ON wc.batch_id = b.id ORDER BY b.created_at DESC, b.id DESC LIMIT 20");
+    $prefillRequestId = (int)($_GET['request_id'] ?? 0);
+    $prefillRequest = $prefillRequestId ? db_single($conn, "
+        SELECT tr.id, tr.training_type, w.name AS worker_name, w.safety_language, w.temp_id
+        FROM training_requests tr
+        JOIN workmen w ON w.id = tr.workman_id
+        WHERE tr.id = ? LIMIT 1
+    ", 'i', array($prefillRequestId)) : null;
+    $prefillLanguage = strtolower(trim((string)($prefillRequest['safety_language'] ?? '')));
+    $prefillType = strtolower(trim((string)($prefillRequest['training_type'] ?? 'Safety Induction')));
 ?>
 <div class="content-header"><div><h2 class="page-title"><i class="fas fa-calendar-plus"></i> Training Class Master</h2><p class="page-subtitle">Create batch token, auto-tick workers by language/date order and selected location seats.</p></div></div>
+<?php if ($prefillRequest): ?>
+<div class="alert alert-info">
+  <i class="fas fa-info-circle"></i>
+  <div>Assigning batch from request #<?= (int)$prefillRequest['id'] ?> for <?= htmlspecialchars($prefillRequest['worker_name']) ?>. Language has been pre-selected; all eligible workers in that language will appear on the schedule screen.</div>
+</div>
+<?php endif; ?>
 <section class="card glass">
   <div class="card-header"><div class="card-title">Schedule Batch</div></div>
   <div class="card-body">
     <form method="post" class="class-form">
-      <label>Training Date<input class="form-control" type="date" name="training_date" min="<?= date('Y-m-d') ?>" required></label>
+      <input type="hidden" name="source_request_id" value="<?= (int)$prefillRequestId ?>">
+      <label>Training Date<input class="form-control" type="date" name="training_date" min="<?= date('Y-m-d') ?>" value="<?= date('Y-m-d') ?>" required></label>
       <label>Training Location<select class="form-control" name="venue_id" id="venueSelect" onchange="updateSeats()" required><option value="">Select</option><?php foreach($venues as $v): ?><option value="<?= (int)$v['id'] ?>" data-seats="<?= (int)$v['seats'] ?>"><?= htmlspecialchars(($v['venue_code'] ? $v['venue_code'].' - ' : '').$v['venue_name']) ?></option><?php endforeach; ?></select></label>
       <label>Slots<input class="form-control" id="slotBox" value="" readonly></label>
-      <label>Language<select class="form-control" name="language_id" required><option value="">Select</option><?php foreach($languages as $l): ?><option value="<?= (int)$l['id'] ?>"><?= htmlspecialchars($l['language_name']) ?></option><?php endforeach; ?></select></label>
+      <label>Language<select class="form-control" name="language_id" required><option value="">Select</option><?php foreach($languages as $l): ?><option value="<?= (int)$l['id'] ?>" <?= strtolower(trim($l['language_name'])) === $prefillLanguage ? 'selected' : '' ?>><?= htmlspecialchars($l['language_name']) ?></option><?php endforeach; ?></select></label>
       <label>Session<select class="form-control" name="session_name"><option value="FN">FN</option><option value="AN">AN</option></select></label>
       <label>Time From<input class="form-control" type="time" name="time_from"></label>
       <label>Time To<input class="form-control" type="time" name="time_to"></label>
-      <label>Training Type<select class="form-control" name="training_type_id" required><option value="">Select</option><?php foreach($types as $t): ?><option value="<?= (int)$t['id'] ?>"><?= htmlspecialchars($t['type_name']) ?></option><?php endforeach; ?></select></label>
+      <label>Training Type<select class="form-control" name="training_type_id" required><option value="">Select</option><?php foreach($types as $t): ?><option value="<?= (int)$t['id'] ?>" <?= strtolower(trim($t['type_name'])) === $prefillType ? 'selected' : '' ?>><?= htmlspecialchars($t['type_name']) ?></option><?php endforeach; ?></select></label>
       <label>Trainer<select class="form-control" name="instructor_id"><option value="">Auto / Not assigned</option><?php foreach($instructors as $i): ?><option value="<?= (int)$i['id'] ?>"><?= htmlspecialchars(($i['instructor_code'] ? $i['instructor_code'].' - ' : '').$i['instructor_name']) ?></option><?php endforeach; ?></select></label>
       <div class="actions">
         <button class="btn btn-outline" name="save_mode" value="draft"><i class="fas fa-file"></i> Save as Draft</button>

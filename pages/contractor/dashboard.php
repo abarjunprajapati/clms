@@ -8,62 +8,62 @@ $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
 $user_id = $_SESSION['user_id'] ?? 0;
 
-function contractorTableExists(mysqli $conn, string $table): bool {
-    $table = mysqli_real_escape_string($conn, $table);
-    $result = mysqli_query($conn, "SHOW TABLES LIKE '{$table}'");
-    return $result && mysqli_num_rows($result) > 0;
+function contractorTableExists($conn, string $table): bool {
+    $table = clms_db_real_escape_string($conn, $table);
+    $result = clms_db_query($conn, "SHOW TABLES LIKE '{$table}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
-function contractorColumnExists(mysqli $conn, string $table, string $column): bool {
+function contractorColumnExists($conn, string $table, string $column): bool {
     if (!contractorTableExists($conn, $table)) {
         return false;
     }
-    $table = mysqli_real_escape_string($conn, $table);
-    $column = mysqli_real_escape_string($conn, $column);
-    $result = mysqli_query($conn, "SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
-    return $result && mysqli_num_rows($result) > 0;
+    $table = clms_db_real_escape_string($conn, $table);
+    $column = clms_db_real_escape_string($conn, $column);
+    $result = clms_db_query($conn, "SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
+    return $result && clms_db_num_rows($result) > 0;
 }
 
-function contractorSafeCount(mysqli $conn, string $table, string $where = '1=1'): int {
+function contractorSafeCount($conn, string $table, string $where = '1=1'): int {
     if (!contractorTableExists($conn, $table)) {
         return 0;
     }
     try {
-        $result = mysqli_query($conn, "SELECT COUNT(*) c FROM `{$table}` WHERE {$where}");
-    } catch (mysqli_sql_exception $e) {
+        $result = clms_db_query($conn, "SELECT COUNT(*) c FROM `{$table}` WHERE {$where}");
+    } catch (Throwable $e) {
         return 0;
     }
     if (!$result) {
         return 0;
     }
-    $row = mysqli_fetch_assoc($result);
+    $row = clms_db_fetch_assoc($result);
     return (int)($row['c'] ?? 0);
 }
 
-function contractorSafeScalar(mysqli $conn, string $sql): int {
+function contractorSafeScalar($conn, string $sql): int {
     try {
-        $result = mysqli_query($conn, $sql);
-    } catch (mysqli_sql_exception $e) {
+        $result = clms_db_query($conn, $sql);
+    } catch (Throwable $e) {
         return 0;
     }
     if (!$result) {
         return 0;
     }
-    $row = mysqli_fetch_assoc($result);
+    $row = clms_db_fetch_assoc($result);
     return (int)($row['c'] ?? 0);
 }
 
-function contractorRecentRows(mysqli $conn, string $sql): array {
+function contractorRecentRows($conn, string $sql): array {
     try {
-        $result = mysqli_query($conn, $sql);
-    } catch (mysqli_sql_exception $e) {
+        $result = clms_db_query($conn, $sql);
+    } catch (Throwable $e) {
         return [];
     }
     if (!$result) {
         return [];
     }
     $rows = [];
-    while ($row = mysqli_fetch_assoc($result)) {
+    while ($row = clms_db_fetch_assoc($result)) {
         $rows[] = $row;
     }
     return $rows;

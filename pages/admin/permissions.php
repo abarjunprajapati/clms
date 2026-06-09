@@ -7,8 +7,8 @@ include __DIR__ . '/../../include/layout.php';
 function renderContent() {
     global $conn;
     
-    $tableCheck = mysqli_query($conn, "SHOW TABLES LIKE 'role_permissions'");
-    $hasTable = ($tableCheck && mysqli_num_rows($tableCheck) > 0);
+    $tableCheck = clms_db_query($conn, "SHOW TABLES LIKE 'role_permissions'");
+    $hasTable = ($tableCheck && clms_db_num_rows($tableCheck) > 0);
     
     $roles = ['welfare_admin','welfare_user','safety_user','front_line_user','pass_user','contractor'];
     $modules = ['dashboard','users','contractors','workmen','documents','training','gate_pass','compliance','attendance','reports','sap','settings','master_data','audit_logs','notifications','blocking'];

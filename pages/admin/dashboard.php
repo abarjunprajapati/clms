@@ -41,8 +41,8 @@ function renderContent() {
     
     // Lockdown check
     $lockdown = '0';
-    $lCheck = mysqli_query($conn, "SHOW TABLES LIKE 'system_settings'");
-    if($lCheck && mysqli_num_rows($lCheck) > 0) {
+    $lCheck = clms_db_query($conn, "SHOW TABLES LIKE 'system_settings'");
+    if($lCheck && clms_db_num_rows($lCheck) > 0) {
         $ls = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key='system_lockdown'");
         $lockdown = $ls['setting_value'] ?? '0';
     }
@@ -51,8 +51,8 @@ function renderContent() {
     $requiredTables = ['system_settings', 'role_permissions', 'roles', 'audit_logs', 'master_trades'];
     $missingTables = [];
     foreach($requiredTables as $tbl) {
-        $check = mysqli_query($conn, "SHOW TABLES LIKE '$tbl'");
-        if(!$check || mysqli_num_rows($check) == 0) $missingTables[] = $tbl;
+        $check = clms_db_query($conn, "SHOW TABLES LIKE '$tbl'");
+        if(!$check || clms_db_num_rows($check) == 0) $missingTables[] = $tbl;
     }
     ?>
 
