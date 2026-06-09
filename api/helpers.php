@@ -7,15 +7,12 @@
 if (defined('HELPERS_LOADED')) return;
 define('HELPERS_LOADED', true);
 
-<<<<<<< HEAD
 // Clean any previous output to ensure JSON only
 if (php_sapi_name() !== 'cli' && ob_get_length() > 0) {
     ob_end_clean();
 }
 ob_start();
 
-=======
->>>>>>> 9536fd6d80e41839e2c8e1bed4bc29bde87a10be
 // Capture all error output
 $jsonErrorBuffer = '';
 
@@ -23,16 +20,10 @@ $jsonErrorBuffer = '';
 if (php_sapi_name() !== 'cli') {
     ini_set('display_errors', 0); // Disable HTML error output
     error_reporting(E_ALL);
-<<<<<<< HEAD
     // DEFER header sending until sendResponse() to allow session.php to configure headers first
     // if (!headers_sent()) {
     //     header('Content-Type: application/json; charset=utf-8');
     // }
-=======
-    if (!headers_sent()) {
-        header('Content-Type: application/json; charset=utf-8');
-    }
->>>>>>> 9536fd6d80e41839e2c8e1bed4bc29bde87a10be
 }
 
 /**
@@ -80,7 +71,6 @@ register_shutdown_function(function () {
 function sendResponse($success, $data = [], $message = "Success", $debug = null, $redirect = "") {
     global $jsonErrorBuffer;
     
-<<<<<<< HEAD
     // Clear any buffered output to ensure pure JSON
     if (php_sapi_name() !== 'cli') {
         while (ob_get_level() > 0) {
@@ -88,8 +78,6 @@ function sendResponse($success, $data = [], $message = "Success", $debug = null,
         }
     }
     
-=======
->>>>>>> 9536fd6d80e41839e2c8e1bed4bc29bde87a10be
     // Standard structure
     $response = [
         "success" => (bool)$success,
@@ -108,10 +96,7 @@ function sendResponse($success, $data = [], $message = "Success", $debug = null,
 
     if (!headers_sent()) {
         header('Content-Type: application/json; charset=utf-8');
-<<<<<<< HEAD
         http_response_code($success ? 200 : 400);
-=======
->>>>>>> 9536fd6d80e41839e2c8e1bed4bc29bde87a10be
     }
     
     echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);

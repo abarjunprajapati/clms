@@ -1,11 +1,8 @@
 <?php
-<<<<<<< HEAD
 // Prevent multiple includes
 if (defined('SESSION_MANAGER_LOADED')) return;
 define('SESSION_MANAGER_LOADED', true);
 
-=======
->>>>>>> 9536fd6d80e41839e2c8e1bed4bc29bde87a10be
 // Prevent client and proxy caching completely
 if (php_sapi_name() !== 'cli' && !headers_sent()) {
     header("Expires: Tue, 01 Jan 2000 00:00:00 GMT");

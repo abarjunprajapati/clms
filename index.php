@@ -33,11 +33,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
   <title>CLMS Web Login - CLMS</title>
   
   <!-- CSS Stylesheets -->
-<<<<<<< HEAD
   <link rel="stylesheet" href="css/fontawesome-fallback.css" />
-=======
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
->>>>>>> 9536fd6d80e41839e2c8e1bed4bc29bde87a10be
   <link rel="stylesheet" href="css/auth_redesign.css" />
   <link rel="stylesheet" href="css/auth_components.css" />
   <link rel="stylesheet" href="css/auth_responsive.css" />
