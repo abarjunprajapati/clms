@@ -3,6 +3,7 @@
 // For Gmail, use an App Password, not your normal Gmail password.
 
 // Database overrides, if needed:
+// $DbDriver = 'mysql';
 // $Servername = '127.0.0.1';
 // $Username = 'root';
 // $Password = '';

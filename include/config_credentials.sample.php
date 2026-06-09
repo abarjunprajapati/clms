@@ -7,3 +7,4 @@ $Servername  = "localhost";           // Your production database server (usuall
 $Username    = "sachin";           // Your production database username
 $Password    = "a"; // Your production database password
 $Dbname      = "new_clms";     // Your production database name
+$DbDriver    = "mysql";        // mysql or sqlsrv

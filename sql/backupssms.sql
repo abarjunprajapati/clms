@@ -1,6 +1,5 @@
-﻿-- Converted from MySQL dump for Microsoft SQL Server / SSMS.
--- Review skipped foreign keys near CREATE TABLE blocks before using in production.
-IF DB_ID(N'new_clms') IS NULL CREATE DATABASE [new_clms];
+﻿
+IF DB_ID(N'new_cls') IS NULL CREATE DATABASE [new_clms];
 GO
 USE [new_clms];
 GO

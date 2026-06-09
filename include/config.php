@@ -27,9 +27,14 @@ $credentials_file = __DIR__ . '/config_credentials.php';
 if (file_exists($credentials_file)) {
     include $credentials_file;
 } else {
-    // Dynamic domain check fallback (using config.live.php in root if present)
+    // Fallback to root config.live.php on non-local servers.
     $live_template = dirname(__DIR__) . '/config.live.php';
-    if (file_exists($live_template) && isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'teleconsystems.com') !== false && stripos(__DIR__, 'xampp') === false) {
+    $host = strtolower($_SERVER['HTTP_HOST'] ?? '');
+    $is_local_host = in_array($host, ['localhost', '127.0.0.1', '::1'], true)
+        || strpos($host, 'localhost:') === 0
+        || strpos($host, '127.0.0.1:') === 0
+        || stripos(__DIR__, 'xampp') !== false;
+    if (file_exists($live_template) && !$is_local_host) {
         include $live_template;
     }
 }
