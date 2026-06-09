@@ -1,4 +1,5 @@
 <?php
+<<<<<<< HEAD
 // Clean output buffer first
 if (ob_get_level() > 0) ob_end_clean();
 ob_start();
@@ -21,6 +22,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         apiError('Invalid security token. Please refresh and try again.', 403);
     }
     // Allow if no session token set yet (first request) or tokens match
+=======
+require_once __DIR__ . '/../include/config.php';
+require_once 'api_helper.php';
+require_once __DIR__ . '/../include/session.php';
+
+header('Content-Type: application/json; charset=utf-8');
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !validate_csrf()) {
+    apiError('Security check failed (CSRF). Please refresh the page.', 403);
+>>>>>>> 9536fd6d80e41839e2c8e1bed4bc29bde87a10be
 }
 
 try {

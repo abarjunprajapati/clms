@@ -1,0 +1,189 @@
+[2026-05-03 23:58:12] [OK] app=TEST-20260503235811-2506 from=submitted to=under_review action=review role=welfare | Test: review
+[2026-05-03 23:58:12] [FAIL] app=TEST-20260503235811-2506 from=under_review to=N/A action=request_training role=contractor | Invalid action 'request_training' for status 'under_review'. Valid actions: [approve, reject]
+[2026-05-03 23:58:12] [OK] app=TEST-20260503235811-2506 from=under_review to=approved action=approve role=welfare | Test: approve
+[2026-05-03 23:58:12] [OK] app=TEST-20260503235811-2506 from=approved to=training_pending action=request_training role=contractor | Test: request_training
+[2026-05-03 23:58:12] [OK] app=TEST-20260503235811-2506 from=training_pending to=training_completed action=complete_training role=safety_officer | Test: complete_training
+[2026-05-03 23:58:12] [OK] app=TEST-20260503235811-2506 from=training_completed to=gatepass_pending action=request_gatepass role=contractor | Test: request_gatepass
+[2026-05-03 23:58:12] [OK] app=TEST-20260503235811-2506 from=gatepass_pending to=gatepass_approved action=approve_gatepass role=pio | Test: approve_gatepass
+[2026-05-03 23:58:12] [OK] app=TEST-20260503235811-2506 from=gatepass_approved to=final_approval_pending action=request_final_approval role=welfare | Test: request_final_approval
+[2026-05-03 23:58:12] [OK] app=TEST-20260503235811-2506 from=final_approval_pending to=completed action=final_approve role=authority | Test: final_approve
+[2026-05-04 01:06:14] [OK] app=1 from=submitted to=rejected action=reject role=welfare | Status changed: submitted → rejected
+[2026-05-04 01:07:13] [FAIL] app=1 from=rejected to=N/A action=approve role=welfare | Invalid action 'approve' for status 'rejected'. Valid actions: [resubmit]
+[2026-05-04 01:32:46] [FAIL] app=1 from=rejected to=N/A action=approve role=welfare | Invalid action 'approve' for status 'rejected'. Valid actions: [resubmit]
+[2026-05-04 01:32:48] [FAIL] app=1 from=rejected to=N/A action=reject role=welfare | Invalid action 'reject' for status 'rejected'. Valid actions: [resubmit]
+[2026-05-05 02:34:20] [FAIL] app=CMS-2026-0157 from=submitted to=N/A action=submit role=contractor | Invalid action 'submit' for status 'submitted'. Valid actions: [verify, reject]
+[2026-05-05 03:00:17] [FAIL] app=CMS-2026-4256 from=submitted to=N/A action=submit role=contractor | Invalid action 'submit' for status 'submitted'. Valid actions: [verify, reject]
+[2026-05-06 00:06:19] [FAIL] app=CMS-2026-0157 from=enrolment_done to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'enrolment_done'. Valid actions: [complete_training, request_gatepass]
+[2026-05-06 00:08:33] [OK] app=CMS-2026-0157 from=enrolment_done to=training_done action=complete_training role=welfare_admin | Safety Training Completed
+[2026-05-06 00:23:43] [OK] app=CMS-2026-0157 from=training_done to=gatepass_requested action=request_gatepass role=contractor | Annexure 5A gate pass request GPR-20260506-3288 submitted
+[2026-05-06 23:53:52] [FAIL] app=CMS-2026-0157 from=gatepass_requested to=N/A action=verify role=welfare_user | Invalid action 'verify' for status 'gatepass_requested'. Valid actions: [verify_gatepass, reject_gatepass]
+[2026-05-06 23:53:58] [FAIL] app=CMS-2026-0157 from=gatepass_requested to=N/A action=verify role=welfare_user | Invalid action 'verify' for status 'gatepass_requested'. Valid actions: [verify_gatepass, reject_gatepass]
+[2026-05-06 23:54:11] [FAIL] app=CMS-2026-0157 from=gatepass_requested to=N/A action=complete_training role=welfare_user | Invalid action 'complete_training' for status 'gatepass_requested'. Valid actions: [verify_gatepass, reject_gatepass]
+[2026-05-07 00:31:22] [FAIL] app=CMS-2026-0157 from=gatepass_requested to=N/A action=verify role=welfare_user | Invalid action 'verify' for status 'gatepass_requested'. Valid actions: [verify_gatepass, reject_gatepass]
+[2026-05-08 14:43:23] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=request_gatepass role=contractor | Application 'APP-3' not found
+[2026-05-08 15:05:13] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:05:20] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:05:24] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:05:27] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:05:31] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:05:34] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:05:39] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:05:45] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:05:47] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:06:01] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:06:02] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:06:04] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 15:26:09] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 16:49:13] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=request_gatepass role=contractor | Application 'APP-3' not found
+[2026-05-08 17:08:26] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:16:20] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:16:32] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:16:55] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:16:55] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:16:56] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:16:57] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:33:38] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:33:43] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=complete_training role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:18] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:24] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:27] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:29] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:30] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:31] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:39] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:41] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:42] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:44] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:45] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:36:50] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:38:27] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:38:30] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:38:31] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:38:33] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-3' not found
+[2026-05-08 17:39:55] [FAIL] app=APP-3 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-3' not found
+[2026-05-09 03:18:15] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=complete_training role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:18:23] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:19:51] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=request_gatepass role=contractor | Application 'APP-2' not found
+[2026-05-09 03:21:51] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:23:25] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify role=welfare_user | Application 'APP-2' not found
+[2026-05-09 03:23:31] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=complete_training role=welfare_user | Application 'APP-2' not found
+[2026-05-09 03:24:31] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:24:34] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:24:36] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:24:37] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:24:38] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:24:47] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:24:51] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:35:12] [FAIL] app=APP-2 from=UNKNOWN to=acc_generated action=set_status role=pass_user | Application 'APP-2' not found
+[2026-05-09 03:48:41] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:48:46] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=complete_training role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:51:07] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=request_gatepass role=contractor | Application 'APP-2' not found
+[2026-05-09 03:53:25] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:53:30] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:53:34] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:53:42] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:53:43] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:53:45] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 03:53:46] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-09 11:56:15] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify role=welfare_user | Application 'APP-2' not found
+[2026-05-09 11:56:31] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=complete_training role=welfare_user | Application 'APP-2' not found
+[2026-05-09 12:00:31] [FAIL] app=APP-2 from=UNKNOWN to=acc_generated action=set_status role=welfare_user | Application 'APP-2' not found
+[2026-05-10 16:42:20] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-1' not found
+[2026-05-10 16:42:26] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=complete_training role=welfare_admin | Application 'APP-1' not found
+[2026-05-10 16:44:03] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=request_gatepass role=contractor | Application 'APP-1' not found
+[2026-05-10 16:45:35] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-1' not found
+[2026-05-10 16:48:45] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-1' not found
+[2026-05-10 16:49:06] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=complete_training role=welfare_admin | Application 'APP-1' not found
+[2026-05-10 16:57:38] [FAIL] app=APP-1 from=UNKNOWN to=acc_generated action=set_status role=pass_user | Application 'APP-1' not found
+[2026-05-10 16:59:59] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-1' not found
+[2026-05-10 17:00:03] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=complete_training role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:28:31] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:28:36] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=complete_training role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:31:58] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=request_gatepass role=contractor | Application 'APP-1' not found
+[2026-05-11 10:33:22] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:33:26] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:33:30] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:33:32] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:33:35] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:33:37] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:33:40] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:33:42] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:35:19] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 10:37:46] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=complete_training role=welfare_user | Application 'APP-1' not found
+[2026-05-11 10:37:50] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify role=welfare_user | Application 'APP-1' not found
+[2026-05-11 11:06:30] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=generate_acc role=admin | Application 'APP-1' not found
+[2026-05-11 11:06:57] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=generate_acc role=admin | Application 'APP-1' not found
+[2026-05-11 11:08:48] [FAIL] app=APP-1 from=UNKNOWN to=temporary_pass_issued action=set_status role=admin | Application 'APP-1' not found
+[2026-05-11 11:10:18] [FAIL] app=APP-1 from=UNKNOWN to=temporary_pass_issued action=set_status role=admin | Application 'APP-1' not found
+[2026-05-11 11:15:59] [OK] app=APP-1 from=enrolment_done to=temporary_pass_issued action=set_status role=admin | Manually unblocking ACC generation for APP-1
+[2026-05-11 11:27:50] [FAIL] app=APP-1 from=UNKNOWN to=acc_generated action=set_status role=pass_user | Application 'APP-1' not found
+[2026-05-11 11:29:52] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 11:29:57] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=complete_training role=welfare_admin | Application 'APP-1' not found
+[2026-05-11 11:31:34] [FAIL] app=APP-1 from=UNKNOWN to=N/A action=generate_acc role=admin | Application 'APP-1' not found
+[2026-05-11 11:32:44] [FAIL] app=APP-1 from=temporary_pass_issued to=N/A action=complete_training role=welfare_admin | Invalid action 'complete_training' for status 'temporary_pass_issued'. Valid actions: [request_extension, generate_acc, relieve_worker, block_worker]
+[2026-05-11 11:33:12] [OK] app=APP-1 from=temporary_pass_issued to=acc_generated action=generate_acc role=admin | Generating ACC via scratch script
+[2026-05-11 11:36:04] [FAIL] app=APP-1 from=acc_generated to=N/A action=generate_acc role=admin | Invalid action 'generate_acc' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:36:31] [FAIL] app=APP-1 from=acc_generated to=N/A action=generate_acc role=admin | Invalid action 'generate_acc' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:47:16] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:47:21] [FAIL] app=APP-1 from=acc_generated to=N/A action=complete_training role=welfare_admin | Invalid action 'complete_training' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:48:29] [FAIL] app=APP-1 from=acc_generated to=N/A action=request_gatepass role=contractor | Invalid action 'request_gatepass' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:49:21] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:50:00] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:50:02] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:50:06] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:50:07] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:50:09] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:50:10] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:50:11] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-11 11:53:01] [OK] app=APP-1 from=acc_generated to=acc_generated action=set_status role=pass_user | ACC Generated for worker: telecon
+[2026-05-11 11:54:10] [FAIL] app=APP-1 from=acc_generated to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-12 12:55:11] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify role=welfare_admin | Application 'APP-2' not found
+[2026-05-12 12:55:16] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=complete_training role=welfare_admin | Application 'APP-2' not found
+[2026-05-12 12:57:07] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=request_gatepass role=contractor | Application 'APP-2' not found
+[2026-05-12 12:58:09] [FAIL] app=APP-2 from=UNKNOWN to=N/A action=verify_documents role=welfare_admin | Application 'APP-2' not found
+[2026-05-12 12:58:57] [FAIL] app=APP-2 from=UNKNOWN to=acc_generated action=set_status role=pass_user | Application 'APP-2' not found
+[2026-05-21 17:57:24] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=complete_training role=safety_user | Invalid action 'complete_training' for status 'enrolment_done'. Valid actions: []
+[2026-05-21 17:58:56] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'enrolment_done'. Valid actions: []
+[2026-05-21 17:59:02] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=complete_training role=welfare_admin | Invalid action 'complete_training' for status 'enrolment_done'. Valid actions: []
+[2026-05-21 18:02:11] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=request_gatepass role=contractor | Invalid action 'request_gatepass' for status 'enrolment_done'. Valid actions: []
+[2026-05-21 18:05:46] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'enrolment_done'. Valid actions: []
+[2026-05-22 10:54:39] [OK] app=APP-00045 from=approved to=acc_generated action=set_status role=pass_user | ACC Generated for worker: test
+[2026-05-23 14:20:56] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=complete_training role=safety_user | Invalid action 'complete_training' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 14:21:02] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=complete_training role=safety_user | Invalid action 'complete_training' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 14:21:16] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=complete_training role=safety_user | Invalid action 'complete_training' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 14:22:39] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 14:22:41] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=complete_training role=welfare_admin | Invalid action 'complete_training' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 14:24:27] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=request_gatepass role=contractor | Invalid action 'request_gatepass' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 14:26:36] [FAIL] app=APP-00045 from=enrolment_done to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 14:28:56] [OK] app=APP-00045 from=enrolment_done to=acc_generated action=set_status role=pass_user | ACC Generated for worker: telecon
+[2026-05-23 15:52:09] [FAIL] app=APP-00055 from=enrolment_done to=N/A action=complete_training role=safety_user | Invalid action 'complete_training' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 15:52:58] [FAIL] app=APP-00055 from=enrolment_done to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 15:53:01] [FAIL] app=APP-00055 from=enrolment_done to=N/A action=complete_training role=welfare_admin | Invalid action 'complete_training' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 15:54:40] [FAIL] app=APP-00055 from=enrolment_done to=N/A action=request_gatepass role=contractor | Invalid action 'request_gatepass' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 16:04:54] [FAIL] app=APP-00055 from=enrolment_done to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'enrolment_done'. Valid actions: []
+[2026-05-23 16:06:06] [OK] app=APP-00055 from=enrolment_done to=acc_generated action=set_status role=pass_user | ACC Generated for worker: telecon
+[2026-05-23 16:22:21] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:22:23] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:22:28] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:22:30] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:42:55] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:42:55] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:42:55] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:42:55] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:42:55] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:43:05] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:46:49] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-23 16:49:33] [FAIL] app=APP-00055 from=acc_generated to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'acc_generated'. Valid actions: [enroll_biometric, issue_permanent_pass]
+[2026-05-25 10:07:48] [FAIL] app=APP-00055 from=approved to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'approved'. Valid actions: [enrol_workmen, complete_training, fail_training]
+[2026-05-27 11:40:11] [FAIL] app=APP-00063 from=submitted to=N/A action=request_gatepass role=contractor | Invalid action 'request_gatepass' for status 'submitted'. Valid actions: [verify, reject]
+[2026-05-27 11:43:47] [FAIL] app=APP-00063 from=verified to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'verified'. Valid actions: [approve, reject]
+[2026-05-27 11:43:52] [FAIL] app=APP-00063 from=verified to=N/A action=complete_training role=welfare_admin | Invalid action 'complete_training' for status 'verified'. Valid actions: [approve, reject]
+[2026-05-27 14:55:38] [FAIL] app=APP-00063 from=verified to=N/A action=request_gatepass role=contractor | Invalid action 'request_gatepass' for status 'verified'. Valid actions: [approve, reject]
+[2026-05-27 15:19:18] [FAIL] app=APP-00063 from=verified to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'verified'. Valid actions: [approve, reject]
+[2026-05-27 15:27:35] [FAIL] app=APP-00063 from=verified to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'verified'. Valid actions: [approve, reject]
+[2026-05-27 15:36:40] [FAIL] app=APP-00063 from=verified to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'verified'. Valid actions: [approve, reject]
+[2026-05-27 15:36:45] [FAIL] app=APP-00063 from=verified to=N/A action=complete_training role=welfare_admin | Invalid action 'complete_training' for status 'verified'. Valid actions: [approve, reject]
+[2026-05-27 15:38:18] [FAIL] app=APP-00063 from=verified to=N/A action=request_gatepass role=contractor | Invalid action 'request_gatepass' for status 'verified'. Valid actions: [approve, reject]
+[2026-05-27 15:39:30] [FAIL] app=APP-00063 from=verified to=N/A action=verify_documents role=welfare_admin | Invalid action 'verify_documents' for status 'verified'. Valid actions: [approve, reject]
+[2026-05-27 15:40:03] [OK] app=APP-00063 from=verified to=acc_generated action=set_status role=pass_user | ACC Generated for worker: Kuldeep Gupta
+[2026-05-27 15:42:10] [FAIL] app=APP-00063 from=verified to=N/A action=verify role=welfare_admin | Invalid action 'verify' for status 'verified'. Valid actions: [approve, reject]
