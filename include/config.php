@@ -15,9 +15,9 @@ if (!function_exists('array_key_first')) {
 
 // --- DATABASE CREDENTIALS ---
 $Servername  = "127.0.0.1";
-$Username  = "root";
-$Password  = "";
-$Dbname = "new_clms";
+$Username  = "CLMSUSER";
+$Password  = "COtra@C#2627";
+$Dbname = "csl_clms";
 $DbDriver = $DbDriver ?? 'mysql'; // mysql or sqlsrv
 
 // Dynamic Live Server Override
