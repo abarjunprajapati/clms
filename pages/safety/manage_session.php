@@ -18,6 +18,29 @@ if (!$session) {
     die("Session not found.");
 }
 
+if (!empty($session['batch_number'])) {
+    $batch = db_single($conn, "SELECT id FROM training_class_batches WHERE batch_number = ? LIMIT 1", 's', [$session['batch_number']]);
+    if ($batch) {
+        db_execute(
+            $conn,
+            "INSERT INTO training_session_workers (session_id, workman_id, training_request_id, attendance_status, result, created_at)
+             SELECT ?, tbw.workman_id, tbw.training_request_id, 'pending', 'pending', NOW()
+             FROM training_batch_workers tbw
+             JOIN training_requests tr ON tr.id = tbw.training_request_id
+             WHERE tbw.batch_id = ?
+               AND tbw.ticked = 1
+               AND tr.status IN ('scheduled', 'contractor_confirmed')
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM training_session_workers tsw
+                   WHERE tsw.training_request_id = tbw.training_request_id
+               )",
+            'ii',
+            [(int)$session_id, (int)$batch['id']]
+        );
+    }
+}
+
 function safetySessionSetting($conn, $key, $default) {
     $table = mysqli_query($conn, "SHOW TABLES LIKE 'system_settings'");
     if (!$table || mysqli_num_rows($table) === 0) {
@@ -35,14 +58,17 @@ function renderContent() {
     
     // Fetch assigned workers
     $workers = db_fetch_all($conn, "
-        SELECT sw.*, w.name, w.temp_id as worker_code, c.contractor_name, w.trade
+        SELECT sw.*, tr.status AS request_status, COALESCE(tr.contractor_confirmed, 0) AS contractor_confirmed,
+               w.name, w.temp_id as worker_code, c.contractor_name, w.trade
         FROM training_session_workers sw
+        JOIN training_requests tr ON tr.id = sw.training_request_id
         JOIN workmen w ON sw.workman_id = w.id
         JOIN contractors c ON w.contractor_id = c.id
         WHERE sw.session_id = ?
+          AND tr.status IN ('scheduled', 'contractor_confirmed')
     ", 'i', [$session_id]);
 
-    $is_locked = ($session['session_status'] == 'completed');
+$is_locked = in_array(strtolower((string)($session['session_status'] ?? 'open')), ['completed', 'cancelled'], true);
     ?>
     <div class="content-header">
       <div style="display:flex; justify-content:space-between; align-items:flex-start">
@@ -68,16 +94,80 @@ function renderContent() {
       </div>
     </div>
 
+    <?php if (!empty($_GET['success'])): ?>
+        <div class="alert alert-info"><?= htmlspecialchars($_GET['success']) ?></div>
+    <?php elseif (!empty($_GET['error'])): ?>
+        <div class="alert" style="background:rgba(239,68,68,0.1);color:#b91c1c;border-color:rgba(239,68,68,0.2)"><?= htmlspecialchars($_GET['error']) ?></div>
+    <?php endif; ?>
+
     <!-- TABS NAVIGATION -->
     <div class="tabs-container">
       <div class="tabs-header">
-        <div class="tab-item active" onclick="showTab('workers')"><i class="fas fa-users"></i> Assigned Workers</div>
-        <div class="tab-item" onclick="showTab('attendance')"><i class="fas fa-clipboard-user"></i> Attendance</div>
-        <div class="tab-item" onclick="showTab('results')"><i class="fas fa-poll-h"></i> Upload Results</div>
-        <div class="tab-item" onclick="showTab('summary')"><i class="fas fa-info-circle"></i> Summary</div>
+        <div class="tab-item active" onclick="showTab(event, 'control')"><i class="fas fa-calendar-alt"></i> Schedule Control</div>
+        <div class="tab-item" onclick="showTab(event, 'workers')"><i class="fas fa-users"></i> Assigned Workers</div>
+        <div class="tab-item" onclick="showTab(event, 'attendance')"><i class="fas fa-clipboard-user"></i> Attendance</div>
+        <div class="tab-item" onclick="showTab(event, 'results')"><i class="fas fa-poll-h"></i> Upload Results</div>
+        <div class="tab-item" onclick="showTab(event, 'summary')"><i class="fas fa-info-circle"></i> Summary</div>
       </div>
 
-      <div class="tab-content active" id="tab-workers">
+      <div class="tab-content active" id="tab-control">
+        <div class="card-body">
+            <div class="alert alert-info">
+                Use this control desk to postpone, advance, cancel or update this training session. Contractors will receive schedule update notifications where notification support is available.
+            </div>
+            <form action="../../api/safety/update_session.php" method="POST" class="schedule-control-form">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="session_id" value="<?= (int)$session_id ?>">
+                <input type="hidden" name="schedule_action" value="update">
+                <div class="control-grid">
+                    <div class="form-group">
+                        <label class="form-label">Training Date</label>
+                        <input type="date" name="session_date" class="form-control" value="<?= htmlspecialchars($session['session_date'] ?? '') ?>" <?= $is_locked ? 'disabled' : '' ?> required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Training Time</label>
+                        <input type="time" name="session_time" class="form-control" value="<?= !empty($session['session_time']) ? htmlspecialchars(substr($session['session_time'], 0, 5)) : '' ?>" <?= $is_locked ? 'disabled' : '' ?> required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Venue</label>
+                        <input type="text" name="location" class="form-control" value="<?= htmlspecialchars($session['location'] ?? '') ?>" <?= $is_locked ? 'disabled' : '' ?> required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Capacity</label>
+                        <input type="number" min="1" name="capacity" class="form-control" value="<?= (int)($session['capacity'] ?? 30) ?>" <?= $is_locked ? 'disabled' : '' ?>>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Batch Number</label>
+                        <input type="text" name="batch_number" class="form-control" value="<?= htmlspecialchars($session['batch_number'] ?? '') ?>" <?= $is_locked ? 'disabled' : '' ?>>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Instructor</label>
+                        <input type="text" name="trainer_name" class="form-control" value="<?= htmlspecialchars($session['trainer_name'] ?? '') ?>" <?= $is_locked ? 'disabled' : '' ?>>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Training Type</label>
+                        <select name="training_type" class="form-control" <?= $is_locked ? 'disabled' : '' ?>>
+                            <?php foreach (['induction' => 'Safety Induction', 'refresher' => 'Refresher Training', 'special' => 'Specialized Safety Training'] as $value => $label): ?>
+                                <option value="<?= $value ?>" <?= strtolower((string)($session['training_type'] ?? 'induction')) === $value ? 'selected' : '' ?>><?= $label ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Reason / Intimation Text</label>
+                        <input type="text" name="change_reason" class="form-control" value="Training schedule updated by Safety." <?= $is_locked ? 'disabled' : '' ?>>
+                    </div>
+                </div>
+                <?php if (!$is_locked): ?>
+                <div class="control-actions">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Schedule Update</button>
+                    <button type="button" class="btn btn-outline btn-cancel-session"><i class="fas fa-ban"></i> Cancel Session</button>
+                </div>
+                <?php endif; ?>
+            </form>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-workers">
         <div class="card-body">
             <table class="data-table">
                 <thead>
@@ -86,6 +176,7 @@ function renderContent() {
                         <th>Contractor</th>
                         <th>Trade</th>
                         <th>Status</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -98,7 +189,9 @@ function renderContent() {
                         <td><?= htmlspecialchars($w['contractor_name']) ?></td>
                         <td><?= htmlspecialchars($w['trade']) ?></td>
                         <td>
-                            <?php if($w['attendance_status'] == 'present'): ?>
+                            <?php if(($w['request_status'] ?? '') === 'scheduled' && (int)($w['contractor_confirmed'] ?? 0) === 0): ?>
+                                <span class="badge badge-info">Awaiting Contractor</span>
+                            <?php elseif($w['attendance_status'] == 'present'): ?>
                                 <span class="badge badge-success">Present</span>
                             <?php elseif($w['attendance_status'] == 'absent'): ?>
                                 <span class="badge badge-danger">Absent</span>
@@ -106,9 +199,22 @@ function renderContent() {
                                 <span class="badge badge-warning">Pending</span>
                             <?php endif; ?>
                         </td>
+                        <td>
+                            <?php if(!$is_locked): ?>
+                                <form action="../../api/safety/remove_session_worker.php" method="POST" class="remove-attendee-form" style="display:inline">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
+                                    <input type="hidden" name="session_id" value="<?= (int)$session_id ?>">
+                                    <input type="hidden" name="workman_id" value="<?= (int)$w['workman_id'] ?>">
+                                    <input type="hidden" name="reason" value="Removed from this training session by Safety.">
+                                    <button type="submit" class="btn btn-sm btn-outline"><i class="fas fa-user-minus"></i> Remove</button>
+                                </form>
+                            <?php else: ?>
+                                <span style="font-size:12px;color:#64748b">Locked</span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                     <?php endforeach; if(empty($workers)): ?>
-                    <tr><td colspan="4" style="text-align:center;padding:40px;opacity:0.5">No workers assigned to this session.</td></tr>
+                    <tr><td colspan="5" style="text-align:center;padding:40px;opacity:0.5">No workers assigned to this session.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
@@ -286,15 +392,19 @@ function renderContent() {
     .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
     .info-row span { opacity: 0.6; }
     .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; background: rgba(59,130,246,0.1); color: #93c5fd; border: 1px solid rgba(59,130,246,0.2); }
+    .control-grid { display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:14px; }
+    .control-actions { display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; margin-top:18px; }
+    @media(max-width:1100px){ .control-grid { grid-template-columns:repeat(2,minmax(150px,1fr)); } }
+    @media(max-width:640px){ .tabs-header { overflow-x:auto; } .tab-item { white-space:nowrap; } .control-grid { grid-template-columns:1fr; } }
     </style>
 
     <script src="../../js/utils.js"></script>
     <script>
-    function showTab(tabId) {
+    function showTab(evt, tabId) {
         document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
         
-        event.currentTarget.classList.add('active');
+        evt.currentTarget.classList.add('active');
         document.getElementById('tab-' + tabId).classList.add('active');
     }
 
@@ -323,11 +433,75 @@ function renderContent() {
         input.addEventListener('input', () => updateMarksResult(input.dataset.worker));
     });
 
+    document.querySelector('.btn-cancel-session')?.addEventListener('click', async () => {
+        const form = document.querySelector('.schedule-control-form');
+        if (!form) return;
+        const confirmed = window.Swal
+            ? await Swal.fire({
+                title: 'Cancel training session?',
+                text: 'Assigned workers will be returned to the scheduling queue.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, cancel session'
+              })
+            : { isConfirmed: confirm('Cancel this training session and return workers to scheduling queue?') };
+        if (!confirmed.isConfirmed) return;
+
+        const cancelBtn = document.querySelector('.btn-cancel-session');
+        const originalText = cancelBtn?.innerHTML || '';
+        try {
+            if (cancelBtn) {
+                cancelBtn.disabled = true;
+                cancelBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cancelling...';
+            }
+            const formData = new FormData(form);
+            formData.set('schedule_action', 'cancel');
+            const response = await fetch(form.action, { method: 'POST', body: formData });
+            const raw = await response.text();
+            let result = {};
+            try {
+                result = raw ? JSON.parse(raw) : {};
+            } catch (parseError) {
+                result = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : `Server returned HTTP ${response.status}` };
+            }
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || result.error || `Server returned HTTP ${response.status}`);
+            }
+            if (window.Swal) {
+                await Swal.fire('Session Cancelled', result.message || 'Session cancelled successfully.', 'success');
+            }
+            window.location.href = 'training_schedule.php?success=' + encodeURIComponent(result.message || 'Session cancelled successfully.');
+        } catch (err) {
+            if (window.Swal) {
+                Swal.fire('Cancellation Failed', err.message || 'Unable to cancel session.', 'error');
+            } else {
+                alert('Cancellation Failed: ' + (err.message || 'Unable to cancel session.'));
+            }
+        } finally {
+            if (cancelBtn) {
+                cancelBtn.disabled = false;
+                cancelBtn.innerHTML = originalText;
+            }
+        }
+    });
+
     document.querySelectorAll('form').forEach(form => {
         if (form.action.includes('complete_session.php')) return; // Keep standard POST for finalize for now or convert too
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (form.classList.contains('remove-attendee-form')) {
+                const confirmed = window.Swal
+                    ? await Swal.fire({
+                        title: 'Remove attendee?',
+                        text: 'This worker will be sent back to the scheduling queue.',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Remove'
+                      })
+                    : { isConfirmed: confirm('Remove this worker from the session?') };
+                if (!confirmed.isConfirmed) return;
+            }
             const submitBtn = form.querySelector('button[type="submit"]');
             const originalText = submitBtn.innerHTML;
             
@@ -378,6 +552,9 @@ function renderContent() {
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = originalText;
+                if (form.classList.contains('schedule-control-form')) {
+                    form.querySelector('[name="schedule_action"]').value = 'update';
+                }
             }
         });
     });

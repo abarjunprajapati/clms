@@ -11,7 +11,7 @@ function renderContent() {
     global $conn;
     
     $search = $_GET['search'] ?? '';
-    $status_filter = $_GET['status'] ?? '';
+    $status_filter = strtolower(trim((string)($_GET['status'] ?? '')));
 
     $where = "1=1";
     $params = [];
@@ -25,9 +25,25 @@ function renderContent() {
     }
 
     if ($status_filter) {
-        $where .= " AND w.training_status = ?";
-        $params[] = $status_filter;
-        $types .= "s";
+        $statusGroups = [
+            'pending' => ['pending', 'training_pending'],
+            'training_pending' => ['pending', 'training_pending'],
+            'scheduled' => ['scheduled', 'training_scheduled'],
+            'training_scheduled' => ['scheduled', 'training_scheduled'],
+            'pass' => ['pass', 'passed', 'qualified', 'completed', 'training_passed'],
+            'passed' => ['pass', 'passed', 'qualified', 'completed', 'training_passed'],
+            'fail' => ['fail', 'failed', 'training_failed'],
+            'failed' => ['fail', 'failed', 'training_failed'],
+            'expired' => ['expired', 'training_expired'],
+            'training_expired' => ['expired', 'training_expired'],
+        ];
+        $statuses = $statusGroups[$status_filter] ?? [$status_filter];
+        $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+        $where .= " AND LOWER(COALESCE(w.training_status, '')) IN ($placeholders)";
+        foreach ($statuses as $status) {
+            $params[] = $status;
+            $types .= "s";
+        }
     }
 
     $workers = db_fetch_all($conn, "
@@ -68,11 +84,11 @@ function renderContent() {
                     <label class="form-label">Filter Status</label>
                     <select name="status" class="form-control">
                         <option value="">-- All Statuses --</option>
-                        <option value="training_pending" <?= $status_filter == 'training_pending' ? 'selected' : '' ?>>Pending</option>
-                        <option value="training_scheduled" <?= $status_filter == 'training_scheduled' ? 'selected' : '' ?>>Scheduled</option>
-                        <option value="PASS" <?= $status_filter == 'PASS' ? 'selected' : '' ?>>Passed</option>
-                        <option value="FAIL" <?= $status_filter == 'FAIL' ? 'selected' : '' ?>>Failed</option>
-                        <option value="training_expired" <?= $status_filter == 'training_expired' ? 'selected' : '' ?>>Expired</option>
+                        <option value="training_pending" <?= in_array($status_filter, ['pending', 'training_pending'], true) ? 'selected' : '' ?>>Pending</option>
+                        <option value="training_scheduled" <?= in_array($status_filter, ['scheduled', 'training_scheduled'], true) ? 'selected' : '' ?>>Scheduled</option>
+                        <option value="pass" <?= in_array($status_filter, ['pass', 'passed'], true) ? 'selected' : '' ?>>Passed</option>
+                        <option value="fail" <?= in_array($status_filter, ['fail', 'failed'], true) ? 'selected' : '' ?>>Failed</option>
+                        <option value="training_expired" <?= in_array($status_filter, ['expired', 'training_expired'], true) ? 'selected' : '' ?>>Expired</option>
                     </select>
                 </div>
                 <div>
@@ -112,8 +128,12 @@ function renderContent() {
                     'TRAINING_SCHEDULED' => 'badge-info',
                     'PASS'               => 'badge-success',
                     'PASSED'             => 'badge-success',
+                    'TRAINING_PASSED'    => 'badge-success',
+                    'QUALIFIED'          => 'badge-success',
+                    'COMPLETED'          => 'badge-success',
                     'FAIL'               => 'badge-danger',
                     'FAILED'             => 'badge-danger',
+                    'TRAINING_FAILED'    => 'badge-danger',
                     'EXPIRED'            => 'badge-danger'
                 ];
                 $badge = $status_badges[$raw_status] ?? 'badge-outline';
@@ -160,4 +180,3 @@ function renderContent() {
 }
 
 renderLayout("Training Status", 'renderContent', $role, $name);
-

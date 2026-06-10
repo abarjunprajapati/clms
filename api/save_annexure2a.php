@@ -45,6 +45,7 @@ register_shutdown_function(function() {
 
 try {
 include '../include/config.php';
+require_once __DIR__ . '/../include/labour_license_threshold.php';
 
 // include/session.php installs diagnostic handlers; restore JSON handlers for this API.
 set_error_handler(function($severity, $message, $file, $line) {
@@ -235,7 +236,7 @@ function annexure2a_ensure_submit_schema($conn) {
     annexure2a_ensure_column($conn, 'contractor_pwo_selection', 'pwo_number', 'VARCHAR(100) NULL');
     annexure2a_ensure_column($conn, 'contractor_so_selection', 'contractor_id', 'INT NULL');
     annexure2a_ensure_column($conn, 'contractor_so_selection', 'sale_order_no', 'VARCHAR(100) NULL');
-    mysqli_query($conn, "INSERT IGNORE INTO system_settings (setting_key, setting_value, setting_group, description) VALUES ('labour_license_threshold', '20', 'welfare', 'Minimum worker count requiring labour licence')");
+    clms_ensure_labour_license_thresholds($conn);
 }
 
 function annexure2a_send_submission_email($vendorCode, $vendorName, $applicationNo, $status) {
@@ -300,6 +301,7 @@ if ($ecp_covered === 'NO' && $ecp_reason !== '') $reason_parts[] = 'EC Policy Re
 $epf_esi_exemption_reason = $reason_parts ? implode("\n", $reason_parts) : clean($_POST['epf_esi_exemption_reason'] ?? '');
 
 $workers_proposed_to_be_engaged = !empty($_POST['workers_proposed_to_be_engaged']) ? intval($_POST['workers_proposed_to_be_engaged']) : 0;
+$labour_license_threshold = clms_get_labour_license_threshold($conn);
 
 // Category of workmen proposed (checkbox group)
 $worker_categories = $_POST['worker_categories'] ?? [];
@@ -501,6 +503,9 @@ if ($is_final_submit) {
                 annexure2a_json_response(['success' => false, 'message' => 'Labour License Expiry Date must be later than Issue Date.'], 400);
             }
         }
+        if ($workers_proposed_to_be_engaged >= $labour_license_threshold && (empty($license_no) || empty($license_file_path))) {
+            annexure2a_json_response(['success' => false, 'message' => "Labour License is mandatory when proposed workmen are {$labour_license_threshold} or more."], 400);
+        }
         goto annexure2a_validation_complete;
     }
 
@@ -545,6 +550,9 @@ if ($is_final_submit) {
         if (!empty($lic['issued_date']) && !empty($lic['expiry_date']) && strtotime($lic['expiry_date']) <= strtotime($lic['issued_date'])) {
             annexure2a_json_response(['success' => false, 'message' => 'Labour License Expiry Date must be later than Issue Date.'], 400);
         }
+    }
+    if ($workers_proposed_to_be_engaged >= $labour_license_threshold && (empty($license_no) || empty($license_file_path))) {
+        annexure2a_json_response(['success' => false, 'message' => "Labour License is mandatory when proposed workmen are {$labour_license_threshold} or more."], 400);
     }
 
     if (empty($contact_person)) {

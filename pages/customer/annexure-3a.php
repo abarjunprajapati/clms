@@ -3,6 +3,7 @@ require_once '../../include/auth.php';
 checkAuth(['customer', 'super_admin']);
 include '../../include/config.php';
 include '../../include/layout.php';
+require_once '../../include/labour_license_threshold.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['customer_name'] ?? $_SESSION['name'] ?? 'Customer';
@@ -154,8 +155,7 @@ function renderContent() {
         ];
     }
 
-    $threshold_row = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key = 'labour_license_threshold'");
-    $licence_threshold = intval($threshold_row['setting_value'] ?? 20);
+    $licence_threshold = clms_get_labour_license_threshold($conn);
 ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -1237,15 +1237,16 @@ function renderContent() {
 
     function toggleLicenceMandatory() {
         const workers = updateWorkerTotal();
+        const mandatory = workers >= LICENCE_THRESHOLD;
         const badge = document.getElementById('licenceMandatoryBadge');
         const card = document.getElementById('section7Card');
         const licInputs = document.querySelectorAll('#licenseTableBody input[type="text"], #licenseTableBody input[type="date"]');
         const fileInputs = document.querySelectorAll('#licenseTableBody input[type="file"]');
 
-        if (badge) badge.style.display = 'none';
-        if (card) card.style.borderColor = '';
-        licInputs.forEach(input => input.required = false);
-        fileInputs.forEach(input => input.required = false);
+        if (badge) badge.style.display = mandatory ? 'inline-flex' : 'none';
+        if (card) card.style.borderColor = mandatory ? '#f59e0b' : '';
+        licInputs.forEach(input => input.required = mandatory);
+        fileInputs.forEach(input => input.required = mandatory && !input.closest('td')?.querySelector('input[name="existing_license_file[]"]')?.value);
     }
 
     async function viewSubmission(id) {

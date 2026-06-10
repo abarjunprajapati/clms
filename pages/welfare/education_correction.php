@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($flowId > 0) {
             clms_ensure_education_flow_table($conn);
             db_execute($conn, "UPDATE education_job_profiles SET is_active = 0, updated_at = NOW() WHERE id = ?", 'i', [$flowId]);
-            $_SESSION['success'] = 'Education flow option removed.';
+            $_SESSION['success'] = 'Education job profile set as inactive.';
         }
         header('Location: education_correction.php#flowMaster');
         exit;
@@ -161,7 +161,7 @@ function renderContent() {
 
     <div class="content-header">
       <div>
-        <h2 class="page-title"><i class="fas fa-graduation-cap" style="color:#6366f1;margin-right:10px;"></i> Education Correction</h2>
+        <h2 class="page-title">Education Job Profile</h2>
         <!-- <p class="page-subtitle">Update Annexure 4A education, skill category and job profile before welfare approval.</p> -->
       </div>
     </div>
@@ -169,7 +169,7 @@ function renderContent() {
     <div class="card glass" id="flowMaster">
       <div class="card-header">
         <div>
-          <div class="card-title"><i class="fas fa-sitemap"></i> Education to Job Profile Master</div>
+          <div class="card-title">Education Job Profile Master</div>
           <!-- <p class="correction-note" style="margin:6px 0 0;">Add options here to make them available in contractor Annexure 4A enrollment and welfare correction.</p> -->
         </div>
       </div>
@@ -200,7 +200,7 @@ function renderContent() {
               <input class="form-control" name="flow_job_profile" placeholder="e.g. Crane Operator" required>
             </div>
             <button class="btn btn-primary" type="submit">
-              <i class="fas fa-plus"></i> Add to Flow
+              Add Job Profile
             </button>
           </form>
 
@@ -211,11 +211,11 @@ function renderContent() {
                   <strong><?= htmlspecialchars($row['job_profile'] ?? '') ?></strong>
                   <span><?= htmlspecialchars($row['skill_category'] ?? '') ?> | <?= htmlspecialchars($row['qualification'] ?? '') ?></span>
                 </div>
-                <form method="POST" onsubmit="return confirm('Remove this education flow option?');">
+                <form method="POST" onsubmit="return confirm('Set this education job profile as inactive?');">
                   <input type="hidden" name="action" value="delete_flow">
                   <input type="hidden" name="flow_id" value="<?= (int)$row['id'] ?>">
                   <button class="btn btn-sm btn-outline" type="submit" title="Remove">
-                    <i class="fas fa-trash"></i>
+                    Inactive
                   </button>
                 </form>
               </div>
@@ -364,5 +364,5 @@ function renderContent() {
     <?php
 }
 
-renderLayout('Education Correction', 'renderContent', $role, $name);
+renderLayout('Education Job Profile', 'renderContent', $role, $name);
 ?>

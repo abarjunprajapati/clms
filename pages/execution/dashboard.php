@@ -3,6 +3,8 @@ require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['execution_officer', 'execution', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/execution_context.php';
+include __DIR__ . '/../../include/training_flow.php';
+include __DIR__ . '/../../include/payment_flow.php';
 include __DIR__ . '/../../include/layout.php';
 
 $role = $_SESSION['role'];
@@ -48,6 +50,10 @@ function renderContent() {
     $eoParamTypes = 'ii' . str_repeat('s', max(1, count($officerCodes))) . str_repeat('s', max(1, count($officerNames)));
     $eoParams = array_merge([(int)$officerId, (int)$userId], $officerCodes ?: [''], $officerNames ?: ['']);
 
+    clms_training_ensure_schema($conn);
+    clms_ensure_payment_flow($conn);
+    clms_training_seed_approved_queue($conn);
+
     // KPI Queries (PDF Correct)
     $totalContractors = db_count($conn, "SELECT COUNT(*) FROM execution_officer_contractors WHERE execution_officer_id = ?", 'i', [$officerId]);
     $totalWorkOrders = db_count($conn, "SELECT COUNT(DISTINCT work_order_id) FROM execution_officer_workorders WHERE execution_officer_id = ? AND COALESCE(status, 'active') = 'active'", 'i', [$officerId]);
@@ -68,8 +74,15 @@ function renderContent() {
     $attendanceExceptions = db_count($conn, "SELECT COUNT(*) FROM attendance_exceptions ae WHERE DATE(ae.created_at) = CURDATE() AND ae.contractor_id IN (SELECT contractor_id FROM execution_officer_contractors WHERE execution_officer_id = ?)", 'i', [$officerId]);
     $totalObservations = db_count($conn, "SELECT COUNT(*) FROM execution_observations WHERE execution_officer_id = ?", 'i', [$officerId]);
     $pendingEscalations = db_count($conn, "SELECT COUNT(*) FROM execution_escalations WHERE execution_officer_id = ? AND COALESCE(status, 'open') != 'closed'", 'i', [$officerId]);
-    $trainingPending = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE (COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending') OR (w.execution_training_status = 'approved' AND COALESCE(w.execution_training_reviewed_by, 0) = 0)) AND $eoWorkerWhere", $eoParamTypes, $eoParams);
-    $trainingApproved = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.execution_training_status, 'pending') = 'approved' AND COALESCE(w.execution_training_reviewed_by, 0) > 0 AND $eoWorkerWhere", $eoParamTypes, $eoParams);
+    $paidTrainingExists = "EXISTS (
+        SELECT 1
+        FROM training_payment_request_workers pw
+        JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+        WHERE pw.workman_id = w.id
+          AND pr.status = 'paid'
+    )";
+    $trainingPending = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.training_approval_doc, '') = '' AND COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending') AND $paidTrainingExists AND $eoWorkerWhere", $eoParamTypes, $eoParams);
+    $trainingApproved = db_count($conn, "SELECT COUNT(*) FROM workmen w WHERE COALESCE(w.execution_training_status, 'pending') = 'approved' AND COALESCE(w.execution_training_reviewed_by, 0) > 0 AND $paidTrainingExists AND $eoWorkerWhere", $eoParamTypes, $eoParams);
     $openActions = db_count($conn, "SELECT COUNT(*) FROM execution_actions WHERE execution_officer_id = ? AND COALESCE(status, 'open') != 'closed'", 'i', [$officerId]);
 
     // Recent Observations
@@ -96,7 +109,11 @@ function renderContent() {
                                                 c.contractor_name
                                          FROM workmen w
                                          LEFT JOIN contractors c ON c.id = w.contractor_id
-                                         WHERE (COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending') OR (w.execution_training_status = 'approved' AND COALESCE(w.execution_training_reviewed_by, 0) = 0))
+                                         WHERE (
+                                             (COALESCE(w.training_approval_doc, '') = '' AND COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending'))
+                                             OR (COALESCE(w.training_approval_doc, '') <> '' AND COALESCE(w.execution_training_status, '') = 'approved')
+                                           )
+                                           AND $paidTrainingExists
                                            AND $eoWorkerWhere
                                          ORDER BY w.created_at DESC LIMIT 6", $eoParamTypes, $eoParams);
 
@@ -237,6 +254,7 @@ function renderContent() {
         <div class="card glass">
             <div class="card-header">
                 <div class="card-title"><i class="fas fa-file-signature"></i> Training Attendance Approval Desk</div>
+                <a href="training_attendance.php" class="btn btn-sm btn-link">Open Desk</a>
             </div>
             <div class="card-body" style="padding:0">
                 <table class="data-table">
@@ -287,12 +305,20 @@ function renderContent() {
                                     <div style="font-size:11px;color:#64748b;margin-top:3px;"><?= htmlspecialchars($t['executing_officer_name'] ?? '') ?></div>
                                 </td>
                                 <td>
-                                    <span class="badge badge-warning">EO Pending</span><br>
-                                    <small style="color:#64748b;"><?= htmlspecialchars($t['execution_training_status'] ?? 'pending') ?></small>
+                                    <?php if (!empty($t['training_approval_doc']) && strtolower((string)($t['execution_training_status'] ?? '')) === 'approved'): ?>
+                                        <span class="badge badge-success">Approved</span><br>
+                                        <small style="color:#64748b;">Forwarded to Safety Training</small>
+                                    <?php else: ?>
+                                        <span class="badge badge-warning">EO Pending</span><br>
+                                        <small style="color:#64748b;"><?= htmlspecialchars($t['execution_training_status'] ?? 'pending') ?></small>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-success" onclick="reviewTraining(<?= (int)$t['id'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>
-                                    <button class="btn btn-sm btn-danger" onclick="reviewTraining(<?= (int)$t['id'] ?>, 'rejected')"><i class="fas fa-times"></i> Reject</button>
+                                    <?php if (!empty($t['training_approval_doc'])): ?>
+                                        <a class="btn btn-sm btn-outline" target="_blank" href="../../uploads/workers/<?= htmlspecialchars($t['training_approval_doc']) ?>"><i class="fas fa-eye"></i> View</a>
+                                    <?php else: ?>
+                                        <a class="btn btn-sm btn-primary" href="training_attendance.php"><i class="fas fa-arrow-right"></i> Open Desk</a>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; endif; ?>

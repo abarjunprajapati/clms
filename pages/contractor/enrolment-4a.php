@@ -6,6 +6,9 @@ include '../../include/customer_portal_context.php';
 include '../../include/education_flow.php';
 include '../../include/layout.php';
 require_once '../../include/wage_settings.php';
+require_once '../../include/nationality_location_masters.php';
+require_once '../../include/age_range_mapping.php';
+require_once '../../include/safety_training_control.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -25,8 +28,11 @@ if (!isset($enrolmentTypeMap[$requestedType])) {
 $selectedType = $enrolmentTypeMap[$requestedType];
 $prefillAadhaar = preg_replace('/\D+/', '', (string)($_GET['aadhaar'] ?? ''));
 clms_get_portal_contractor($conn);
+clms_safety_ensure_control_schema($conn);
 $educationFlow = clms_get_education_flow($conn);
 $minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
+$activeCertifiedWages = clms_get_active_certified_wage_map($conn);
+$activeAgeRange = clms_get_active_age_range($conn);
 
 function enrolment_table_exists($conn, $table) {
     $table = mysqli_real_escape_string($conn, $table);
@@ -170,7 +176,7 @@ function enrolment_worker_type_condition($conn, $table, $type) {
     }
 
     if ($type === 'workmen' || $type === 'workman') {
-        return '1=1';
+        return "worker_type IN ('workman', 'workmen', 'Workman', 'Workmen', 'Workman Pass', 'Workmen Pass')";
     }
 
     $map = [
@@ -297,19 +303,14 @@ function enrolment_get_customer_portal_contractor($conn) {
 }
 
 function renderContent() {
-    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar;
-    $nationalityOptions = [
-        'Indian', 'Afghan', 'Albanian', 'Algerian', 'American', 'Angolan', 'Argentine', 'Armenian', 'Australian', 'Austrian',
-        'Bahraini', 'Bangladeshi', 'Belgian', 'Bhutanese', 'Brazilian', 'British', 'Bulgarian', 'Canadian', 'Chinese',
-        'Danish', 'Egyptian', 'Emirati', 'Ethiopian', 'Filipino', 'Finnish', 'French', 'German', 'Ghanaian', 'Greek',
-        'Indonesian', 'Iranian', 'Iraqi', 'Irish', 'Israeli', 'Italian', 'Japanese', 'Jordanian', 'Kenyan', 'Kuwaiti',
-        'Malaysian', 'Maldivian', 'Mexican', 'Moroccan', 'Myanmar', 'Nepalese', 'Netherlands', 'New Zealander', 'Nigerian',
-        'Norwegian', 'Omani', 'Pakistani', 'Polish', 'Portuguese', 'Qatari', 'Russian', 'Saudi Arabian', 'Singaporean',
-        'South African', 'South Korean', 'Spanish', 'Sri Lankan', 'Sudanese', 'Swedish', 'Swiss', 'Syrian', 'Thai',
-        'Turkish', 'Ugandan', 'Ukrainian', 'Vietnamese', 'Yemeni', 'Zimbabwean'
-    ];
-    $dobMax = date('Y-m-d', strtotime('-18 years'));
-    $dobMin = date('Y-m-d', strtotime('-60 years'));
+    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages, $activeAgeRange;
+    $nationalityOptions = clms_get_nationality_options($conn);
+    $religionOptions = clms_get_religion_options($conn);
+    $stateDistrictMap = clms_get_state_district_map($conn);
+    $minAge = max(0, (int)($activeAgeRange['min_age'] ?? 18));
+    $maxAge = max(1, (int)($activeAgeRange['max_age'] ?? 60));
+    $dobMax = date('Y-m-d', strtotime("-{$minAge} years"));
+    $dobMin = date('Y-m-d', strtotime("-{$maxAge} years"));
 
     // Get contractor record
     $contractor = null;
@@ -516,11 +517,22 @@ function renderContent() {
     $workers = [];
     if ($c_id && enrolment_table_exists($conn, 'workmen')) {
         $workerTypeExpr = enrolment_column_exists($conn, 'workmen', 'worker_type') ? 'worker_type' : "''";
+        $skillCategoryExpr = enrolment_column_exists($conn, 'workmen', 'skill_category') && enrolment_column_exists($conn, 'workmen', 'skill')
+            ? "COALESCE(NULLIF(skill_category, ''), skill) AS skill_category"
+            : (enrolment_column_exists($conn, 'workmen', 'skill_category')
+                ? enrolment_expr($conn, 'workmen', 'skill_category', 'skill_category')
+                : enrolment_expr($conn, 'workmen', 'skill', 'skill_category'));
+        $roleTypeFallbacks = [];
+        if (enrolment_column_exists($conn, 'workmen', 'skill_category')) $roleTypeFallbacks[] = "NULLIF(skill_category, '')";
+        if (enrolment_column_exists($conn, 'workmen', 'skill')) $roleTypeFallbacks[] = "NULLIF(skill, '')";
+        $roleTypeFallbacks[] = "''";
+        if (enrolment_column_exists($conn, 'workmen', 'role_type')) {
+            array_unshift($roleTypeFallbacks, "NULLIF(role_type, '')");
+        }
+        $roleTypeExpr = "COALESCE(" . implode(', ', $roleTypeFallbacks) . ") AS role_type";
         $orderExpr = enrolment_column_exists($conn, 'workmen', 'created_at') ? 'created_at DESC' : 'id DESC';
         $typeWhere = enrolment_worker_type_condition($conn, 'workmen', $requestedType);
-        $nonDraftWhere = enrolment_column_exists($conn, 'workmen', 'status')
-            ? "AND COALESCE(status, '') <> 'draft'"
-            : "";
+        $nonDraftWhere = "";
         $workers = enrolment_fetch_all($conn, "
             SELECT
                 " . enrolment_expr($conn, 'workmen', 'id', 'id', '0') . ",
@@ -551,7 +563,7 @@ function renderContent() {
                 '' AS emergency_contact,
                 " . enrolment_expr($conn, 'workmen', 'department', 'department') . ",
                 " . enrolment_expr($conn, 'workmen', 'nature_of_work', 'nature_of_work') . ",
-                " . enrolment_expr($conn, 'workmen', 'skill', 'skill_category') . ",
+                " . $skillCategoryExpr . ",
                 " . enrolment_expr($conn, 'workmen', 'blood_group', 'blood_group') . ",
                 " . enrolment_expr($conn, 'workmen', 'experience', 'experience') . ",
                 " . enrolment_expr($conn, 'workmen', 'region', 'region') . ",
@@ -578,8 +590,36 @@ function renderContent() {
                 '' AS police_doc,
                 '' AS insurance_doc,
                 " . enrolment_expr($conn, 'workmen', 'education', 'education') . ",
-                " . enrolment_expr($conn, 'workmen', 'worker_type', 'role_type') . ",
+                " . $roleTypeExpr . ",
                 " . enrolment_expr($conn, 'workmen', 'training_status', 'safety_status') . ",
+                (
+                    SELECT tr.status
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_request_status,
+                (
+                    SELECT tr.batch_number
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_batch,
+                (
+                    SELECT tr.scheduled_date
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_date,
+                (
+                    SELECT COUNT(*)
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                      AND LOWER(COALESCE(tr.status, 'pending')) IN ('failed','fail','absent','passed')
+                      AND tr.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                ) AS training_attempts_30,
                 " . enrolment_expr($conn, 'workmen', 'status', 'gate_pass_status') . ",
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
                 " . enrolment_expr($conn, 'workmen', 'created_at', 'created_at') . "
@@ -668,6 +708,24 @@ function renderContent() {
     
     .doc-card { background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; }
     .badge-status { font-size:10px; padding:3px 8px; border-radius:10px; font-weight:600; text-transform:uppercase; }
+    .booking-cell { min-width:180px; }
+    .booking-status { display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:800;text-transform:uppercase; }
+    .booking-status.pending { background:#fef3c7;color:#92400e; }
+    .booking-status.scheduled { background:#dbeafe;color:#1d4ed8; }
+    .booking-status.pass { background:#dcfce7;color:#166534; }
+    .booking-status.fail { background:#fee2e2;color:#991b1b; }
+    .booking-meta { display:block;font-size:11px;color:#64748b;margin-top:5px;line-height:1.35; }
+    .booking-actions { display:flex;gap:6px;flex-wrap:wrap;margin-top:7px; }
+    .training-booking-box { display:grid; gap:12px; max-width:720px; }
+    .choice-row { display:flex; align-items:center; gap:10px; border:1px solid #cbd5e1; border-radius:8px; padding:12px; font-weight:700; cursor:pointer; }
+    .choice-row.active { border-color:#2563eb; background:#eff6ff; color:#1d4ed8; }
+    .choice-row input { width:18px; height:18px; }
+    .training-booking-form { margin-top:16px; border:1px solid #bfdbfe; background:#eff6ff; border-radius:10px; padding:16px; }
+    .training-booking-form.hidden { display:none; }
+    .preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .preview-item { border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#fff; }
+    .preview-item span { display:block; color:#64748b; font-size:11px; font-weight:800; text-transform:uppercase; margin-bottom:4px; }
+    .preview-question { margin:16px 0 0; padding:10px 12px; border:1px solid #bfdbfe; border-radius:8px; background:#eff6ff; color:#1e3a8a; font-weight:800; }
     #enrollForm .form-control {
       min-height: 42px;
       border: 1.5px solid #cbd5e1 !important;
@@ -770,12 +828,21 @@ function renderContent() {
               <th>Department / Work</th>
               <th>Temp ID</th>
               <th>Executing Officer</th>
+              <th>Safety Booking</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            <?php foreach ($workers as $w): ?>
+            <?php foreach ($workers as $w):
+              $bookingStatus = strtolower((string)($w['latest_training_request_status'] ?: ($w['safety_status'] ?? 'pending')));
+              $bookingClass = in_array($bookingStatus, ['pass','passed','completed','training_passed','qualified'], true)
+                  ? 'pass'
+                  : (in_array($bookingStatus, ['fail','failed','absent','training_failed'], true) ? 'fail' : (in_array($bookingStatus, ['scheduled','contractor_confirmed'], true) ? 'scheduled' : 'pending'));
+              $bookingLabel = strtoupper(str_replace('_', ' ', $bookingStatus ?: 'pending'));
+              $attemptsLeft = max(0, 3 - (int)($w['training_attempts_30'] ?? 0));
+              $bookUrl = 'book_safety_training.php?worker_id=' . (int)$w['id'];
+            ?>
             <tr>
               <td>
                 <div class="d-flex align-items-center gap-2">
@@ -818,6 +885,19 @@ function renderContent() {
                   <span style="opacity:0.4;">-</span>
                 <?php endif; ?>
               </td>
+              <td class="booking-cell">
+                <span class="booking-status <?= $bookingClass ?>"><?= htmlspecialchars($bookingLabel) ?></span>
+                <span class="booking-meta">
+                  <?= !empty($w['latest_training_batch']) ? 'Batch: ' . htmlspecialchars($w['latest_training_batch']) : 'Batch: Not booked' ?>
+                  <?= !empty($w['latest_training_date']) ? '<br>Date: ' . htmlspecialchars(date('d-m-Y', strtotime($w['latest_training_date']))) : '' ?>
+                  <br>Attempts left: <?= (int)$attemptsLeft ?>
+                </span>
+                <?php if (!in_array($bookingClass, ['pass'], true)): ?>
+                  <div class="booking-actions">
+                    <a class="btn btn-sm btn-outline" href="<?= htmlspecialchars($bookUrl) ?>"><i class="fas fa-calendar-check"></i> <?= $bookingClass === 'fail' ? 'Book Retest' : 'Book Safety' ?></a>
+                  </div>
+                <?php endif; ?>
+              </td>
               <td>
                 <span class="badge-status <?= $w['safety_status']==='pass'?'bg-success text-white':'bg-warning' ?>">Safety: <?= $w['safety_status'] ?></span>
               </td>
@@ -855,12 +935,14 @@ function renderContent() {
         <form id="enrollForm" enctype="multipart/form-data">
           <input type="hidden" name="worker_id" id="workerEditId" value="">
           <input type="hidden" name="source" id="workerSource" value="MANUAL">
+          <input type="hidden" name="contractor_id" value="<?= (int)$c_id ?>">
           <div class="square-tabs">
             <button type="button" class="square-tab active" data-tab="basic">1. Basic Info</button>
             <button type="button" class="square-tab" data-tab="personal">2. Personal / Medical</button>
             <button type="button" class="square-tab" data-tab="address">3. Address / Contact</button>
             <button type="button" class="square-tab" data-tab="work">4. Work / Compliance</button>
             <button type="button" class="square-tab" data-tab="docs">5. Documents</button>
+            <button type="button" class="square-tab" data-tab="training">6. Book Appointment for Safety Training</button>
           </div>
 
           <!-- Tab 1: Basic -->
@@ -868,10 +950,10 @@ function renderContent() {
             <div class="form-grid-3">
               <div class="form-group">
                 <label class="form-label required">Pass Type</label>
-                <select class="form-control" name="pass_type" required>
+                <select class="form-control" name="pass_type" id="passTypeSelect" required>
                   <option value="Contractor" <?= $selectedType['pass'] === 'Contractor' ? 'selected' : '' ?>>Contractor</option>
-                  <option value="Representative" <?= $selectedType['pass'] === 'Representative' ? 'selected' : '' ?>>Representative</option>
                   <option value="Supervisor" <?= $selectedType['pass'] === 'Supervisor' ? 'selected' : '' ?>>Supervisor</option>
+                  <option value="Representative" <?= $selectedType['pass'] === 'Representative' ? 'selected' : '' ?>>Representative</option>
                   <option value="Workman" <?= $selectedType['pass'] === 'Workman' ? 'selected' : '' ?>>Workman</option>
                 </select>
               </div>
@@ -906,7 +988,7 @@ function renderContent() {
               </div>
               <div class="form-group">
                 <label class="form-label required">Aadhaar Number <span id="aadhaarStatus" class="badge-status" style="display:none; margin-left:10px;"></span></label>
-                <input type="text" class="form-control" name="aadhaar" id="aadhaarInput" maxlength="12" pattern="\d{12}" required>
+                <input type="text" class="form-control" name="aadhaar" id="aadhaarInput" maxlength="12" inputmode="numeric" autocomplete="off" required>
               </div>
               <div class="form-group">
                 <label class="form-label required">Full Name</label>
@@ -931,7 +1013,7 @@ function renderContent() {
               <div class="form-group">
                 <label class="form-label required">Date of Birth</label>
                 <input type="date" class="form-control" name="dob" id="dobInput" min="<?= $dobMin ?>" max="<?= $dobMax ?>" required>
-                <small class="form-hint" id="dobHint">Age must be between 18 and 60 years.</small>
+                <small class="form-hint" id="dobHint">Age must be between <?= (int)$minAge ?> and <?= (int)$maxAge ?> years.</small>
               </div>
               <div class="form-group">
                 <label class="form-label required">Marital Status</label>
@@ -963,8 +1045,13 @@ function renderContent() {
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label">Region</label>
-                <input type="text" class="form-control" name="region">
+                <label class="form-label">Religion</label>
+                <input type="text" class="form-control" name="region" list="religionList">
+                <datalist id="religionList">
+                  <?php foreach ($religionOptions as $religion): ?>
+                    <option value="<?= htmlspecialchars($religion) ?>"></option>
+                  <?php endforeach; ?>
+                </datalist>
               </div>
               <div class="form-group">
                 <label class="form-label required">Person with Disability</label>
@@ -1091,7 +1178,7 @@ function renderContent() {
               <div class="form-group">
                 <label class="form-label required">Certified Wage Rate</label>
                 <input type="number" class="form-control" name="certified_wage_rate" id="certifiedWageRate" min="<?= htmlspecialchars((string)$minimumCertifiedWage) ?>" step="0.01" required>
-                <small class="form-hint">Minimum allowed: <?= number_format((float)$minimumCertifiedWage, 2) ?></small>
+                <small class="form-hint" id="certifiedWageHint">Select category to apply approved wage rate. Minimum allowed: <?= number_format((float)$minimumCertifiedWage, 2) ?></small>
               </div>
               <div class="form-group">
                 <label class="form-label required">Language Preferred for Safety Induction</label>
@@ -1136,6 +1223,58 @@ function renderContent() {
             </div>
           </div>
 
+          <!-- Tab 6: Book Appointment for Safety Training -->
+          <div class="modal-tab-content hidden" id="tab-training">
+            <div class="training-booking-box">
+              <label class="choice-row">
+                <input type="radio" name="training_booking_choice" value="book_now" checked>
+                <span>I need to book an appointment for Safety Training</span>
+              </label>
+              <label class="choice-row">
+                <input type="radio" name="training_booking_choice" value="not_now">
+                <span>Save as draft and book Safety Training later</span>
+              </label>
+            </div>
+            <div id="trainingBookingForm" class="training-booking-form hidden">
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label">Aadhaar No</label>
+                  <input type="text" class="form-control" id="trainingAadhaarDisplay" readonly>
+                  <small class="form-hint">Auto fetched from Basic Info.</small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Name</label>
+                  <input type="text" class="form-control" id="trainingNameDisplay" readonly>
+                  <small class="form-hint">Auto fetched from Basic Info.</small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label required">Language of Training</label>
+                  <input type="text" class="form-control" id="trainingBookingLanguageDisplay" readonly>
+                  <input type="hidden" name="training_booking_language" id="trainingBookingLanguage" value="Malayalam">
+                  <small class="form-hint">Auto fetched from Safety Language.</small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label required">Select Training Date</label>
+                  <select class="form-control" name="training_booking_date" id="trainingBookingDate">
+                    <option value="">Select scheduled date</option>
+                  </select>
+                  <small class="form-hint" id="trainingDateHint">Scheduled batches will appear after selecting language.</small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label required">Session</label>
+                  <select class="form-control" name="training_booking_session" id="trainingBookingSession">
+                    <option value="">Select session</option>
+                    <option value="FN">FN</option>
+                    <option value="AN">AN</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="alert alert-info" style="margin-top:12px;">
+              Save Draft will not submit this entitlement for processing. Training can be booked later from the Book Safety Training menu.
+            </div>
+          </div>
+
           <div class="enroll-actions">
             <div class="enroll-actions-left">
             </div>
@@ -1143,7 +1282,7 @@ function renderContent() {
               <button type="button" class="btn btn-outline" id="btnPrevTab">Previous</button>
               <button type="button" class="btn btn-primary-soft" id="btnNextTab">Next</button>
               <button type="button" class="btn btn-primary-soft" id="btnSaveDraft" style="display:none;">Save Draft</button>
-              <button type="button" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit Enrollment</button>
+              <button type="button" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit Entitlement</button>
             </div>
           </div>
         </form>
@@ -1158,6 +1297,27 @@ function renderContent() {
           <button class="modal-close" onclick="closeViewModal()">&times;</button>
         </div>
         <div id="viewContent" style="padding:20px;"></div>
+      </div>
+    </div>
+
+    <div id="submitPreviewModal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:760px;">
+        <div class="modal-header">
+          <h3 class="modal-title">Preview Entitlement Details</h3>
+          <button class="modal-close" type="button" onclick="closeSubmitPreview()">&times;</button>
+        </div>
+        <div style="padding:20px;">
+          <div id="submitPreviewContent" class="preview-grid"></div>
+          <div class="preview-question">Are you sure to submit?</div>
+          <label class="choice-row" style="margin-top:16px;">
+            <input type="checkbox" id="submitVerifiedCheckbox">
+            <span>I verified the information.</span>
+          </label>
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">
+            <button type="button" class="btn btn-outline" onclick="closeSubmitPreview()">No, Back</button>
+            <button type="button" class="btn btn-primary" id="btnProceedSubmit">Yes, Proceed to Submit</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1309,7 +1469,8 @@ function renderContent() {
         const formSection = document.getElementById('formSection');
         const viewModal = document.getElementById('viewModal');
         const form = document.getElementById('enrollForm');
-        const tabOrder = ['basic', 'personal', 'address', 'work', 'docs'];
+        const tabOrder = ['basic', 'personal', 'address', 'work', 'docs', 'training'];
+        const scheduledTrainingSessions = <?= json_encode(db_fetch_all($conn, "SELECT id, batch_number, training_date, session_name, language_name, capacity FROM training_class_batches WHERE training_date >= CURDATE() AND LOWER(COALESCE(status, 'open')) IN ('open','draft','scheduled') ORDER BY training_date ASC, session_name ASC LIMIT 100"), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
         
         const defaultDepartment = <?= json_encode($department_name) ?>;
         const workOptions = <?= json_encode($workOptions, JSON_UNESCAPED_SLASHES) ?>;
@@ -1318,15 +1479,23 @@ function renderContent() {
         const prefillAadhaar = <?= json_encode($prefillAadhaar) ?>;
         const currentContractorId = <?= $c_id ? (int)$c_id : 0 ?>;
         const dobInput = document.getElementById('dobInput');
+        const minAllowedAge = <?= json_encode((int)$minAge) ?>;
+        const maxAllowedAge = <?= json_encode((int)$maxAge) ?>;
         const minDob = dobInput ? new Date(dobInput.min + 'T00:00:00') : null;
         const maxDob = dobInput ? new Date(dobInput.max + 'T00:00:00') : null;
         const photoMaxSize = 2 * 1024 * 1024;
         const pdfMaxSize = 5 * 1024 * 1024;
         const minimumCertifiedWage = <?= json_encode((float)$minimumCertifiedWage) ?>;
+        const activeCertifiedWages = <?= json_encode($activeCertifiedWages, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        const passTypeSelect = document.getElementById('passTypeSelect');
         const certifiedWageInput = document.getElementById('certifiedWageRate');
+        const certifiedWageHint = document.getElementById('certifiedWageHint');
+        const aadhaarInput = document.getElementById('aadhaarInput');
         const executingOfficerCodeInput = document.getElementById('executingOfficerCode');
         const executingOfficerNameInput = document.getElementById('executingOfficerName');
         const executingOfficerStatus = document.getElementById('eoCodeStatus');
+        let executingOfficerVerifyTimer = null;
+        let executingOfficerVerifyRequest = 0;
         const indianStateDistricts = {
           'Andhra Pradesh': ['Anantapur', 'Chittoor', 'East Godavari', 'Guntur', 'Krishna', 'Kurnool', 'Prakasam', 'SPSR Nellore', 'Srikakulam', 'Visakhapatnam', 'Vizianagaram', 'West Godavari', 'YSR Kadapa'],
           'Arunachal Pradesh': ['Anjaw', 'Changlang', 'East Kameng', 'East Siang', 'Itanagar Capital Complex', 'Lohit', 'Lower Dibang Valley', 'Lower Subansiri', 'Namsai', 'Papum Pare', 'Tawang', 'Tirap', 'Upper Siang', 'Upper Subansiri', 'West Kameng', 'West Siang'],
@@ -1365,6 +1534,12 @@ function renderContent() {
           'Lakshadweep': ['Lakshadweep'],
           'Puducherry': ['Karaikal', 'Mahe', 'Puducherry', 'Yanam']
         };
+        const masterStateDistricts = <?= json_encode($stateDistrictMap, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        if (Object.keys(masterStateDistricts).length) {
+          Object.entries(masterStateDistricts).forEach(([state, districts]) => {
+            indianStateDistricts[state] = Array.from(new Set([...(indianStateDistricts[state] || []), ...districts]));
+          });
+        }
 
         function validateDobAge(showMessage = true) {
           if (!dobInput || !dobInput.value) return true;
@@ -1374,9 +1549,9 @@ function renderContent() {
           } else {
             const dob = new Date(dobInput.value + 'T00:00:00');
             if (maxDob && dob > maxDob) {
-              dobInput.setCustomValidity('Worker age is below 18 years. Registration is not allowed.');
+              dobInput.setCustomValidity(`Worker age is below ${minAllowedAge} years. Registration is not allowed.`);
             } else if (minDob && dob < minDob) {
-              dobInput.setCustomValidity('Worker age is above 60 years. Registration is not allowed.');
+              dobInput.setCustomValidity(`Worker age is above ${maxAllowedAge} years. Registration is not allowed.`);
             } else {
               dobInput.setCustomValidity('');
             }
@@ -1385,6 +1560,37 @@ function renderContent() {
             dobInput.reportValidity();
           }
           return dobInput.checkValidity();
+        }
+
+        function validateAadhaarNumber(showMessage = true) {
+          if (!aadhaarInput) return true;
+          aadhaarInput.value = aadhaarInput.value.replace(/\D/g, '').slice(0, 12);
+          if (!aadhaarInput.value) {
+            aadhaarInput.setCustomValidity('');
+            return true;
+          }
+          const isValid = /^\d{12}$/.test(aadhaarInput.value);
+          aadhaarInput.setCustomValidity(isValid ? '' : 'Please enter correct Aadhar number');
+          if (!isValid && showMessage) {
+            activateTab('basic');
+            notify('Invalid Aadhar Number', 'Please enter correct Aadhar number', 'warning');
+            setTimeout(() => aadhaarInput.focus(), 120);
+          }
+          return isValid;
+        }
+
+        function normalizePassLimitType(passType) {
+          const raw = String(passType || '').toLowerCase();
+          if (raw.includes('supervisor')) return 'Supervisor';
+          if (raw.includes('representative')) return 'Representative';
+          if (raw.includes('contractor')) return 'Contractor';
+          return 'Workman';
+        }
+
+        function validateSelectedPassLimit(count = 1) {
+          if (typeof PassLimitValidator === 'undefined' || !currentContractorId) return true;
+          const limitType = normalizePassLimitType(passTypeSelect?.value || requestedPassType);
+          return PassLimitValidator.validate(limitType, count);
         }
 
         function validateWorkerFile(input, showMessage = true) {
@@ -1426,10 +1632,12 @@ function renderContent() {
             return false;
           }
 
+          const requestId = ++executingOfficerVerifyRequest;
           setExecutingOfficerStatus('Checking...', 'badge-warning');
           try {
             const res = await fetch('../../api/verify_execution_officer.php?code=' + encodeURIComponent(code));
             const data = await res.json();
+            if (requestId !== executingOfficerVerifyRequest) return false;
             if (data.success && data.data) {
               if (executingOfficerNameInput) executingOfficerNameInput.value = data.data.name || '';
               setExecutingOfficerStatus('Verified', 'badge-success');
@@ -1443,6 +1651,7 @@ function renderContent() {
             }
             return false;
           } catch (err) {
+            if (requestId !== executingOfficerVerifyRequest) return false;
             if (executingOfficerNameInput) executingOfficerNameInput.value = '';
             setExecutingOfficerStatus('Error', 'badge-danger');
             if (showMessage) notify('E-Code Check Failed', err.message || 'Unable to verify E-Code.', 'error');
@@ -1484,6 +1693,11 @@ function renderContent() {
         }
 
         dobInput?.addEventListener('change', () => validateDobAge(false));
+        aadhaarInput?.addEventListener('input', () => validateAadhaarNumber(false));
+        aadhaarInput?.addEventListener('blur', () => {
+          if (aadhaarInput.value) validateAadhaarNumber(false);
+        });
+        passTypeSelect?.addEventListener('change', () => validateSelectedPassLimit(1));
         document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => {
           input.addEventListener('change', () => validateWorkerFile(input, true));
         });
@@ -1545,6 +1759,7 @@ function renderContent() {
           const draftBtn = document.getElementById('btnSaveDraft');
           if (draftBtn) draftBtn.style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
           document.getElementById('btnSubmit').style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
+          if (tabId === 'training') refreshTrainingBookingFields();
         }
         
         document.querySelectorAll('.square-tab').forEach(btn => {
@@ -1754,19 +1969,21 @@ function renderContent() {
                         notify('Worker Found', `Details auto-filled from ${data.source}.`, 'success');
                     } else {
                         // Not found, reset form fields to allow manual entry
+                        const preserveManualWorkFlow = sourceInput.value === 'MANUAL' && Boolean(flowState.category || flowState.qualification || flowState.jobProfile);
                         statusBadge.className = 'badge-status bg-gray text-dark';
                         statusBadge.innerText = 'New Worker';
                         sourceInput.value = 'MANUAL';
-                        resetAutoFilledFields();
+                        resetAutoFilledFields({ preserveWorkFlow: preserveManualWorkFlow });
                     }
                 } catch (err) {
                     statusBadge.style.display = 'none';
                     console.error('Failed to fetch worker details', err);
                 }
             } else {
+                const preserveManualWorkFlow = sourceInput.value === 'MANUAL' && Boolean(flowState.category || flowState.qualification || flowState.jobProfile);
                 statusBadge.style.display = 'none';
                 sourceInput.value = 'MANUAL';
-                resetAutoFilledFields();
+                resetAutoFilledFields({ preserveWorkFlow: preserveManualWorkFlow });
             }
         });
 
@@ -1812,6 +2029,44 @@ function renderContent() {
             if (flowEls.natureSummary) flowEls.natureSummary.textContent = flowState.jobProfile || 'Not selected';
             if (flowEls.skillSummary) flowEls.skillSummary.textContent = flowState.category || 'Not selected';
             if (flowEls.roleSummary) flowEls.roleSummary.textContent = flowState.category || 'Not selected';
+            applyCertifiedWageForCategory(flowState.category, true);
+        }
+
+        function getCategoryWageRule(category) {
+            const normalized = normalizeFlowCategory(category);
+            return normalized ? (activeCertifiedWages[normalized] || null) : null;
+        }
+
+        function currentMinimumCertifiedWage() {
+            const rule = getCategoryWageRule(flowState.category);
+            const categoryWage = rule ? parseWageValue(rule.wage_rate) : NaN;
+            if (Number.isFinite(categoryWage) && categoryWage > 0) return categoryWage;
+            return Number(minimumCertifiedWage) || 0;
+        }
+
+        function applyCertifiedWageForCategory(category, force = false) {
+            if (!certifiedWageInput) return;
+            const rule = getCategoryWageRule(category);
+            if (rule) {
+                const rate = parseWageValue(rule.wage_rate);
+                if (Number.isFinite(rate) && rate > 0) {
+                    certifiedWageInput.min = rate.toFixed(2);
+                    if (force || !certifiedWageInput.value) {
+                        certifiedWageInput.value = rate.toFixed(2);
+                    }
+                    if (certifiedWageHint) {
+                        const fromDate = rule.wage_from_date || '';
+                        const toDate = rule.wage_to_date || '9999-12-31';
+                        certifiedWageHint.textContent = `${normalizeFlowCategory(category)} approved wage: ${rate.toFixed(2)} (${fromDate} to ${toDate}).`;
+                    }
+                    return;
+                }
+            }
+
+            certifiedWageInput.min = String(minimumCertifiedWage || 0);
+            if (certifiedWageHint) {
+                certifiedWageHint.textContent = `No active category wage found. Minimum allowed: ${(Number(minimumCertifiedWage) || 0).toFixed(2)}.`;
+            }
         }
 
         function renderCategoryOptions() {
@@ -1869,7 +2124,7 @@ function renderContent() {
         function normalizeFlowCategory(category) {
             const value = (category || '').trim().toLowerCase();
             if (value === 'skilled') return 'Skilled';
-            if (value === 'semi-skilled' || value === 'semi skilled') return 'Semi-Skilled';
+            if (value === 'semi-skilled' || value === 'semi skilled' || value === 'semiskilled') return 'Semi-Skilled';
             if (value === 'unskilled') return 'Unskilled';
             return '';
         }
@@ -1901,6 +2156,7 @@ function renderContent() {
             flowState.qualification = '';
             flowState.jobProfile = '';
             renderWorkFlow();
+            applyCertifiedWageForCategory(flowState.category, true);
         });
         flowEls.qualification?.addEventListener('change', () => {
             flowState.qualification = flowEls.qualification.value;
@@ -1912,7 +2168,8 @@ function renderContent() {
             renderWorkFlow();
         });
 
-        function resetAutoFilledFields() {
+        function resetAutoFilledFields(options = {}) {
+            const preserveWorkFlow = Boolean(options.preserveWorkFlow);
             const fieldsToReset = [
                 'name', 'gender', 'dob', 'marital_status', 'nationality', 'mobile', 'present_address', 
                 'permanent_address', 'state', 'district', 'nature_of_work', 
@@ -1933,7 +2190,11 @@ function renderContent() {
                     }
                 }
             });
-            resetWorkFlow();
+            if (preserveWorkFlow) {
+                renderWorkFlow();
+            } else {
+                resetWorkFlow();
+            }
             updateNationalityLocationMode();
             const photoInput = form.querySelector('[name="photo"]');
             if(photoInput) photoInput.setAttribute('required', 'true');
@@ -1949,6 +2210,8 @@ function renderContent() {
           const field = form.querySelector(`[name="${name}"]`);
           if (!field) return;
           field.value = value ?? '';
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+          field.dispatchEvent(new Event('change', { bubbles: true }));
           if (name === 'nationality') updateNationalityLocationMode();
         }
 
@@ -1978,7 +2241,7 @@ function renderContent() {
             marital_status: worker.marital_status,
             nationality: worker.nationality || 'Indian',
             identification_mark: worker.identification_mark,
-            present_address: worker.present_address,
+            present_address: worker.present_address || worker.permanent_address,
             permanent_address: worker.permanent_address,
             state: worker.state,
             district: worker.district,
@@ -2069,15 +2332,17 @@ function renderContent() {
         }
 
         function validateCertifiedWage(showMessage = true) {
-          if (!certifiedWageInput || minimumCertifiedWage <= 0) return true;
+          if (!certifiedWageInput) return true;
+          const requiredWage = currentMinimumCertifiedWage();
+          if (requiredWage <= 0) return true;
           const wage = parseWageValue(certifiedWageInput.value);
-          if (!Number.isFinite(wage) || wage >= minimumCertifiedWage) return true;
+          if (!Number.isFinite(wage) || wage >= requiredWage) return true;
 
           if (showMessage) {
             activateTab('work');
             notify(
               'Certified Wage Rate Too Low',
-              `Certified Wage Rate cannot be less than ${minimumCertifiedWage.toFixed(2)}. Please enter an approved wage rate.`,
+              `Certified Wage Rate cannot be less than ${requiredWage.toFixed(2)} for ${flowState.category || 'selected category'}. Please enter an approved wage rate.`,
               'warning'
             );
             certifiedWageInput.focus();
@@ -2087,7 +2352,148 @@ function renderContent() {
 
         certifiedWageInput?.addEventListener('blur', () => validateCertifiedWage(true));
 
-        async function submitEnrollment(action = 'submit') {
+        function refreshTrainingBookingFields() {
+          const choice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
+          const bookingBox = document.getElementById('trainingBookingForm');
+          const isBookingNow = choice === 'book_now';
+          bookingBox?.classList.toggle('hidden', !isBookingNow);
+          document.querySelectorAll('.choice-row').forEach(row => {
+            const input = row.querySelector('[name="training_booking_choice"]');
+            row.classList.toggle('active', Boolean(input?.checked));
+          });
+          const aadhaarValue = form.querySelector('[name="aadhaar"]')?.value || '';
+          const nameValue = form.querySelector('[name="name"]')?.value || '';
+          const safetyLanguage = form.querySelector('[name="safety_language"]')?.value || 'Malayalam';
+          const aadhaarDisplay = document.getElementById('trainingAadhaarDisplay');
+          const nameDisplay = document.getElementById('trainingNameDisplay');
+          const languageSelect = document.getElementById('trainingBookingLanguage');
+          const languageDisplay = document.getElementById('trainingBookingLanguageDisplay');
+          const dateSelect = document.getElementById('trainingBookingDate');
+          const sessionSelect = document.getElementById('trainingBookingSession');
+          const submitBtn = document.getElementById('btnSubmit');
+          if (aadhaarDisplay) aadhaarDisplay.value = aadhaarValue;
+          if (nameDisplay) nameDisplay.value = nameValue;
+          if (languageSelect) languageSelect.value = safetyLanguage || 'Malayalam';
+          if (languageDisplay) languageDisplay.value = safetyLanguage || 'Malayalam';
+          [dateSelect, sessionSelect].forEach(field => {
+            if (field) field.disabled = !isBookingNow;
+          });
+          if (languageSelect) languageSelect.disabled = !isBookingNow;
+          if (!isBookingNow) {
+            if (dateSelect) dateSelect.value = '';
+            if (sessionSelect) sessionSelect.value = '';
+          } else {
+            populateTrainingDateOptions();
+          }
+          if (submitBtn) {
+            submitBtn.disabled = !isBookingNow;
+            submitBtn.title = isBookingNow ? '' : 'Save Draft is available. Submit requires Safety Training booking.';
+          }
+        }
+
+        function fallbackTrainingDates() {
+          const dates = [];
+          const cursor = new Date();
+          for (let i = 1; i <= 30; i++) {
+            const d = new Date(cursor);
+            d.setDate(cursor.getDate() + i);
+            const day = d.getDay();
+            if (day === 0) continue;
+            const value = d.toISOString().slice(0, 10);
+            dates.push({ training_date: value, session_name: '', batch_number: 'Preferred date', manual: true });
+            if (dates.length >= 12) break;
+          }
+          return dates;
+        }
+
+        function populateTrainingDateOptions() {
+          const language = document.getElementById('trainingBookingLanguage')?.value || '';
+          const dateSelect = document.getElementById('trainingBookingDate');
+          const hint = document.getElementById('trainingDateHint');
+          if (!dateSelect) return;
+          const current = dateSelect.value;
+          let rows = scheduledTrainingSessions.filter(row => {
+            const rowLanguage = String(row.language_name || '').trim().toLowerCase();
+            const selectedLanguage = String(language || '').trim().toLowerCase();
+            return !selectedLanguage || rowLanguage === selectedLanguage || selectedLanguage === 'others';
+          });
+          const hasScheduledRows = rows.length > 0;
+          if (!hasScheduledRows) {
+            rows = fallbackTrainingDates();
+          }
+          dateSelect.innerHTML = '<option value="">Select scheduled date</option>' + rows.map(row => {
+            const session = row.session_name || '';
+            const label = row.manual
+              ? `${row.training_date} - preferred booking`
+              : `${row.training_date} - ${session} (${row.batch_number || 'Batch'})`;
+            return `<option value="${row.training_date}" data-session="${session}">${label}</option>`;
+          }).join('');
+          if (current && Array.from(dateSelect.options).some(option => option.value === current)) {
+            dateSelect.value = current;
+          } else if (rows.length > 0) {
+            dateSelect.selectedIndex = 1;
+          }
+          const sessionSelect = document.getElementById('trainingBookingSession');
+          const selectedSession = dateSelect.selectedOptions[0]?.dataset.session || '';
+          if (sessionSelect) sessionSelect.value = selectedSession || sessionSelect.value || 'FN';
+          if (hint) {
+            hint.textContent = hasScheduledRows
+              ? 'Scheduled safety batches are available for the selected language.'
+              : 'No scheduled batch found for this language. Select a preferred date; Safety will schedule it.';
+            hint.style.color = hasScheduledRows ? '#64748b' : '#92400e';
+          }
+        }
+
+        document.querySelectorAll('[name="training_booking_choice"]').forEach(input => {
+          input.addEventListener('change', refreshTrainingBookingFields);
+        });
+        document.getElementById('trainingBookingDate')?.addEventListener('change', e => {
+          const session = e.target.selectedOptions[0]?.dataset.session || '';
+          const sessionSelect = document.getElementById('trainingBookingSession');
+          if (sessionSelect) sessionSelect.value = session || sessionSelect.value || 'FN';
+        });
+        ['aadhaar', 'name', 'safety_language'].forEach(name => {
+          form.querySelector(`[name="${name}"]`)?.addEventListener('input', refreshTrainingBookingFields);
+          form.querySelector(`[name="${name}"]`)?.addEventListener('change', refreshTrainingBookingFields);
+        });
+        refreshTrainingBookingFields();
+
+        function previewValue(name) {
+          const field = form.querySelector(`[name="${name}"]`);
+          if (!field) return '';
+          if (field.tagName === 'SELECT') return field.selectedOptions[0]?.textContent?.trim() || field.value;
+          return field.value || '';
+        }
+
+        function showSubmitPreview() {
+          const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
+          const bookingText = bookingChoice === 'book_now'
+            ? `${previewValue('training_booking_date')} / ${previewValue('training_booking_session')} / ${previewValue('training_booking_language')}`
+            : 'Not booked now';
+          const rows = [
+            ['Basic Info', `${previewValue('name')} | Aadhaar: ${previewValue('aadhaar')} | Mobile: ${previewValue('mobile')}`],
+            ['Personal Info', `${previewValue('gender')} | DOB: ${previewValue('dob')} | Blood: ${previewValue('blood_group')} | Nationality: ${previewValue('nationality')}`],
+            ['Medical Info', `Fitness: ${previewValue('medical_fitness')} | Emergency: ${previewValue('emergency_contact')}`],
+            ['Address / Contact', `${previewValue('present_address')} | ${previewValue('state')} - ${previewValue('district')} | PIN: ${previewValue('pincode')}`],
+            ['Work / Compliance', `${previewValue('department')} | ${previewValue('nature_of_work')} | Trade: ${previewValue('trade')} | Wage: ${previewValue('certified_wage_rate')}`],
+            ['Officer / PWO', `E-Code: ${previewValue('executing_officer_code')} | Name: ${previewValue('executing_officer_name')} | PWO: ${previewValue('pwo_no')}`],
+            ['Documents', 'Photo, Aadhaar and uploaded documents will be submitted.'],
+            ['Safety Training Details', bookingText],
+            ['Declaration', 'Tick verification checkbox before final submission.']
+          ];
+          document.getElementById('submitPreviewContent').innerHTML = rows.map(([label, value]) => `<div class="preview-item"><span>${label}</span><strong>${value || '-'}</strong></div>`).join('');
+          document.getElementById('submitVerifiedCheckbox').checked = false;
+          document.getElementById('submitPreviewModal').classList.remove('hidden');
+          document.getElementById('submitPreviewModal').classList.add('show');
+        }
+
+        function closeSubmitPreview() {
+          document.getElementById('submitPreviewModal').classList.add('hidden');
+          document.getElementById('submitPreviewModal').classList.remove('show');
+        }
+        window.closeSubmitPreview = closeSubmitPreview;
+
+        async function submitEnrollment(action = 'submit', confirmedPreview = false) {
           setHiddenWorkFields();
 
           if (action === 'draft') {
@@ -2104,7 +2510,11 @@ function renderContent() {
               if (result.success) {
                 const draftId = result.worker_id || result.workman_id || '';
                 if (draftId) document.getElementById('workerEditId').value = draftId;
-                notify('Saved', result.message || 'Draft saved successfully.', 'success');
+                const choice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
+                const msg = choice === 'book_now'
+                  ? 'Your information has been saved as draft only. This is not submitted for processing.'
+                  : 'The information has been saved as draft only. Please complete safety training booking before submitting.';
+                notify('Draft Saved', msg, 'success');
               } else {
                 notify('Error', result.message || `Draft save failed. HTTP ${res.status}`, 'error');
               }
@@ -2114,6 +2524,10 @@ function renderContent() {
               draftBtn.disabled = false;
               draftBtn.innerText = 'Save Draft';
             }
+            return;
+          }
+
+          if (!validateAadhaarNumber(true)) {
             return;
           }
 
@@ -2135,6 +2549,18 @@ function renderContent() {
 
           if (!(await verifyExecutingOfficerCode(true))) {
             focusInvalidField(executingOfficerCodeInput);
+            return;
+          }
+
+          const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
+          if (bookingChoice !== 'book_now') {
+            activateTab('training');
+            notify('Safety Training Booking Required', 'The information has been saved as draft only. Please complete safety training booking before submitting.', 'warning');
+            return;
+          }
+          if (bookingChoice === 'book_now' && (!previewValue('training_booking_date') || !previewValue('training_booking_session'))) {
+            activateTab('training');
+            notify('Training Booking Required', 'Please select safety training date and session.', 'warning');
             return;
           }
 
@@ -2173,6 +2599,11 @@ function renderContent() {
           }
           // ========== END ANNEXURE 5/A CHECK ==========
 
+          if (!confirmedPreview) {
+            showSubmitPreview();
+            return;
+          }
+
           const btn = document.getElementById('btnSubmit');
           btn.disabled = true; btn.innerText = 'Submitting...';
           
@@ -2193,7 +2624,7 @@ function renderContent() {
               notify('Error', result.message || `Enrollment failed. HTTP ${res.status}`, 'error');
             }
           } catch (err) { notify('Error', err.message || 'Server error.', 'error'); }
-          finally { btn.disabled = false; btn.innerText = 'Submit Enrollment'; }
+          finally { btn.disabled = false; btn.innerText = 'Submit Entitlement'; }
         }
 
         const saveDraftButton = document.getElementById('btnSaveDraft');
@@ -2214,12 +2645,34 @@ function renderContent() {
           });
         }
 
+        document.getElementById('btnProceedSubmit')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          const verified = document.getElementById('submitVerifiedCheckbox');
+          if (!verified?.checked) {
+            notify('Verification Required', 'Please tick I verified the information before submitting.', 'warning');
+            return;
+          }
+          closeSubmitPreview();
+          submitEnrollment('submit', true);
+        });
+
         executingOfficerCodeInput?.addEventListener('input', () => {
           executingOfficerCodeInput.value = executingOfficerCodeInput.value.toUpperCase();
           if (executingOfficerNameInput) executingOfficerNameInput.value = '';
-          setExecutingOfficerStatus('', '');
+          executingOfficerVerifyRequest++;
+          clearTimeout(executingOfficerVerifyTimer);
+          const code = executingOfficerCodeInput.value.trim();
+          if (code.length < 3) {
+            setExecutingOfficerStatus('', '');
+            return;
+          }
+          setExecutingOfficerStatus('Typing...', 'badge-warning');
+          executingOfficerVerifyTimer = setTimeout(() => verifyExecutingOfficerCode(false), 500);
         });
-        executingOfficerCodeInput?.addEventListener('blur', () => verifyExecutingOfficerCode(false));
+        executingOfficerCodeInput?.addEventListener('blur', () => {
+          clearTimeout(executingOfficerVerifyTimer);
+          verifyExecutingOfficerCode(false);
+        });
 
         if (prefillAadhaar) {
           document.getElementById('btnOpenModal')?.click();

@@ -40,7 +40,7 @@ if ($stmt->execute()) {
         SELECT id, workman_id FROM training_requests 
         WHERE scheduled_date = ? AND LOWER(TRIM(scheduled_venue)) = LOWER(TRIM(?)) 
         AND (scheduled_time = ? OR (scheduled_shift = 'morning' AND ? = '09:00:00') OR (scheduled_shift = 'evening' AND ? = '14:00:00'))
-        AND status IN ('scheduled', 'contractor_confirmed')
+        AND status = 'contractor_confirmed'
     ", 'sssss', [$session_date, $location, $session_time, $session_time, $session_time]);
 
     foreach ($workers_to_link as $w) {
@@ -53,7 +53,19 @@ if ($stmt->execute()) {
     }
     
     // Update count
-    db_execute($conn, "UPDATE training_schedule SET enrolled_count = (SELECT COUNT(*) FROM training_session_workers WHERE session_id = ?) WHERE id = ?", 'ii', [$session_id, $session_id]);
+    db_execute(
+        $conn,
+        "UPDATE training_schedule
+         SET enrolled_count = (
+             SELECT COUNT(*)
+             FROM training_session_workers tsw
+             JOIN training_requests tr ON tr.id = tsw.training_request_id
+             WHERE tsw.session_id = ? AND tr.status = 'contractor_confirmed'
+         )
+         WHERE id = ?",
+        'ii',
+        [$session_id, $session_id]
+    );
 
     header("Location: ../../pages/safety/training_schedule.php?success=Session created and " . count($workers_to_link) . " workers linked.");
 } else {

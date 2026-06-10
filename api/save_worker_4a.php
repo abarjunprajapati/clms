@@ -39,6 +39,9 @@ try {
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customer_portal_context.php';
 require_once __DIR__ . '/../include/wage_settings.php';
+require_once __DIR__ . '/../include/training_flow.php';
+require_once __DIR__ . '/../include/age_range_mapping.php';
+require_once __DIR__ . '/../include/payment_flow.php';
 require_once __DIR__ . '/api_helper.php';
 
 // include/session.php installs diagnostic handlers; restore JSON handlers for this API.
@@ -205,6 +208,91 @@ function worker4a_column_exists($conn, $table, $column) {
     return $result && mysqli_num_rows($result) > 0;
 }
 
+function worker4a_contractor_select_expr($conn) {
+    $columns = ['id', 'application_no', 'work_order_no', 'status', 'vendor_code', 'contractor_id', 'sap_code', 'user_id'];
+    $parts = [];
+    foreach ($columns as $column) {
+        $safeColumn = str_replace('`', '``', $column);
+        if (worker4a_column_exists($conn, 'contractors', $column)) {
+            $parts[] = "`$safeColumn` AS `$safeColumn`";
+        } else {
+            $parts[] = "NULL AS `$safeColumn`";
+        }
+    }
+    return implode(', ', $parts);
+}
+
+function worker4a_get_contractor_row($conn, $data) {
+    if (!worker4a_table_exists($conn, 'contractors')) {
+        return null;
+    }
+
+    $select = worker4a_contractor_select_expr($conn);
+    $postedId = (int)($data['contractor_id'] ?? 0);
+    $sessionUserId = (int)($_SESSION['user_id'] ?? 0);
+    $sessionVendor = trim((string)($_SESSION['contractor_id'] ?? ($_SESSION['vendor_code'] ?? '')));
+    $workOrderNo = trim((string)($data['work_order_no'] ?? ''));
+
+    if ($postedId > 0) {
+        $row = db_single($conn, "SELECT $select FROM contractors WHERE id = ? LIMIT 1", 'i', [$postedId]);
+        if ($row) {
+            $rowUserId = (int)($row['user_id'] ?? 0);
+            $rowVendorValues = array_filter([
+                trim((string)($row['vendor_code'] ?? '')),
+                trim((string)($row['contractor_id'] ?? '')),
+                trim((string)($row['sap_code'] ?? '')),
+            ]);
+            $vendorMatches = $sessionVendor !== '' && in_array($sessionVendor, $rowVendorValues, true);
+            $userMatches = $sessionUserId > 0 && $rowUserId === $sessionUserId;
+            $workMatches = $workOrderNo !== '' && trim((string)($row['work_order_no'] ?? '')) === $workOrderNo;
+            if ($userMatches || $vendorMatches || $workMatches) {
+                return $row;
+            }
+        }
+    }
+
+    if ($sessionVendor !== '') {
+        $where = [];
+        $params = [];
+        $types = '';
+        foreach (['vendor_code', 'contractor_id', 'sap_code'] as $column) {
+            if (worker4a_column_exists($conn, 'contractors', $column)) {
+                $where[] = "`$column` = ?";
+                $params[] = $sessionVendor;
+                $types .= 's';
+            }
+        }
+        if ($where) {
+            $row = db_single($conn, "SELECT $select FROM contractors WHERE " . implode(' OR ', $where) . " ORDER BY id DESC LIMIT 1", $types, $params);
+            if ($row) return $row;
+        }
+    }
+
+    if ($sessionUserId > 0 && worker4a_column_exists($conn, 'contractors', 'user_id')) {
+        $row = db_single($conn, "SELECT $select FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [$sessionUserId]);
+        if ($row) return $row;
+    }
+
+    if ($workOrderNo !== '' && worker4a_column_exists($conn, 'contractors', 'work_order_no')) {
+        return db_single($conn, "SELECT $select FROM contractors WHERE work_order_no = ? ORDER BY id DESC LIMIT 1", 's', [$workOrderNo]);
+    }
+
+    return null;
+}
+
+function worker4a_limit_type_from_value($value) {
+    $raw = strtolower(trim((string)$value));
+    if (strpos($raw, 'supervisor') !== false) return 'Supervisor';
+    if (strpos($raw, 'representative') !== false) return 'Representative';
+    if (strpos($raw, 'contractor') !== false) return 'Contractor';
+    return 'Workman';
+}
+
+function worker4a_status_counts_for_limit($status) {
+    $status = strtolower(trim((string)$status));
+    return !in_array($status, ['draft', 'rejected', 'removed', 'inactive', 'deleted', 'blocked'], true);
+}
+
 function worker4a_ensure_column($conn, $table, $column, $definition) {
     if (worker4a_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
@@ -255,6 +343,7 @@ function worker4a_ensure_schema($conn) {
         'education' => 'VARCHAR(150) NULL',
         'skill' => 'VARCHAR(150) NULL',
         'skill_category' => 'VARCHAR(150) NULL',
+        'role_type' => 'VARCHAR(150) NULL',
         'trade' => 'VARCHAR(150) NULL',
         'department' => 'VARCHAR(150) NULL',
         'nature_of_work' => 'VARCHAR(200) NULL',
@@ -268,6 +357,10 @@ function worker4a_ensure_schema($conn) {
         'experience' => 'VARCHAR(50) NULL',
         'certified_wage_rate' => 'VARCHAR(100) NULL',
         'safety_language' => 'VARCHAR(50) NULL',
+        'training_booking_choice' => "VARCHAR(30) DEFAULT 'not_now'",
+        'training_booking_date' => 'DATE NULL',
+        'training_booking_session' => 'VARCHAR(20) NULL',
+        'training_booking_language' => 'VARCHAR(50) NULL',
         'training_approval_doc' => 'VARCHAR(255) NULL',
         'executing_officer_code' => 'VARCHAR(50) NULL',
         'executing_officer_name' => 'VARCHAR(200) NULL',
@@ -346,6 +439,8 @@ function worker4a_ensure_upload_dir($dir) {
 }
 
 function worker4a_validate_dob_age($dob) {
+    global $conn;
+
     $dob = trim((string)$dob);
     if ($dob === '') return;
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
@@ -360,11 +455,14 @@ function worker4a_validate_dob_age($dob) {
     }
     $today = new DateTime('today');
     $age = (int)$birth->diff($today)->y;
-    if ($age < 18) {
-        throw new Exception("Worker age is below 18 years. Registration is not allowed.");
+    $range = clms_get_active_age_range($conn);
+    $minAge = (int)($range['min_age'] ?? 18);
+    $maxAge = (int)($range['max_age'] ?? 60);
+    if ($age < $minAge) {
+        throw new Exception("Worker age is below {$minAge} years. Registration is not allowed.");
     }
-    if ($age > 60) {
-        throw new Exception("Worker age is above 60 years. Registration is not allowed.");
+    if ($age > $maxAge) {
+        throw new Exception("Worker age is above {$maxAge} years. Registration is not allowed.");
     }
 }
 
@@ -490,7 +588,7 @@ function worker4a_upsert_workflow($conn, $application_no, $contractor_id) {
     }
 }
 
-function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $requested_by = 0) {
+function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $requested_by = 0, $data = []) {
     mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
@@ -528,16 +626,37 @@ function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $r
         'i',
         [$workman_id]
     );
-    if ($existing) return;
+    if ($existing) {
+        db_execute(
+            $conn,
+            "UPDATE training_requests
+             SET training_type = ?, preferred_date = ?, preferred_shift = ?, remarks = ?, source = 'enrolment', requested_by = ?, updated_at = NOW()
+             WHERE id = ?",
+            'ssssii',
+            [
+                $data['training_type'] ?? 'Safety Induction',
+                $data['training_booking_date'] ?? null,
+                $data['training_booking_session'] ?? 'morning',
+                !empty($data['training_booking_date'])
+                    ? 'Safety training appointment requested during entitlement booking.'
+                    : 'Auto-created after Executing Officer approval/document validation. Waiting for Welfare check.',
+                (int)$requested_by,
+                (int)$existing['id']
+            ]
+        );
+        return;
+    }
 
     insert_table_row($conn, 'training_requests', [
         'workman_id' => $workman_id,
         'contractor_id' => $contractor_id,
-        'training_type' => 'Safety Induction',
+        'training_type' => $data['training_type'] ?? 'Safety Induction',
         'requested_date' => date('Y-m-d'),
-        'preferred_date' => date('Y-m-d'),
-        'preferred_shift' => 'morning',
-        'remarks' => 'Auto-created after Executing Officer approval/document validation. Waiting for Welfare check.',
+        'preferred_date' => $data['training_booking_date'] ?? null,
+        'preferred_shift' => $data['training_booking_session'] ?? 'morning',
+        'remarks' => !empty($data['training_booking_date'])
+            ? 'Safety training appointment requested during entitlement booking.'
+            : 'Auto-created after Executing Officer approval/document validation. Waiting for Welfare check.',
         'source' => 'enrolment',
         'requested_by' => $requested_by,
         'status' => 'welfare_pending',
@@ -585,30 +704,9 @@ worker4a_ensure_schema($conn);
     elseif (stripos($pass_type_raw, 'representative') !== false) $limit_type = 'Representative';
     elseif (stripos($pass_type_raw, 'contractor') !== false) $limit_type = 'Contractor';
 
-    // Get contractor/application context from work order first, then session user.
-    $contractor_row = null;
-    if (!empty($_SESSION['user_id'])) {
-        $contractor_row = db_single(
-            $conn,
-            "SELECT id, application_no, work_order_no, status FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1",
-            'i',
-            [(int)$_SESSION['user_id']]
-        );
-    }
-    if (!$contractor_row && !empty($data['work_order_no'])) {
-        $contractor_row = db_single(
-            $conn,
-                "SELECT id, application_no, work_order_no, status FROM contractors WHERE work_order_no = ?",
-            's',
-            [$data['work_order_no'] ?? '']
-        );
-    }
+    $contractor_row = worker4a_get_contractor_row($conn, $data);
     $editing_worker_id = (int)($data['worker_id'] ?? 0);
 
-    if ($action !== 'draft' && $contractor_row && !$editing_worker_id) {
-        // This will throw Exception if limit exceeded
-        validatePassLimit($conn, (int)$contractor_row['id'], $limit_type, 1, false);
-    }
     // ========== END ANNEXURE 5/A VALIDATION ==========
 
     $upload_dir = '../uploads/workers/';
@@ -651,6 +749,9 @@ worker4a_ensure_schema($conn);
 
     $source_val = $data['source'] ?? 'MANUAL';
     $contractor_id = (int)$contractor_row['id'];
+    $trade = $data['nature_of_work'] ?? '';
+    $skill = $data['skill_category'] ?? '';
+    $workmen_skill_category = normalize_skill_category($skill);
     if ($action !== 'draft') {
         if (($data['epf_registered_worker'] ?? '') === 'YES' && trim($data['pf_no'] ?? '') === '') {
             throw new Exception("UAN Number is mandatory when EPF Registered is Yes.");
@@ -661,16 +762,25 @@ worker4a_ensure_schema($conn);
         if (trim($data['certified_wage_rate'] ?? '') === '') {
             throw new Exception("Certified Wage Rate is mandatory.");
         }
-        $minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
+        $categoryWageRule = clms_get_active_certified_wage_for_category($conn, $workmen_skill_category);
+        $minimumCertifiedWage = $categoryWageRule ? (float)$categoryWageRule['wage_rate'] : clms_get_minimum_certified_wage($conn);
         $submittedWage = clms_parse_wage_amount($data['certified_wage_rate'] ?? '');
         if ($submittedWage === null) {
             throw new Exception("Please enter a valid Certified Wage Rate.");
         }
         if ($minimumCertifiedWage > 0 && $submittedWage < $minimumCertifiedWage) {
-            throw new Exception("Certified Wage Rate cannot be less than " . number_format($minimumCertifiedWage, 2) . ".");
+            throw new Exception("Certified Wage Rate cannot be less than " . number_format($minimumCertifiedWage, 2) . " for " . ($workmen_skill_category ?: 'selected category') . ".");
+        }
+        if ($categoryWageRule) {
+            $data['certified_wage_rate'] = number_format((float)$categoryWageRule['wage_rate'], 2, '.', '');
         }
         if (trim($data['safety_language'] ?? '') === '') {
             throw new Exception("Language Preferred for Safety Induction is mandatory.");
+        }
+        if (($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
+            if (trim((string)($data['training_booking_date'] ?? '')) === '' || trim((string)($data['training_booking_session'] ?? '')) === '') {
+                throw new Exception('Please select safety training date and session, or choose I do not need to book now.');
+            }
         }
         if (trim($data['pwd_status'] ?? '') === '') {
             throw new Exception("PWD Status is mandatory.");
@@ -683,9 +793,6 @@ worker4a_ensure_schema($conn);
         [$contractor_id]
     );
     $application_no = $contractor_row['application_no'] ?: ($application_row['application_id'] ?? ('APP-' . $contractor_id));
-    $trade = $data['nature_of_work'] ?? '';
-    $skill = $data['skill_category'] ?? '';
-    $workmen_skill_category = normalize_skill_category($skill);
     $worker_type = 'Workmen Pass';
     if (strtolower($limit_type) === 'supervisor') $worker_type = 'Supervisor Pass';
     elseif (strtolower($limit_type) === 'representative') $worker_type = 'Representative Pass';
@@ -721,6 +828,7 @@ worker4a_ensure_schema($conn);
         'education' => $data['education'] ?? '',
         'skill' => $skill,
         'skill_category' => $workmen_skill_category,
+        'role_type' => $workmen_skill_category,
         'trade' => $trade,
         'department' => $data['department'] ?? '',
         'nature_of_work' => $data['nature_of_work'] ?? '',
@@ -734,6 +842,10 @@ worker4a_ensure_schema($conn);
         'experience' => $data['experience'] ?? '',
         'certified_wage_rate' => $data['certified_wage_rate'] ?? '',
         'safety_language' => $data['safety_language'] ?? '',
+        'training_booking_choice' => $data['training_booking_choice'] ?? 'not_now',
+        'training_booking_date' => $data['training_booking_date'] ?? null,
+        'training_booking_session' => $data['training_booking_session'] ?? '',
+        'training_booking_language' => $data['training_booking_language'] ?? ($data['safety_language'] ?? ''),
         'training_approval_doc' => $uploaded_files['training_approval_doc'],
         'executing_officer_code' => $executingOfficer['employee_code'] ?? $executingOfficerCode,
         'executing_officer_name' => $executingOfficer['name'] ?? ($data['executing_officer_name'] ?? ''),
@@ -776,6 +888,20 @@ worker4a_ensure_schema($conn);
         );
     }
 
+    if ($action !== 'draft') {
+        $existingLimitType = $existing_workman
+            ? worker4a_limit_type_from_value($existing_workman['worker_type'] ?? ($existing_workman['pass_type'] ?? ''))
+            : '';
+        $existingStatus = $existing_workman['status'] ?? '';
+        $alreadyCountsInSameLimit = $existing_workman
+            && $existingLimitType === $limit_type
+            && worker4a_status_counts_for_limit($existingStatus);
+
+        if (!$alreadyCountsInSameLimit) {
+            validatePassLimit($conn, $contractor_id, $limit_type, 1, false);
+        }
+    }
+
     if ($existing_workman) {
         $existingExecutionStatus = strtolower(trim((string)($existing_workman['execution_training_status'] ?? '')));
         if ($action !== 'draft' && $existingExecutionStatus === 'rejected' && empty($new_uploaded_files['training_approval_doc'])) {
@@ -815,12 +941,11 @@ worker4a_ensure_schema($conn);
     $workman_row['signature_doc'] = $uploaded_files['signature'];
     $workman_row['training_approval_doc'] = $uploaded_files['training_approval_doc'];
     if ($action !== 'draft') {
-        $workman_row['execution_training_status'] = 'pending_eo';
+        $workman_row['execution_training_status'] = 'pending_payment';
+        $workman_row['execution_training_remarks'] = 'Waiting for Welfare payment verification.';
     }
     if (!empty($new_uploaded_files['training_approval_doc'])) {
-        $workman_row['execution_training_remarks'] = null;
-        $workman_row['execution_training_reviewed_by'] = null;
-        $workman_row['execution_training_reviewed_at'] = null;
+        $workman_row['execution_training_remarks'] = 'Waiting for Welfare payment verification.';
     }
 
     if ($existing_workman) {
@@ -831,9 +956,28 @@ worker4a_ensure_schema($conn);
     }
 
     $temp_id = '';
+    $paymentRequest = null;
     if ($action !== 'draft') {
         $temp_id = "TEMP-" . str_pad($workman_id_new, 6, "0", STR_PAD_LEFT);
         update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => $temp_id]);
+        $paymentRequest = clms_create_training_payment_request(
+            $conn,
+            $contractor_id,
+            [$workman_id_new],
+            (int)($_SESSION['user_id'] ?? 0),
+            'enrolment'
+        );
+        if (!$paymentRequest) {
+            update_table_row_by_id($conn, 'workmen', $workman_id_new, [
+                'status' => 'draft',
+                'execution_training_status' => 'draft',
+                'execution_training_remarks' => 'Payment link generation failed. Please submit enrolment again after payment settings are configured.'
+            ]);
+            throw new Exception('Payment link generate nahi ho pa raha. Welfare Payment Gateway me fee/QR settings check karein.');
+        }
+        if (($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
+            worker4a_ensure_training_request($conn, $workman_id_new, $contractor_id, (int)($_SESSION['user_id'] ?? 0), $data);
+        }
     } else {
         update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => null]);
     }
@@ -888,12 +1032,54 @@ worker4a_ensure_schema($conn);
         }
     }
 
+    $notificationDebug = [];
+    if ($action !== 'draft') {
+        $contractorUser = null;
+        if (!empty($_SESSION['user_id'])) {
+            $contractorUser = db_single($conn, "SELECT name, email, mobile FROM users WHERE id = ? LIMIT 1", 'i', [(int)$_SESSION['user_id']]);
+        }
+        $workerName = trim((string)($data['name'] ?? 'Worker'));
+        $subject = 'CLMS Worker Enrolment Submitted';
+        $message = "Dear User,\n\n"
+            . "Worker enrolment has been submitted successfully.\n"
+            . "Worker: $workerName\n"
+            . "Application: $application_no\n"
+            . "Temporary ID: $temp_id\n\n"
+            . "This is an automated message.";
+
+        $workerMobile = trim((string)($data['mobile'] ?? ''));
+        $workerEmail = trim((string)($data['email'] ?? ($data['contact_email'] ?? '')));
+        $contractorEmail = trim((string)($contractorUser['email'] ?? ''));
+
+        $notificationDebug['worker_sms'] = $workerMobile !== ''
+            ? sendSMS($workerMobile, "CLMS enrolment submitted for $workerName. Temp ID: $temp_id. Application: $application_no.")
+            : ['success' => false, 'message' => 'Worker mobile not available'];
+        $notificationDebug['worker_email'] = $workerEmail !== ''
+            ? sendEmailNotification($workerEmail, $subject, $message, 'worker_enrolment', $workerName)
+            : ['success' => false, 'message' => 'Worker email not available'];
+        $notificationDebug['contractor_email'] = $contractorEmail !== ''
+            ? sendEmailNotification($contractorEmail, $subject, $message, 'worker_enrolment', $contractorUser['name'] ?? '')
+            : ['success' => false, 'message' => 'Contractor email not available'];
+        $notificationDebug['demo_email'] = sendDemoEmailNotification(
+            'CLMS Demo Worker Enrolment',
+            $message . "\n\nDemo copy requested for: arjunprajapati8595@gmail.com",
+            'worker_enrolment_demo'
+        );
+    }
+
     worker4a_json([
         "success" => true,
         "message" => $action === 'draft' ? "Draft saved successfully." : "Worker enrolled successfully.",
         "worker_id" => $workman_id_new,
         "workman_id" => $workman_id_new,
-        "temp_id" => $temp_id
+        "temp_id" => $temp_id,
+        "payment" => $paymentRequest ? [
+            "payment_ref" => $paymentRequest['payment_ref'],
+            "amount" => $paymentRequest['total_amount'],
+            "payment_link" => $paymentRequest['payment_link'],
+            "link_expires_at" => $paymentRequest['link_expires_at'],
+        ] : null,
+        "notification_debug" => $notificationDebug
     ]);
 
 } catch (Throwable $e) {

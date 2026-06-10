@@ -2,6 +2,7 @@
 session_start();
 header('Content-Type: application/json');
 include __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/labour_license_threshold.php';
 
 set_exception_handler(function($e) {
     if (!headers_sent()) header('Content-Type: application/json', true, 500);
@@ -26,8 +27,18 @@ try {
         exit;
     }
 
-    // Full contractor data
+    // Full contractor data plus the latest Annexure 2A application.
+    // Annexure data must win because resubmits update annexure2a first.
     $contractor = db_single($conn, "SELECT * FROM contractors WHERE id = ?", 'i', [$contractor_id]);
+    $annexure = db_single($conn, "SELECT * FROM annexure2a WHERE contractor_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1", 'i', [$contractor_id]);
+    $display_contractor = array_merge($contractor ?: [], $annexure ?: []);
+    if ($contractor) {
+        foreach (['vendor_code', 'pan_no', 'gst_no'] as $field) {
+            if (empty($display_contractor[$field]) && !empty($contractor[$field])) {
+                $display_contractor[$field] = $contractor[$field];
+            }
+        }
+    }
 
     // PO / PWO / Sales selections
     $pos   = db_fetch_all($conn, "SELECT po_number  FROM contractor_po_selection  WHERE contractor_id = ?", 'i', [$contractor_id]);
@@ -67,11 +78,11 @@ try {
 
 // License file stored directly on contractors table
 $license_docs = [];
-if ($contractor && !empty($contractor['license_file'])) {
+if (!empty($display_contractor['license_file'])) {
     $license_docs[] = [
         'doc_type'      => 'Labour Licence Certificate',
-        'file_path'     => 'contractors/' . $contractor['license_file'],
-        'original_name' => basename($contractor['license_file']),
+        'file_path'     => 'contractors/' . $display_contractor['license_file'],
+        'original_name' => basename($display_contractor['license_file']),
     ];
 }
 
@@ -87,13 +98,12 @@ foreach ($all_docs as $d) {
     }
 }
 
-// System setting: labour_license_threshold
-$threshold_row = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key = 'labour_license_threshold'");
-$threshold = intval($threshold_row['setting_value'] ?? 20);
+$threshold = clms_get_labour_license_threshold($conn);
 
 echo json_encode([
     'success'    => true,
-    'contractor' => $contractor,
+    'contractor' => $display_contractor,
+    'annexure'   => $annexure,
     'pos'        => array_column($pos, 'po_number'),
     'pwos'       => array_column($pwos, 'pwo_number'),
     'sales'      => array_column($sales, 'sale_order_no'),

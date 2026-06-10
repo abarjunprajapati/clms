@@ -301,10 +301,11 @@ try {
         $workerAppExpr = safetyResultsColumnExists($conn, 'workmen', 'application_no') ? 'w.application_no' : "''";
         $mapping = db_single(
             $conn,
-            "SELECT tsw.attendance_status, $workerNameExpr AS name, $workerTradeExpr AS trade, $workerAppExpr AS application_no
+            "SELECT tsw.attendance_status, tsw.training_request_id, $workerNameExpr AS name, $workerTradeExpr AS trade, $workerAppExpr AS application_no
              FROM training_session_workers tsw
+             JOIN training_requests tr ON tr.id = tsw.training_request_id
              JOIN workmen w ON w.id = tsw.workman_id
-             WHERE tsw.session_id=? AND tsw.workman_id=?",
+             WHERE tsw.session_id=? AND tsw.workman_id=? AND tr.status = 'contractor_confirmed'",
             'ii',
             [$session_id, $workman_id]
         );
@@ -348,7 +349,7 @@ try {
             
             // Sync with training_requests status
             $req_status = ($res == 'pass') ? 'passed' : 'failed';
-            db_execute($conn, "UPDATE training_requests SET status = ?, conduct_remarks = ?, updated_at = NOW() WHERE workman_id = ? AND status IN ('scheduled', 'contractor_confirmed')", 'ssi', [$req_status, $rem, $workman_id]);
+            db_execute($conn, "UPDATE training_requests SET status = ?, conduct_remarks = ?, updated_at = NOW() WHERE id = ? AND status = 'contractor_confirmed'", 'ssi', [$req_status, $rem, (int)$mapping['training_request_id']]);
 
             $existingResult = db_single(
                 $conn,
@@ -422,7 +423,9 @@ try {
             );
             
             // Sync with training_requests status
-            db_execute($conn, "UPDATE training_requests SET status = 'failed', conduct_remarks = 'Absent in session', updated_at = NOW() WHERE workman_id = ? AND status IN ('scheduled', 'contractor_confirmed')", 'i', [$workman_id]);
+            if ($mapping && !empty($mapping['training_request_id'])) {
+                db_execute($conn, "UPDATE training_requests SET status = 'failed', conduct_remarks = 'Absent in session', updated_at = NOW() WHERE id = ? AND status = 'contractor_confirmed'", 'i', [(int)$mapping['training_request_id']]);
+            }
         }
     }
 

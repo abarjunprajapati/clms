@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['welfare_user', 'welfare_admin', 'super_admin', 'pass_user']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
+require_once __DIR__ . '/../../include/gate_pass_document_master.php';
 
 function welfareDocsTableExists($conn, $table) {
     $table = mysqli_real_escape_string($conn, $table);
@@ -49,6 +50,19 @@ function welfareEnsureContractorDocumentsSchema($conn) {
     $conn->query("ALTER TABLE contractor_documents MODIFY status VARCHAR(30) DEFAULT 'pending'");
 }
 
+function welfareEnsureDocumentsSchema($conn) {
+    @mysqli_query($conn, "ALTER TABLE documents ADD COLUMN gate_pass_request_id INT NULL");
+    @mysqli_query($conn, "ALTER TABLE documents MODIFY document_type VARCHAR(255) NULL");
+    @mysqli_query($conn, "ALTER TABLE documents MODIFY status VARCHAR(30) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE documents ADD COLUMN remarks TEXT NULL");
+}
+
+function welfareDocumentColumnExists($conn, $column) {
+    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $res = $conn->query("SHOW COLUMNS FROM documents LIKE '$safeColumn'");
+    return $res && $res->num_rows > 0;
+}
+
 function welfareDocUrl($path) {
     $path = trim((string)$path);
     if ($path === '') return '#';
@@ -58,30 +72,25 @@ function welfareDocUrl($path) {
 }
 
 function welfareGatePassDocTypesSql($conn) {
-    $types = [
-        'Medical Fitness Certificate',
-        'Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass (Template Upload)',
-        'Proof of forwarding PCC to Thane Police Station',
-        'Proof of forwarding PCC to CISF',
-        'Name of Police Station from where PCC has been obtained',
-        'Employee Compensation Policy if not covered under ESI',
-        'ESI / EPF Undertaking if not covered under ESI / EPF',
-    ];
+    return clms_gate_pass_doc_types_sql($conn);
+}
 
-    return "'" . implode("','", array_map([$conn, 'real_escape_string'], $types)) . "'";
+function welfareGatePassDocMatchSql($gatePassDocTypesSql) {
+    global $conn;
+    return clms_gate_pass_doc_match_sql($conn);
 }
 
 function welfareGatePassDocsApprovedForWorker($conn, $workmanId, $gatePassDocTypesSql) {
     $workmanId = (int)$workmanId;
     $docs = [];
     $res = $conn->query("
-        SELECT d.document_type, COALESCE(d.status, 'pending') AS status
+        SELECT d.document_type, d.file_path, COALESCE(d.status, 'pending') AS status
         FROM documents d
         JOIN (
             SELECT document_type, MAX(id) AS latest_id
             FROM documents
             WHERE workman_id = $workmanId
-              AND document_type IN ($gatePassDocTypesSql)
+              AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
             GROUP BY document_type
         ) latest_docs ON latest_docs.latest_id = d.id
     ");
@@ -89,34 +98,163 @@ function welfareGatePassDocsApprovedForWorker($conn, $workmanId, $gatePassDocTyp
         $docs[] = $row;
     }
 
-    $hasMedical = false;
-    $hasPcc = false;
-    $hasCoverage = false;
+    return welfareGatePassDocSetApproved($docs);
+}
 
-    foreach ($docs as $doc) {
-        $type = strtolower((string)($doc['document_type'] ?? ''));
-        $status = strtolower((string)($doc['status'] ?? 'pending'));
-        if ($status !== 'approved') {
-            return false;
+function welfareGatePassDocsApprovedForRequest($conn, $workmanId, $requestId, $gatePassDocTypesSql) {
+    $workmanId = (int)$workmanId;
+    $requestId = (int)$requestId;
+    $docs = [];
+
+    if ($requestId && welfareDocumentColumnExists($conn, 'gate_pass_request_id')) {
+        $res = $conn->query("
+            SELECT document_type, file_path, COALESCE(status, 'pending') AS status
+            FROM documents
+            WHERE workman_id = $workmanId
+              AND gate_pass_request_id = $requestId
+              AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
+            ORDER BY id DESC
+        ");
+        while ($res && ($row = $res->fetch_assoc())) {
+            $docs[] = $row;
         }
-        if (strpos($type, 'medical fitness') !== false) {
-            $hasMedical = true;
-        }
-        if (strpos($type, 'pcc') !== false || strpos($type, 'police clearance') !== false || strpos($type, 'police station') !== false) {
-            $hasPcc = true;
-        }
-        if (strpos($type, 'employee compensation') !== false || strpos($type, 'esi') !== false || strpos($type, 'epf') !== false) {
-            $hasCoverage = true;
+        if (count($docs) >= 3) {
+            return welfareGatePassDocSetApproved($docs);
         }
     }
 
-    return $hasMedical && $hasPcc && $hasCoverage;
+    return welfareGatePassDocsApprovedForWorker($conn, $workmanId, $gatePassDocTypesSql);
+}
+
+function welfareGatePassDocSetApproved(array $docs) {
+    $state = welfareGatePassMandatoryState($docs);
+
+    return $state['approved'];
+}
+
+function welfareGatePassMandatoryState(array $docs) {
+    global $conn;
+    return clms_gate_pass_mandatory_doc_state($conn, $docs);
+}
+
+function welfareGatePassDocsForRequest($conn, $workmanId, $requestId, $gatePassDocTypesSql) {
+    $workmanId = (int)$workmanId;
+    $requestId = (int)$requestId;
+    $docs = [];
+
+    if ($requestId && welfareDocumentColumnExists($conn, 'gate_pass_request_id')) {
+        $res = $conn->query("
+            SELECT document_type, file_path, COALESCE(status, 'pending') AS status
+            FROM documents
+            WHERE workman_id = $workmanId
+              AND gate_pass_request_id = $requestId
+              AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
+            ORDER BY id DESC
+        ");
+        while ($res && ($row = $res->fetch_assoc())) {
+            $docs[] = $row;
+        }
+        if (count($docs) >= 3) {
+            return $docs;
+        }
+    }
+
+    $res = $conn->query("
+        SELECT d.document_type, d.file_path, COALESCE(d.status, 'pending') AS status
+        FROM documents d
+        JOIN (
+            SELECT document_type, MAX(id) AS latest_id
+            FROM documents
+            WHERE workman_id = $workmanId
+              AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
+            GROUP BY document_type
+        ) latest_docs ON latest_docs.latest_id = d.id
+    ");
+    while ($res && ($row = $res->fetch_assoc())) {
+        $docs[] = $row;
+    }
+
+    return $docs;
+}
+
+function welfareEnsureMissingGatePassDocsForReupload($conn, $workmanId, $requestId, array $missingDocs) {
+    $workmanId = (int)$workmanId;
+    $requestId = (int)$requestId;
+    if (!$workmanId || !$requestId || empty($missingDocs)) return;
+
+    foreach ($missingDocs as $docType) {
+        $exists = db_count(
+            $conn,
+            "SELECT COUNT(*) FROM documents WHERE workman_id = ? AND gate_pass_request_id = ? AND document_type = ?",
+            "iis",
+            [$workmanId, $requestId, $docType]
+        );
+        if ($exists > 0) continue;
+
+        $safeType = $conn->real_escape_string($docType);
+        $conn->query("
+            INSERT INTO documents (workman_id, gate_pass_request_id, document_type, file_path, status, remarks, uploaded_at)
+            VALUES ($workmanId, $requestId, '$safeType', '', 'reupload_required', 'Mandatory gate pass document missing. Please upload this document.', NOW())
+        ");
+    }
+}
+
+function welfareGatePassDocumentsSql($conn, $workmanId, $requestId, $requestCreatedAt, $gatePassDocTypesSql) {
+    $workmanId = (int)$workmanId;
+    $requestId = (int)$requestId;
+    $requestCreatedAt = $conn->real_escape_string($requestCreatedAt ?: date('Y-m-d H:i:s'));
+    $hasRequestColumn = welfareDocumentColumnExists($conn, 'gate_pass_request_id');
+
+    if ($requestId && $hasRequestColumn) {
+        $linkedCount = db_count($conn, "
+            SELECT COUNT(*)
+            FROM documents
+            WHERE workman_id = $workmanId
+              AND gate_pass_request_id = $requestId
+              AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql)
+        );
+        if ($linkedCount >= 3) {
+            return "
+                SELECT id, document_type, COALESCE(status, 'pending') AS status,
+                       COALESCE(remarks, '') AS remarks, file_path, uploaded_at, 'documents' AS source_table
+                FROM documents
+                WHERE workman_id = $workmanId
+                  AND gate_pass_request_id = $requestId
+                  AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
+                ORDER BY uploaded_at DESC, id DESC
+            ";
+        }
+    }
+
+    return "
+        SELECT d.id, d.document_type, COALESCE(d.status, 'pending') AS status,
+               COALESCE(d.remarks, '') AS remarks, d.file_path, d.uploaded_at, 'documents' AS source_table
+        FROM documents d
+        JOIN (
+            SELECT document_type, MAX(id) AS latest_id
+            FROM documents
+            WHERE workman_id = $workmanId
+              AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
+            GROUP BY document_type
+        ) latest_docs ON latest_docs.latest_id = d.id
+        ORDER BY d.uploaded_at DESC, d.id DESC
+    ";
+}
+
+function welfareSafetyTrainingReadySql() {
+    return "(
+        LOWER(TRIM(COALESCE(w.training_status, ''))) IN ('pass','passed','training_passed','qualified','completed')
+        OR LOWER(TRIM(COALESCE(w.safety_training_status, ''))) IN ('1','pass','passed','training_passed','qualified','completed')
+    )
+    AND (w.training_valid_till IS NULL OR w.training_valid_till = '' OR w.training_valid_till >= CURDATE())";
 }
 
 function renderContent() {
     global $conn;
     welfareEnsureContractorDocumentsSchema($conn);
+    welfareEnsureDocumentsSchema($conn);
     $gatePassDocTypesSql = welfareGatePassDocTypesSql($conn);
+    $safetyTrainingReadySql = welfareSafetyTrainingReadySql();
 
     $workmanFilter = isset($_GET['id']) ? (int)$_GET['id'] : 0;
     $workmanFilterSql = $workmanFilter > 0 ? " AND w.id = $workmanFilter" : "";
@@ -148,6 +286,7 @@ function renderContent() {
         LEFT JOIN contractors c ON w.contractor_id = c.id
         WHERE COALESCE(gpr.status, 'pending') IN ('pending', 'reupload_required')
           AND COALESCE(gprw.status, 'pending') IN ('pending', 'reupload_required')
+          AND $safetyTrainingReadySql
           $workmanFilterSql
         ORDER BY gpr.created_at DESC, gprw.id DESC
     ";
@@ -163,11 +302,21 @@ function renderContent() {
     foreach ($pendingApps as $idx => $app) {
         $workmanId = (int)$app['workman_id'];
         $requestId = (int)$app['request_id'];
-        if (welfareGatePassDocsApprovedForWorker($conn, $workmanId, $gatePassDocTypesSql)) {
+        $docsForRequest = welfareGatePassDocsForRequest($conn, $workmanId, $requestId, $gatePassDocTypesSql);
+        $docState = welfareGatePassMandatoryState($docsForRequest);
+        if ($docState['approved']) {
             @mysqli_query($conn, "UPDATE workmen SET status = 'verified', pass_issuer_verified = 1, updated_at = NOW() WHERE id = $workmanId");
             @mysqli_query($conn, "UPDATE gate_pass_request_workers SET status = 'approved', updated_at = NOW() WHERE request_id = $requestId AND workman_id = $workmanId");
             @mysqli_query($conn, "UPDATE gate_pass_requests SET status = 'approved', updated_at = NOW() WHERE id = $requestId");
             unset($pendingApps[$idx]);
+        } elseif (!empty($docState['missing'])) {
+            welfareEnsureMissingGatePassDocsForReupload($conn, $workmanId, $requestId, $docState['missing']);
+            $safeReason = $conn->real_escape_string('Missing mandatory document(s): ' . implode(', ', $docState['missing']));
+            @mysqli_query($conn, "UPDATE gate_pass_request_workers SET status = 'reupload_required', updated_at = NOW() WHERE request_id = $requestId AND workman_id = $workmanId");
+            @mysqli_query($conn, "UPDATE gate_pass_requests SET status = 'reupload_required', rejection_reason = '$safeReason', updated_at = NOW() WHERE id = $requestId");
+            $pendingApps[$idx]['request_status'] = 'reupload_required';
+            $pendingApps[$idx]['worker_request_status'] = 'reupload_required';
+            $pendingApps[$idx]['rejected_doc_count'] = max(1, (int)($pendingApps[$idx]['rejected_doc_count'] ?? 0));
         }
     }
     $pendingApps = array_values($pendingApps);
@@ -193,6 +342,7 @@ function renderContent() {
         LEFT JOIN contractors c ON w.contractor_id = c.id
         WHERE COALESCE(gpr.status, '') IN ('approved', 'active', 'issued')
           AND COALESCE(gprw.status, '') IN ('approved', 'issued')
+          AND $safetyTrainingReadySql
           $workmanFilterSql
         ORDER BY COALESCE(gpr.updated_at, gpr.created_at) DESC, gprw.id DESC
         LIMIT 50
@@ -301,22 +451,14 @@ function renderContent() {
                                         <div class="document-card-grid">
                                             <?php
                                             $workmanId = (int)$app['workman_id'];
-                                            $requestCreatedAt = $conn->real_escape_string($app['request_created_at'] ?? date('Y-m-d H:i:s'));
-                                            $sql1 = "
-                                                SELECT
-                                                    d.id,
-                                                    d.document_type,
-                                                    COALESCE(d.status, 'pending') AS status,
-                                                    COALESCE(d.remarks, '') AS remarks,
-                                                    d.file_path,
-                                                    'documents' AS source_table,
-                                                    d.uploaded_at
-                                                FROM documents d
-                                                WHERE d.workman_id = $workmanId
-                                                  AND d.document_type IN ($gatePassDocTypesSql)
-                                                  AND d.uploaded_at >= DATE_SUB('$requestCreatedAt', INTERVAL 10 MINUTE)
-                                            ";
-                                            $docs = $conn->query("$sql1 ORDER BY uploaded_at DESC, id DESC");
+                                            $docsSql = welfareGatePassDocumentsSql(
+                                                $conn,
+                                                $workmanId,
+                                                (int)$app['request_id'],
+                                                $app['request_created_at'] ?? '',
+                                                $gatePassDocTypesSql
+                                            );
+                                            $docs = $conn->query($docsSql);
                                             
                                             if (!$docs || $docs->num_rows === 0): ?>
                                                 <div class="text-muted" style="font-size: 13px; font-style: italic;">No pending documents found.</div>
@@ -431,15 +573,14 @@ function renderContent() {
                                     <div class="document-card-grid">
                                         <?php
                                         $workmanId = (int)$app['workman_id'];
-                                        $requestCreatedAt = $conn->real_escape_string($app['request_created_at'] ?? date('Y-m-d H:i:s'));
-                                        $docs = $conn->query("
-                                            SELECT id, document_type, COALESCE(status, 'pending') AS status, COALESCE(remarks, '') AS remarks, file_path, uploaded_at
-                                            FROM documents
-                                            WHERE workman_id = $workmanId
-                                              AND document_type IN ($gatePassDocTypesSql)
-                                              AND uploaded_at >= DATE_SUB('$requestCreatedAt', INTERVAL 10 MINUTE)
-                                            ORDER BY uploaded_at DESC, id DESC
-                                        ");
+                                        $docsSql = welfareGatePassDocumentsSql(
+                                            $conn,
+                                            $workmanId,
+                                            (int)$app['request_id'],
+                                            $app['request_created_at'] ?? '',
+                                            $gatePassDocTypesSql
+                                        );
+                                        $docs = $conn->query($docsSql);
                                         if (!$docs || $docs->num_rows === 0): ?>
                                             <div class="text-muted" style="font-size: 13px; font-style: italic;">No gate pass documents found for this approved request.</div>
                                         <?php endif; ?>

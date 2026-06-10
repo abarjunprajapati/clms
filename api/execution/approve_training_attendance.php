@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/execution_context.php';
+require_once __DIR__ . '/../../include/training_flow.php';
 require_once __DIR__ . '/../auth_middleware.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -78,25 +79,6 @@ function executionTrainingEnsureFlowSchema($conn) {
     @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
 }
 
-function executionTrainingEnsureRequest($conn, $workmanId, $contractorId, $userId) {
-    $existing = db_single(
-        $conn,
-        "SELECT id FROM training_requests WHERE workman_id = ? AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
-        'i',
-        [$workmanId]
-    );
-    if ($existing) return;
-
-    db_execute(
-        $conn,
-        "INSERT INTO training_requests
-         (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
-         VALUES (?, ?, 'Safety Induction', CURDATE(), CURDATE(), 'morning', 'Auto-created after Executing Officer online approval. Waiting for Welfare check.', 'execution', ?, 'welfare_pending', NOW(), NOW())",
-        'iii',
-        [$workmanId, $contractorId, $userId]
-    );
-}
-
 try {
     executionTrainingEnsureFlowSchema($conn);
 
@@ -154,6 +136,21 @@ try {
         executionTrainingJson(['status' => false, 'message' => 'Worker is not assigned to this officer.'], 403);
     }
 
+    $paidPayment = db_single(
+        $conn,
+        "SELECT pr.id
+         FROM training_payment_request_workers pw
+         JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+         WHERE pw.workman_id = ?
+           AND pr.status = 'paid'
+         LIMIT 1",
+        'i',
+        [$workmanId]
+    );
+    if (!$paidPayment) {
+        executionTrainingJson(['status' => false, 'message' => 'Payment is not verified by Welfare yet.'], 400);
+    }
+
     $conn->begin_transaction();
 
     db_execute(
@@ -177,7 +174,7 @@ try {
     );
 
     if ($decision === 'approved') {
-        executionTrainingEnsureRequest($conn, $workmanId, (int)$worker['contractor_id'], (int)($_SESSION['user_id'] ?? 0));
+        clms_training_ensure_request($conn, $workmanId, (int)$worker['contractor_id'], (int)($_SESSION['user_id'] ?? 0), 'execution', 'Auto-created after Executing Officer online approval. Waiting for Welfare check.');
     }
 
     $conn->commit();

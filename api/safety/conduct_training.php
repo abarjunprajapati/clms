@@ -4,7 +4,24 @@
 require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['safety_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/safety_training_control.php';
 header('Content-Type: application/json');
+
+clms_safety_ensure_control_schema($conn);
+
+function conduct_training_table_exists($conn, $table) {
+    $safeTable = mysqli_real_escape_string($conn, $table);
+    $res = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
+    return $res && mysqli_num_rows($res) > 0;
+}
+
+function conduct_training_column_exists($conn, $table, $column) {
+    if (!conduct_training_table_exists($conn, $table)) return false;
+    $safeTable = str_replace('`', '``', $table);
+    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+    return $res && mysqli_num_rows($res) > 0;
+}
 
 $data = json_decode(file_get_contents('php://input'), true);
 $req_id          = (int)($data['request_id'] ?? 0);
@@ -28,8 +45,8 @@ $req = db_single($conn,
     'i', [$req_id]
 );
 
-if (!$req || !in_array($req['status'], ['scheduled', 'contractor_confirmed'])) {
-    echo json_encode(['success' => false, 'error' => 'Request not found or not in a valid state (scheduled/confirmed)']);
+if (!$req || $req['status'] !== 'contractor_confirmed') {
+    echo json_encode(['success' => false, 'error' => 'Request not found or contractor confirmation is pending.']);
     exit;
 }
 
@@ -40,7 +57,15 @@ try {
     if ($attendance === 'absent') {
         // Reset to pending so it can be rescheduled
         db_execute($conn,
-            "UPDATE training_requests SET status = 'pending', updated_at = NOW() WHERE id = ?",
+            "UPDATE training_requests SET status = 'pending', contractor_confirmed = 0, updated_at = NOW() WHERE id = ?",
+            'i', [$req_id]
+        );
+        db_execute($conn,
+            "UPDATE training_session_workers SET attendance_status = 'absent', result = 'pending', remarks = ?, created_at = NOW() WHERE training_request_id = ?",
+            'si', [$conduct_remarks, $req_id]
+        );
+        db_execute($conn,
+            "UPDATE training_batch_workers SET status = 'absent' WHERE training_request_id = ?",
             'i', [$req_id]
         );
         db_execute($conn,
@@ -98,23 +123,31 @@ try {
     );
 
     // Record result in training_results table
-    $app_no = db_single($conn, "SELECT application_no FROM contractors WHERE id = ?", 'i', [$req['contractor_id']])['application_no'] ?? '';
+    $app_no = '';
+    if (conduct_training_column_exists($conn, 'contractors', 'application_no')) {
+        $app_no = db_single($conn, "SELECT application_no FROM contractors WHERE id = ?", 'i', [$req['contractor_id']])['application_no'] ?? '';
+    }
     db_execute($conn,
         "INSERT INTO training_results (workman_id, application_no, result, recorded_by, created_at)
-         VALUES (?, ?, ?, ?, NOW())
-         ON DUPLICATE KEY UPDATE result=VALUES(result), recorded_by=VALUES(recorded_by)",
+         VALUES (?, ?, ?, ?, NOW())",
         'issi', [$req['workman_id'], $app_no, $result, $safety_user_id]
+    );
+    db_execute($conn,
+        "UPDATE training_batch_workers SET status = ?, scheduled_at = COALESCE(scheduled_at, NOW()) WHERE training_request_id = ?",
+        'si', [$result, $req_id]
     );
 
     // Log audit
-    db_execute($conn,
-        "INSERT INTO audit_logs (user_id, action, module, details) VALUES (?,?,?,?)",
-        'isss', [$safety_user_id, 'training_conducted', 'training_requests',
-            "Worker {$req['worker_name']} (ID:{$req['workman_id']}) - Result: $result. Remarks: $conduct_remarks"]
-    );
+    if (conduct_training_table_exists($conn, 'audit_logs')) {
+        db_execute($conn,
+            "INSERT INTO audit_logs (user_id, action, module, details) VALUES (?,?,?,?)",
+            'isss', [$safety_user_id, 'training_conducted', 'training_requests',
+                "Worker {$req['worker_name']} (ID:{$req['workman_id']}) - Result: $result. Remarks: $conduct_remarks"]
+        );
+    }
 
     // Notify contractor
-    if ($req['contractor_user_id']) {
+    if ($req['contractor_user_id'] && conduct_training_table_exists($conn, 'notifications')) {
         $resultLabel = ($result === 'passed') ? '✅ PASSED' : '❌ FAILED';
         $msg = "Safety training for {$req['worker_name']} has been conducted. Result: {$resultLabel}."
              . ($result === 'passed' ? ' Worker is now eligible for Gate Pass application.' : ' Please arrange re-training.')

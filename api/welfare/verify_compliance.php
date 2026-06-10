@@ -9,6 +9,35 @@ header('Content-Type: application/json');
 
 ensureComplianceSchema($conn);
 $conn->query("ALTER TABLE compliance MODIFY status ENUM('pending','verified','rejected','reupload_required') DEFAULT 'pending'");
+mysqli_query($conn, "CREATE TABLE IF NOT EXISTS compliance_notices (
+    id INT NOT NULL AUTO_INCREMENT,
+    compliance_id INT NOT NULL,
+    contractor_id INT NULL,
+    notice_type VARCHAR(40) NOT NULL,
+    notice_text TEXT NOT NULL,
+    issued_by INT NULL,
+    issued_at DATETIME NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'open',
+    PRIMARY KEY (id),
+    KEY idx_compliance_notice (compliance_id),
+    KEY idx_contractor_notice (contractor_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+function issueComplianceNotice($conn, $complianceId, $status, $remarks, $userId, $attendanceCount, $challanWorkerCount) {
+    $row = db_single($conn, "SELECT contractor_id, type, month_year FROM compliance WHERE id = ? LIMIT 1", 'i', [$complianceId]);
+    $contractorId = $row ? (int)($row['contractor_id'] ?? 0) : 0;
+    $type = strtoupper((string)($row['type'] ?? 'COMPLIANCE'));
+    $month = (string)($row['month_year'] ?? '');
+    $noticeType = $status === 'reupload_required' ? 'reupload_notice' : ($status === 'rejected' ? 'rejection_notice' : 'discrepancy_notice');
+    $notice = "Compliance notice for $type $month. System attendance count: $attendanceCount. Challan worker count: $challanWorkerCount. Action: $status. Remarks: $remarks";
+    db_execute(
+        $conn,
+        "INSERT INTO compliance_notices (compliance_id, contractor_id, notice_type, notice_text, issued_by, issued_at, status)
+         VALUES (?, ?, ?, ?, ?, NOW(), 'open')",
+        'iissi',
+        [$complianceId, $contractorId, $noticeType, $notice, $userId]
+    );
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request method']);
@@ -57,6 +86,7 @@ if (!$foundRecord) {
 }
 
 if ($status === 'verified' && $attendanceCount !== $challanWorkerCount) {
+    issueComplianceNotice($conn, $id, 'discrepancy', 'Verification blocked due to attendance/challan mismatch.', $user_id, $attendanceCount, $challanWorkerCount);
     echo json_encode([
         'success' => false,
         'message' => "Worker validation mismatch: system attendance is $attendanceCount, challan paid for $challanWorkerCount. Ask reupload or reject with remarks."
@@ -68,6 +98,9 @@ $stmt = $conn->prepare("UPDATE compliance SET status = ?, verification_remarks =
 if ($stmt) {
     $stmt->bind_param("ssii", $status, $remarks, $user_id, $id);
     if ($stmt->execute()) {
+        if ($status === 'rejected' || $status === 'reupload_required') {
+            issueComplianceNotice($conn, $id, $status, $remarks, $user_id, $attendanceCount, $challanWorkerCount);
+        }
         // Log action
         $logStmt = $conn->prepare("INSERT INTO audit_logs (user_id, action, module, details) VALUES (?, ?, 'compliance_monitor', ?)");
         if ($logStmt) {

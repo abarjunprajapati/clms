@@ -1,13 +1,12 @@
 <?php
 /**
- * Annexure 5/A — Pass Limits Configuration (Welfare Admin)
+ * Annexure 5/A - Pass Category Limit Configuration (Welfare Admin)
  * Full CRUD UI for managing pass type limits per contractor.
  */
 require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['welfare_admin', 'welfare_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
-require_once __DIR__ . '/../../include/wage_settings.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Welfare Admin';
@@ -150,7 +149,6 @@ function welfarePassLimitEnsureDefaults($conn) {
 function renderContent() {
     global $conn;
     welfarePassLimitEnsureDefaults($conn);
-    $minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
     
     // Get global defaults
     $defaults = db_fetch_all($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0 ORDER BY id");
@@ -161,15 +159,14 @@ function renderContent() {
 
 <div class="content-header">
   <div>
-    <h2 class="page-title"><i class="fas fa-sliders-h" style="color:#6366f1;margin-right:10px;"></i> Pass Limits</h2>
+    <h2 class="page-title">Maximum pass no allowed in each category</h2>
     <!-- <p class="page-subtitle">Configure maximum allowed passes for each contractor and category per PDF rules.</p> -->
   </div>
 </div>
 
-<!-- Global Defaults Card -->
 <div class="card glass" style="margin-bottom:24px;">
   <div class="card-header">
-    <div class="card-title"><i class="fas fa-globe"></i> Global Default Rules</div>
+    <div class="card-title">Pass Category Limit</div>
   </div>
   <div class="card-body" style="padding:0;">
     <table class="data-table">
@@ -219,25 +216,6 @@ function renderContent() {
         <?php endforeach; ?>
       </tbody>
     </table>
-  </div>
-</div>
-
-<!-- Minimum Wage Card -->
-<div class="card glass" style="margin-bottom:24px;">
-  <div class="card-header">
-    <div class="card-title"><i class="fas fa-indian-rupee-sign"></i> Minimum Certified Wage Rate</div>
-  </div>
-  <div class="card-body">
-    <form id="minimumWageForm" style="display:grid;grid-template-columns:minmax(220px,320px) 1fr auto;gap:16px;align-items:end;">
-      <div class="form-group" style="margin:0;">
-        <label class="form-label">Minimum Wage Rate</label>
-        <input type="number" class="form-control" name="minimum_wage" min="0" step="0.01" value="<?= htmlspecialchars((string)$minimumCertifiedWage) ?>" required>
-      </div>
-      <div style="font-size:12px;color:var(--text-muted);line-height:1.5;padding-bottom:8px;">
-        Contractor worker enrolment me Certified Wage Rate is value se kam enter nahi ho sakta.
-      </div>
-      <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Wage</button>
-    </form>
   </div>
 </div>
 
@@ -305,7 +283,6 @@ function renderContent() {
   #defaultLimitForm { padding:20px 22px 22px; }
   .pl-modal__footer { display:flex; justify-content:flex-end; gap:10px; padding-top:8px; }
   @media (max-width: 640px) { .form-grid-2 { grid-template-columns: 1fr; } .pl-modal__footer { flex-direction:column-reverse; } .pl-modal__footer .btn { width:100%; } }
-  @media (max-width: 860px) { #minimumWageForm { grid-template-columns: 1fr !important; } #minimumWageForm .btn { width: 100%; } }
 </style>
 
 <script>
@@ -358,33 +335,6 @@ document.getElementById('defaultLimitForm').onsubmit = async (e) => {
   }
 };
 
-document.getElementById('minimumWageForm').onsubmit = async (e) => {
-  e.preventDefault();
-  const formData = new FormData(e.target);
-  const minimumWage = formData.get('minimum_wage');
-
-  try {
-    const res = await fetch('../../api/welfare/update_wage_setting.php', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
-      },
-      body: JSON.stringify({ minimum_wage: minimumWage })
-    });
-    const raw = await res.text();
-    let result = {};
-    try { result = raw ? JSON.parse(raw) : {}; } catch (err) { result = { success:false, message: raw || 'Server returned invalid response.' }; }
-    if (result.success) {
-      showToast(result.message || 'Minimum wage updated successfully.', 'success');
-    } else {
-      showToast(result.message || 'Failed to update minimum wage.', 'error');
-    }
-  } catch (err) {
-    showToast('Connection error. Please try again.', 'error');
-  }
-};
-
 function showToast(msg, type) {
   let t = document.createElement('div');
   t.className = 'toast-msg toast-' + type;
@@ -407,4 +357,4 @@ function getBadgeClass($type) {
     return $map[$type] ?? 'badge-gray';
 }
 
-renderLayout("Pass Limits (Annexure 5A)", 'renderContent', $role, $name);
+renderLayout("Pass Category Limit", 'renderContent', $role, $name);

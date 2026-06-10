@@ -45,6 +45,22 @@ function renderContent() {
     $safetyExpr = retrainingColumnSql($conn, 'workmen', 'w', 'safety_training_status', 'NULL');
     $validTillExpr = retrainingColumnSql($conn, 'workmen', 'w', 'training_valid_till', 'NULL');
     $contractorNameExpr = retrainingColumnSql($conn, 'contractors', 'c', 'contractor_name', "'N/A'");
+    $resultJoin = "";
+    $resultSelect = "NULL AS latest_training_date, 0 AS attempts_30";
+    $resultTable = mysqli_query($conn, "SHOW TABLES LIKE 'training_results'");
+    if ($resultTable && mysqli_num_rows($resultTable) > 0) {
+        $resultJoin = "
+        LEFT JOIN (
+            SELECT
+                workman_id,
+                MIN(DATE(created_at)) AS first_training_date,
+                MAX(DATE(created_at)) AS latest_training_date,
+                SUM(CASE WHEN created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS attempts_30
+            FROM training_results
+            GROUP BY workman_id
+        ) trr ON trr.workman_id = w.id";
+        $resultSelect = "trr.latest_training_date, COALESCE(trr.attempts_30, 0) AS attempts_30, trr.first_training_date";
+    }
 
     $retrain_list = db_fetch_all($conn, "
         SELECT
@@ -54,9 +70,11 @@ function renderContent() {
             $trainingExpr AS training_status,
             $safetyExpr AS safety_training_status,
             $validTillExpr AS training_valid_till,
-            $contractorNameExpr AS contractor_name
+            $contractorNameExpr AS contractor_name,
+            $resultSelect
         FROM workmen w
         LEFT JOIN contractors c ON w.contractor_id = c.id
+        $resultJoin
         WHERE
             LOWER(COALESCE($trainingExpr, '')) IN ('fail', 'failed', 'training_failed', 'training_expired', 'expired')
             OR LOWER(COALESCE($safetyExpr, '')) IN ('training_failed', 'failed_training', 'fail', 'failed')
@@ -129,10 +147,26 @@ function renderContent() {
               </td>
               <td><?= htmlspecialchars($w['contractor_name']) ?></td>
               <td>
+                <?php
+                  $firstTrainingDate = $w['first_training_date'] ?? $w['latest_training_date'] ?? null;
+                  $daysSinceFirst = $firstTrainingDate ? floor((strtotime(date('Y-m-d')) - strtotime($firstTrainingDate)) / 86400) : 0;
+                  $attempts = (int)($w['attempts_30'] ?? 0);
+                  $retestBlocked = ($attempts >= 3) || ($firstTrainingDate && $daysSinceFirst > 30);
+                  $blockMessage = $attempts >= 3
+                      ? 'Maximum Attempt Reached'
+                      : (($firstTrainingDate && $daysSinceFirst > 30) ? 'Retest period exceeded 30 days. Please apply for training again.' : '');
+                ?>
+                <?php if ($retestBlocked): ?>
+                  <span class="badge badge-danger"><?= htmlspecialchars($blockMessage) ?></span>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><?= $attempts ?> attempt(s), <?= (int)$daysSinceFirst ?> day(s)</div>
+                <?php else: ?>
                 <form action="../../api/safety/request_retraining.php" method="POST" style="display:inline">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="workman_id" value="<?= $w['id'] ?>">
-                    <button type="submit" class="btn btn-sm btn-primary">Reset to Pending</button>
+                    <button type="submit" class="btn btn-sm btn-primary">Allow Retest</button>
                 </form>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><?= $attempts ?> / 3 attempt(s)</div>
+                <?php endif; ?>
               </td>
             </tr>
             <?php endforeach; if(empty($retrain_list)): ?>

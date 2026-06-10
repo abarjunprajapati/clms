@@ -10,15 +10,10 @@ $name = $_SESSION['name'] ?? 'Welfare Admin';
 function renderContent() {
     global $conn;
     $pending = db_fetch_all($conn, "
-        SELECT a3.*, s.customer_name,
-               c.vendor_name, c.contractor_name, c.gst_no, c.address,
-               wo.project_name, wo.department, wo.work_order_no AS mapped_work_order_no
+        SELECT a3.*
         FROM contractor_annexure3a a3
-        LEFT JOIN contractors c ON c.vendor_code = a3.vendor_code
-        LEFT JOIN sap_customer_master s ON a3.customer_code = s.customer_code
-        LEFT JOIN work_orders wo ON wo.work_order_no = a3.work_order_no
         WHERE a3.status IN ('pending', 'resubmitted')
-        ORDER BY a3.created_at DESC
+        ORDER BY COALESCE(a3.updated_at, a3.created_at) DESC, a3.id DESC
     ");
 ?>
 <div class="content-header">
@@ -294,19 +289,14 @@ function viewDetails(p) {
 
     const html = `<div class="form-container">
         <div class="form-section-card">
-            <div class="form-section-header"><i class="fas fa-building"></i> Contractor Information</div>
+            <div class="form-section-header"><i class="fas fa-building"></i> Annexure 3A Submission</div>
             <div class="form-grid">
-                ${valueBox('Select Active Work Order', p.work_order_no || p.mapped_work_order_no, 'span-2')}
+                ${valueBox('Work Order No', p.work_order_no, 'span-2')}
                 ${valueBox('Submitted On', formatDate(p.created_at))}
                 ${valueBox('Customer Code', p.customer_code)}
-                ${valueBox('Customer Name', p.customer_name)}
-                ${valueBox('Project Name', p.project_name)}
-                ${valueBox('Department', p.department)}
                 ${valueBox('Vendor Code', p.vendor_code)}
-                ${valueBox('Contractor Name', p.contractor_name || p.vendor_name)}
+                ${valueBox('Status', String(p.status || 'pending').replace(/_/g, ' ').toUpperCase())}
                 ${valueBox('PIN Code', p.pin_code)}
-                ${valueBox('GST No', p.gst_no)}
-                ${valueBox('Registered Address', p.address, 'span-2')}
             </div>
         </div>
 

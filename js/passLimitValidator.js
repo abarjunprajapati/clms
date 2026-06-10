@@ -76,7 +76,7 @@ const PassLimitValidator = (() => {
           title: 'Enrollment Limit Reached',
           html: `
             <div style="text-align:left;line-height:1.6">
-              <p style="margin:0 0 12px;">This enrollment cannot be submitted because the approved limit for <strong>${passType}</strong> passes has already been reached.</p>
+              <p style="margin:0 0 12px;">This enrollment cannot be submitted because the Welfare Admin limit for <strong>${passType}</strong> passes has already been reached.</p>
               <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
                 <div><strong>Allowed:</strong> ${limit.allowed}</div>
                 <div><strong>Already Enrolled:</strong> ${limit.current || 0}</div>

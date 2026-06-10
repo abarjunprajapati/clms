@@ -220,7 +220,7 @@ function renderContent() {
                 <div class="modal-tab-content hidden" id="section-2">
                     <div class="form-grid-3">
                         <div class="form-group">
-                            <label class="form-label">Region</label>
+                            <label class="form-label">Religion</label>
                             <input type="text" name="region" class="form-control">
                         </div>
                         <div class="form-group">

@@ -37,32 +37,33 @@ function getCurrentPassCount($conn, $contractor_id, $pass_type) {
     $placeholders = implode(',', array_fill(0, count($types), '?'));
     $bindTypes = 'i' . str_repeat('s', count($types));
     $params = array_merge([$contractor_id], $types);
+    $activeStatusWhere = "COALESCE(LOWER(status), '') NOT IN ('draft', 'rejected', 'removed', 'inactive', 'deleted', 'blocked')";
 
     switch ($pass_type) {
         case 'Contractor':
             $row = db_single($conn,
-                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND status != 'rejected'",
+                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND $activeStatusWhere",
                 $bindTypes, $params
             );
             return (int)($row['cnt'] ?? 0);
             
         case 'Representative':
             $row = db_single($conn,
-                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND status != 'rejected'",
+                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND $activeStatusWhere",
                 $bindTypes, $params
             );
             return (int)($row['cnt'] ?? 0);
             
         case 'Supervisor':
             $row = db_single($conn,
-                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND status != 'rejected'",
+                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND $activeStatusWhere",
                 $bindTypes, $params
             );
             return (int)($row['cnt'] ?? 0);
             
         case 'Workman':
             $row = db_single($conn,
-                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND status != 'rejected'",
+                "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = ? AND worker_type IN ($placeholders) AND $activeStatusWhere",
                 $bindTypes, $params
             );
             return (int)($row['cnt'] ?? 0);

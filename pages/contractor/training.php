@@ -1,3 +1,8 @@
+<?php
+require_once __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/payment_flow.php';
+$trainingFeePerWorker = clms_training_fee_per_worker($conn);
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -229,7 +234,8 @@ function toggleAllWorkmen() {
 function updateParticipantCount() {
     const selected = document.querySelectorAll('.workman-checkbox:checked').length;
     document.getElementById('participantCount').value = selected;
-    const fee = selected * 500;
+    const feePerWorker = <?= json_encode((float)$trainingFeePerWorker) ?>;
+    const fee = selected * feePerWorker;
     document.getElementById('paymentFeeInfo').innerHTML = 
       `<strong>Application Fee:</strong> ₹ 500 per workman. For ${selected} workmen = <strong>₹ ${fee.toLocaleString()}</strong>. Fee payment required before training confirmation.`;
 }

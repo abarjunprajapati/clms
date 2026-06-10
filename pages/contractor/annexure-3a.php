@@ -3,6 +3,7 @@ require_once '../../include/auth.php';
 checkAuth(['contractor', 'super_admin']);
 include '../../include/config.php';
 include '../../include/layout.php';
+require_once '../../include/labour_license_threshold.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -128,8 +129,7 @@ function renderContent() {
         ];
     }
 
-    $threshold_row = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key = 'labour_license_threshold'");
-    $licence_threshold = intval($threshold_row['setting_value'] ?? 20);
+    $licence_threshold = clms_get_labour_license_threshold($conn);
 
     $welfareApprovalHistory = db_fetch_all($conn, "
         SELECT annexure3a_id, work_order_no, status, reason, updated_at
@@ -769,7 +769,7 @@ function renderContent() {
                     <div class="registration-card" id="section7Card">
                         <div class="registration-section-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
                             <span>9. Labour License Details</span>
-                            <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &ge; <?= $licence_threshold ?>)</span>
+                            <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &gt; <?= $licence_threshold ?>)</span>
                         </div>
                         <div class="d-flex justify-content-end mb-3"><button type="button" class="btn btn-sm btn-reg-draft" onclick="addLicenseRow()" <?= $limited_edit_disabled_attr ?>>Add Row</button></div>
                         <div class="table-responsive">
@@ -1361,15 +1361,16 @@ function renderContent() {
 
     function toggleLicenceMandatory() {
         const workers = updateWorkerTotal();
+        const mandatory = workers > LICENCE_THRESHOLD;
         const badge = document.getElementById('licenceMandatoryBadge');
         const card = document.getElementById('section7Card');
         const licInputs = document.querySelectorAll('#licenseTableBody input[type="text"], #licenseTableBody input[type="date"]');
         const fileInputs = document.querySelectorAll('#licenseTableBody input[type="file"]');
 
-        if (badge) badge.style.display = 'none';
-        if (card) card.style.borderColor = '';
-        licInputs.forEach(input => input.required = false);
-        fileInputs.forEach(input => input.required = false);
+        if (badge) badge.style.display = mandatory ? 'inline-flex' : 'none';
+        if (card) card.style.borderColor = mandatory ? '#f59e0b' : '';
+        licInputs.forEach(input => input.required = mandatory);
+        fileInputs.forEach(input => input.required = mandatory && !input.closest('td')?.querySelector('input[name="existing_license_file[]"]')?.value);
     }
 
     async function viewSubmission(id) {

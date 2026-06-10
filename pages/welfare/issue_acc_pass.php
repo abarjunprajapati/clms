@@ -38,7 +38,7 @@ function renderContent() {
                             <tr>
                                 <td><?= htmlspecialchars($w['name']) ?></td>
                                 <td><code><?= $w['application_no'] ?></code></td>
-                                <td><button class="btn btn-xs btn-primary" onclick="generateAcc('<?= $w['application_no'] ?>')">Generate</button></td>
+                                <td><button class="btn btn-xs btn-primary" onclick="generateAcc(<?= (int)$w['id'] ?>)">Generate</button></td>
                             </tr>
                             <?php endwhile; ?>
                         </tbody>
@@ -105,12 +105,12 @@ function renderContent() {
         return data;
     }
 
-    async function generateAcc(appId) {
-        if (!confirm('Generate unique ACC and Sync with SAP for Application ' + appId + '?')) return;
-        const res = await fetch('../../api/welfare/issue_acc.php', {
+    async function generateAcc(workerId) {
+        if (!confirm('Generate unique ACC and sync with SAP for this worker?')) return;
+        const res = await fetch('../../api/welfare/generate_worker_acc.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.CLMS_CSRF_TOKEN || '' },
-            body: JSON.stringify({ application_id: appId })
+            body: JSON.stringify({ workman_id: workerId })
         });
         const data = await parsePassApiResponse(res, 'ACC generation failed on the server.');
         if (data.success) location.reload();

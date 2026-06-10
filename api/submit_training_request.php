@@ -35,6 +35,8 @@ try {
     require_once 'api_helper.php';
     require_once '../include/config.php';
     require_once '../include/customer_portal_context.php';
+    require_once '../include/payment_flow.php';
+    require_once '../include/training_type_master.php';
 
     // api_helper/include/session may replace handlers; restore JSON-safe handlers.
     set_error_handler(function($severity, $message, $file, $line) {
@@ -81,12 +83,16 @@ try {
         throw new Exception('No valid workman ids supplied');
     }
 
-    $preferredDate = trim($input['preferred_date'] ?? date('Y-m-d'));
-    $requestedDate = $preferredDate ?: date('Y-m-d');
+    $preferredDate = trim($input['preferred_date'] ?? '');
     $trainingType = trim($input['training_type'] ?? 'Safety Induction');
+    if (!clms_training_type_is_active($conn, $trainingType)) {
+        throw new Exception('Please select an active Training Type from Welfare master.');
+    }
 
     $conn->begin_transaction();
     $created = 0;
+    $alreadyQueued = 0;
+    $paymentWorkerIds = [];
 
     foreach ($workerIds as $workerId) {
         $worker = db_single(
@@ -118,17 +124,67 @@ try {
             [$workerId]
         );
         if ($existing) {
+            $alreadyQueued++;
             continue;
         }
 
         $preferredShift = in_array($input['preferred_shift'] ?? '', ['morning','evening']) ? $input['preferred_shift'] : 'morning';
+        $previousFailed = db_single(
+            $conn,
+            "SELECT id FROM training_requests
+             WHERE workman_id = ?
+               AND status IN ('failed','rejected','correction_required')
+             ORDER BY id DESC LIMIT 1",
+            'i',
+            [$workerId]
+        );
+
+        if ($previousFailed) {
+            db_execute(
+                $conn,
+                "UPDATE training_requests
+                 SET training_type = ?,
+                     requested_date = ?,
+                     preferred_date = ?,
+                     preferred_shift = ?,
+                     remarks = ?,
+                     source = 'contractor',
+                     requested_by = ?,
+                     status = 'welfare_pending',
+                     contractor_confirmed = 0,
+                     scheduled_date = NULL,
+                     scheduled_shift = NULL,
+                     scheduled_venue = NULL,
+                     scheduled_time = NULL,
+                     batch_number = NULL,
+                     instructor = NULL,
+                     safety_remarks = NULL,
+                     conduct_remarks = NULL,
+                     updated_at = NOW()
+                 WHERE id = ?",
+                'sssssii',
+                [
+                    $trainingType,
+                    date('Y-m-d'),
+                    $preferredDate !== '' ? $preferredDate : null,
+                    $preferredShift,
+                    trim($input['remarks'] ?? 'Re-training requested after failed Safety Induction.'),
+                    $userId,
+                    (int)$previousFailed['id'],
+                ]
+            );
+            training_update_workman_status($conn, $workerId);
+            $created++;
+            $paymentWorkerIds[] = $workerId;
+            continue;
+        }
 
         training_insert_request($conn, [
             'workman_id' => $workerId,
             'contractor_id' => $contractorId,
             'training_type' => $trainingType,
             'requested_date' => date('Y-m-d'),
-            'preferred_date' => $requestedDate,
+            'preferred_date' => $preferredDate !== '' ? $preferredDate : null,
             'preferred_shift' => $preferredShift,
             'remarks' => trim($input['remarks'] ?? ''),
             'source' => 'contractor',
@@ -139,6 +195,19 @@ try {
         ]);
         training_update_workman_status($conn, $workerId);
         $created++;
+        $paymentWorkerIds[] = $workerId;
+    }
+
+    if ($created === 0 && $alreadyQueued > 0) {
+        $conn->commit();
+        training_json([
+            'success' => true,
+            'message' => 'Re-training request is already pending with Safety. Please wait for scheduling.',
+            'data' => [
+                'worker_count' => 0,
+                'already_queued' => $alreadyQueued,
+            ],
+        ]);
     }
 
     if ($created === 0) {
@@ -152,14 +221,38 @@ try {
         training_upsert_workflow($conn, $applicationNo, $contractorId);
     }
 
+    $paidWorkerIds = clms_paid_training_worker_ids($conn, $paymentWorkerIds);
+    $unpaidWorkerIds = array_values(array_diff(array_map('intval', $paymentWorkerIds), $paidWorkerIds));
+    $paymentRequest = clms_create_training_payment_request(
+        $conn,
+        $contractorId,
+        $unpaidWorkerIds,
+        $userId,
+        'training_request'
+    );
+    if ($unpaidWorkerIds && !$paymentRequest) {
+        throw new Exception('Payment link generate nahi ho pa raha. Welfare Payment Gateway settings check karein ya existing pending payment link use karein.');
+    }
+
     $conn->commit();
+
+    $paymentMessage = $paymentRequest
+        ? 'Safety training request submitted successfully and payment link generated.'
+        : 'Safety training request submitted successfully. Payment is already verified for selected worker(s).';
 
     training_json([
         'success' => true,
-        'message' => 'Safety training request submitted successfully and forwarded to Welfare',
+        'message' => $paymentMessage,
         'data' => [
             'request_id' => 'STR-' . date('Ymd') . '-' . random_int(1000, 9999),
             'worker_count' => $created,
+            'paid_worker_count' => count($paidWorkerIds),
+            'payment' => $paymentRequest ? [
+                'payment_ref' => $paymentRequest['payment_ref'],
+                'amount' => $paymentRequest['total_amount'],
+                'payment_link' => $paymentRequest['payment_link'],
+                'link_expires_at' => $paymentRequest['link_expires_at'],
+            ] : null,
         ],
     ]);
 } catch (Throwable $e) {
@@ -232,6 +325,15 @@ function training_ensure_schema($conn) {
         'remarks' => 'TEXT NULL',
         'source' => 'VARCHAR(30) NULL',
         'requested_by' => 'INT NULL',
+        'contractor_confirmed' => 'TINYINT(1) DEFAULT 0',
+        'scheduled_date' => 'DATE NULL',
+        'scheduled_shift' => 'VARCHAR(20) NULL',
+        'scheduled_venue' => 'VARCHAR(300) NULL',
+        'scheduled_time' => 'VARCHAR(20) NULL',
+        'batch_number' => 'VARCHAR(100) NULL',
+        'instructor' => 'VARCHAR(150) NULL',
+        'safety_remarks' => 'TEXT NULL',
+        'conduct_remarks' => 'TEXT NULL',
         'status' => "VARCHAR(50) DEFAULT 'pending'",
         'created_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
         'updated_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',

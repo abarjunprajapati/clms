@@ -35,17 +35,34 @@ if ($needed > $available) {
 mysqli_begin_transaction($conn);
 
 try {
+    $linked = 0;
     foreach ($request_ids as $req_id) {
         $req = db_single($conn, "SELECT * FROM training_requests WHERE id=?", 'i', [$req_id]);
         if (!$req) continue;
 
         $workman_id = $req['workman_id'];
 
-        // 1. Map worker to session
-        db_execute($conn, "INSERT INTO training_session_workers (session_id, workman_id) VALUES (?, ?)", 'ii', [$session_id, $workman_id]);
-
-        // 2. Update training_requests status
-        db_execute($conn, "UPDATE training_requests SET status='scheduled' WHERE id=?", 'i', [$req_id]);
+        if ($req['status'] === 'contractor_confirmed') {
+            db_execute(
+                $conn,
+                "INSERT INTO training_session_workers (session_id, workman_id, training_request_id, attendance_status, result, created_at)
+                 VALUES (?, ?, ?, 'pending', 'pending', NOW())
+                 ON DUPLICATE KEY UPDATE session_id = VALUES(session_id)",
+                'iii',
+                [$session_id, $workman_id, $req_id]
+            );
+            $linked++;
+        } else {
+            db_execute(
+                $conn,
+                "UPDATE training_requests
+                 SET scheduled_date = ?, scheduled_shift = CASE WHEN ? >= '14:00:00' THEN 'evening' ELSE 'morning' END,
+                     scheduled_venue = ?, scheduled_time = ?, status = 'scheduled', updated_at = NOW()
+                 WHERE id = ?",
+                'ssssi',
+                [$session['session_date'], $session['session_time'], $session['location'], $session['session_time'], $req_id]
+            );
+        }
 
         // 3. Update workman training_status
         db_execute($conn, "UPDATE workmen SET training_status='training_scheduled' WHERE id=?", 'i', [$workman_id]);
@@ -55,10 +72,22 @@ try {
     }
 
     // 5. Update session enrolled count
-    db_execute($conn, "UPDATE training_schedule SET enrolled_count = enrolled_count + ? WHERE id=?", 'ii', [$needed, $session_id]);
+    db_execute(
+        $conn,
+        "UPDATE training_schedule
+         SET enrolled_count = (
+             SELECT COUNT(*)
+             FROM training_session_workers tsw
+             JOIN training_requests tr ON tr.id = tsw.training_request_id
+             WHERE tsw.session_id = ? AND tr.status = 'contractor_confirmed'
+         )
+         WHERE id = ?",
+        'ii',
+        [$session_id, $session_id]
+    );
 
     mysqli_commit($conn);
-    header("Location: ../../pages/safety/training_requests.php?success=Scheduled $needed workers");
+    header("Location: ../../pages/safety/training_requests.php?success=Scheduled $needed workers; $linked confirmed worker(s) linked to batch");
 } catch (Exception $e) {
     mysqli_rollback($conn);
     header("Location: ../../pages/safety/training_requests.php?error=" . urlencode($e->getMessage()));

@@ -1,5 +1,6 @@
 <?php
 require_once '../../include/config.php';
+require_once __DIR__ . '/../api_helper.php';
 
 header('Content-Type: application/json');
 
@@ -45,9 +46,27 @@ $vendor_data = [
     'msme_type' => $sap['msme_type'] ?? 'N/A'
 ];
 
-// In real app, send actual SMS/Email here
+$mobile = trim((string)($sap['vendor_mob1'] ?? $sap['mobile'] ?? ''));
+$email = trim((string)($sap['email_address'] ?? $sap['email'] ?? ''));
+$smsResult = $mobile !== ''
+    ? sendSMS($mobile, "Your CLMS activation mobile OTP is $mobile_otp. It expires in 10 minutes.")
+    : ['success' => false, 'message' => 'Mobile number not available'];
+$emailMessage = "Dear " . ($vendor_data['vendor_name'] ?: 'Vendor') . ",\n\n"
+    . "Your CLMS activation email OTP is $email_otp.\n"
+    . "Vendor Code: $code\n\n"
+    . "This is an automated message.";
+$emailResult = $email !== ''
+    ? sendEmailNotification($email, 'CLMS Activation Email OTP', $emailMessage, 'activation_otp', $vendor_data['vendor_name'] ?? '')
+    : ['success' => false, 'message' => 'Email address not available'];
+$demoEmailResult = sendDemoEmailNotification(
+    'CLMS Demo Activation OTP',
+    $emailMessage . "\n\nDemo copy requested for: arjunprajapati8595@gmail.com",
+    'activation_otp_demo'
+);
+
 db_execute($conn, "INSERT INTO sap_logs (activity, status) VALUES (?, ?)", 'ss', [
-    "Dual OTPs generated for $code: Mobile($mobile_otp), Email($email_otp)", "SUCCESS"
+    "Dual OTPs generated for $code: Mobile($mobile_otp), Email($email_otp). SMS: " . ($smsResult['message'] ?? '') . "; Email: " . ($emailResult['message'] ?? '') . "; Demo email: " . ($demoEmailResult['message'] ?? ''),
+    "SUCCESS"
 ]);
 
 echo json_encode([
@@ -55,6 +74,11 @@ echo json_encode([
     'data' => $vendor_data,
     'mobile_otp_demo' => $mobile_otp, // FOR DEMO
     'email_otp_demo' => $email_otp,   // FOR DEMO
+    'notification_debug' => [
+        'sms' => $smsResult,
+        'email' => $emailResult,
+        'demo_email' => $demoEmailResult
+    ],
     'message' => 'Vendor details fetched and OTPs sent to registered Mobile & Email.'
 ]);
 ?>

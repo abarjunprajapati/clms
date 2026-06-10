@@ -21,11 +21,13 @@ try {
     $pendingCount = db_count(
         $conn,
         "SELECT COUNT(*) c
-         FROM training_session_workers
-         WHERE session_id = ?
+         FROM training_session_workers tsw
+         JOIN training_requests tr ON tr.id = tsw.training_request_id
+         WHERE tsw.session_id = ?
+           AND tr.status = 'contractor_confirmed'
            AND (
-               LOWER(COALESCE(attendance_status, 'pending')) = 'pending'
-               OR LOWER(COALESCE(result, 'pending')) NOT IN ('pass', 'fail', 'passed', 'failed')
+               LOWER(COALESCE(tsw.attendance_status, 'pending')) = 'pending'
+               OR LOWER(COALESCE(tsw.result, 'pending')) NOT IN ('pass', 'fail', 'passed', 'failed')
            )",
         'i',
         [$session_id]
@@ -39,11 +41,20 @@ try {
     db_execute($conn, "UPDATE training_schedule SET session_status='completed' WHERE id=?", 'i', [$session_id]);
     
     // 2. Mark corresponding training requests as completed
-    $workers = db_fetch_all($conn, "SELECT workman_id, result FROM training_session_workers WHERE session_id=?", 'i', [$session_id]);
+    $workers = db_fetch_all(
+        $conn,
+        "SELECT tsw.workman_id, tsw.training_request_id, tsw.result
+         FROM training_session_workers tsw
+         JOIN training_requests tr ON tr.id = tsw.training_request_id
+         WHERE tsw.session_id = ?
+           AND tr.status = 'contractor_confirmed'",
+        'i',
+        [$session_id]
+    );
     foreach ($workers as $w) {
         $result = strtolower((string)($w['result'] ?? 'fail'));
         $requestStatus = in_array($result, ['pass', 'passed'], true) ? 'passed' : 'failed';
-        db_execute($conn, "UPDATE training_requests SET status=?, updated_at=NOW() WHERE workman_id=? AND status IN ('scheduled', 'contractor_confirmed', 'pending')", 'si', [$requestStatus, $w['workman_id']]);
+        db_execute($conn, "UPDATE training_requests SET status=?, updated_at=NOW() WHERE id=? AND status = 'contractor_confirmed'", 'si', [$requestStatus, (int)$w['training_request_id']]);
         
         // Notify contractor of completion
         // triggerNotification($conn, ...);

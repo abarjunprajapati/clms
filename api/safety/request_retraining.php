@@ -2,8 +2,11 @@
 require_once __DIR__ . '/../../include/auth.php';
 require_once __DIR__ . '/../../include/config.php';
 
+checkAuth(['safety_user', 'super_admin']);
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    die("Invalid request");
+    header("Location: ../../pages/safety/retraining.php?error=" . urlencode("Invalid request method"));
+    exit;
 }
 
 function requestRetrainingColumnExists($conn, $table, $column) {
@@ -17,6 +20,30 @@ $workman_id = intval($_POST['workman_id'] ?? 0);
 if (!$workman_id) {
     header("Location: ../../pages/safety/retraining.php?error=Invalid worker");
     exit;
+}
+
+$resultTable = mysqli_query($conn, "SHOW TABLES LIKE 'training_results'");
+if ($resultTable && mysqli_num_rows($resultTable) > 0) {
+    $attempt = db_single(
+        $conn,
+        "SELECT MIN(DATE(created_at)) AS first_training_date,
+                SUM(CASE WHEN created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS attempts_30
+         FROM training_results
+         WHERE workman_id = ?",
+        'i',
+        [$workman_id]
+    );
+    $attempts = (int)($attempt['attempts_30'] ?? 0);
+    $firstDate = $attempt['first_training_date'] ?? null;
+    $days = $firstDate ? floor((strtotime(date('Y-m-d')) - strtotime($firstDate)) / 86400) : 0;
+    if ($attempts >= 3) {
+        header("Location: ../../pages/safety/retraining.php?error=" . urlencode("Maximum Attempt Reached"));
+        exit;
+    }
+    if ($firstDate && $days > 30) {
+        header("Location: ../../pages/safety/retraining.php?error=" . urlencode("Retest Period Expired"));
+        exit;
+    }
 }
 
 $setParts = [];

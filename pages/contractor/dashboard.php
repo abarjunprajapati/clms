@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['contractor']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
+require_once __DIR__ . '/../../include/safety_training_control.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -82,6 +83,7 @@ function contractorWorkerTypeWhere(string $kind): string {
 
 function renderContent() {
     global $conn, $user_id, $name;
+    clms_safety_ensure_control_schema($conn);
 
     $contractor = db_single($conn, "SELECT * FROM contractors WHERE user_id = ?", 'i', [$user_id]);
     
@@ -143,6 +145,87 @@ function renderContent() {
         $recentWorkers = contractorRecentRows($conn, "SELECT id, {$workerNameCol} AS worker_name, {$tempCol} AS temp_ref" . ($trainingCol ? ", {$trainingCol} AS training_status" : ", '' AS training_status") . " FROM `{$workmenTable}` WHERE {$workerContractorWhere} ORDER BY {$orderCol} DESC LIMIT 5");
     }
 
+    $trainingStatusExpr = $trainingCol ? "LOWER(COALESCE(w.`{$trainingCol}`, 'pending'))" : "LOWER(COALESCE(w.training_status, 'pending'))";
+    $trainingRequestReady = contractorSafeCount($conn, 'training_requests', "{$cidWhere} AND LOWER(COALESCE(status, 'pending')) IN ('pending','welfare_pending')");
+    $bookingPending = contractorSafeCount($conn, 'training_requests', "{$cidWhere} AND LOWER(COALESCE(status, 'pending')) IN ('pending','welfare_pending')");
+    $upcomingScheduled = contractorTableExists($conn, 'training_requests')
+        ? contractorSafeScalar($conn, "SELECT COUNT(DISTINCT COALESCE(NULLIF(batch_number, ''), CONCAT('SESSION-', COALESCE(scheduled_session_id, id)))) c FROM training_requests WHERE {$cidWhere} AND LOWER(COALESCE(status, 'pending')) IN ('scheduled','contractor_confirmed') AND scheduled_date >= CURDATE()")
+        : 0;
+    $confirmedWorkers = contractorSafeCount($conn, 'training_requests', "{$cidWhere} AND (LOWER(COALESCE(status, 'pending')) = 'contractor_confirmed' OR COALESCE(contractor_confirmed, 0) = 1)");
+    $retestRequired = contractorSafeCount($conn, 'training_requests', "{$cidWhere} AND LOWER(COALESCE(status, 'pending')) IN ('failed','fail','absent','training_failed')");
+
+    $availableBatches = contractorTableExists($conn, 'training_class_batches') && contractorTableExists($conn, 'training_batch_workers')
+        ? contractorRecentRows($conn, "
+            SELECT b.id, b.batch_number, b.training_date, b.language_name, b.session_name, b.venue_name, b.capacity,
+                   COALESCE(x.selected_count, 0) AS selected_count,
+                   GREATEST(b.capacity - COALESCE(x.selected_count, 0), 0) AS seats_available
+            FROM training_class_batches b
+            LEFT JOIN (
+                SELECT batch_id, COUNT(*) AS selected_count
+                FROM training_batch_workers
+                WHERE ticked = 1
+                GROUP BY batch_id
+            ) x ON x.batch_id = b.id
+            WHERE b.training_date >= CURDATE()
+              AND LOWER(COALESCE(b.status, 'scheduled')) IN ('draft','open','scheduled')
+            ORDER BY b.training_date ASC, b.session_name ASC, b.id ASC
+            LIMIT 5
+        ")
+        : [];
+
+    $recentTrainingStatuses = [];
+    if ($c_id && contractorTableExists($conn, 'training_requests') && contractorTableExists($conn, $workmenTable)) {
+        $aadhaarExpr = contractorColumnExists($conn, $workmenTable, 'aadhaar') ? 'w.aadhaar' : "''";
+        $tempExpr = contractorColumnExists($conn, $workmenTable, 'temp_id') ? 'w.temp_id' : 'w.id';
+        $updatedExpr = contractorColumnExists($conn, 'training_requests', 'updated_at') ? 'tr.updated_at' : 'tr.id';
+        $recentTrainingStatuses = contractorRecentRows($conn, "
+            SELECT tr.id, tr.workman_id, COALESCE(tr.status, 'pending') AS status,
+                   tr.scheduled_date, tr.batch_number,
+                   w.`{$workerNameCol}` AS worker_name, {$aadhaarExpr} AS aadhaar, {$tempExpr} AS temp_ref,
+                   {$trainingStatusExpr} AS worker_training_status
+            FROM training_requests tr
+            JOIN `{$workmenTable}` w ON w.id = tr.workman_id
+            WHERE tr.contractor_id = {$c_id}
+            ORDER BY {$updatedExpr} DESC, tr.id DESC
+            LIMIT 6
+        ");
+    }
+
+    $retestWorkers = [];
+    if ($c_id && contractorTableExists($conn, 'training_requests') && contractorTableExists($conn, $workmenTable)) {
+        $aadhaarExpr = contractorColumnExists($conn, $workmenTable, 'aadhaar') ? 'w.aadhaar' : "''";
+        $tempExpr = contractorColumnExists($conn, $workmenTable, 'temp_id') ? 'w.temp_id' : 'w.id';
+        $updatedExpr = contractorColumnExists($conn, 'training_requests', 'updated_at') ? 'last_req.updated_at' : 'last_req.id';
+        $retestWorkers = contractorRecentRows($conn, "
+            SELECT last_req.workman_id, last_req.status, last_req.updated_at, w.`{$workerNameCol}` AS worker_name,
+                   {$aadhaarExpr} AS aadhaar, {$tempExpr} AS temp_ref,
+                   COALESCE(attempts.attempt_count, 0) AS attempt_count,
+                   GREATEST(0, 30 - DATEDIFF(CURDATE(), DATE(last_req.updated_at))) AS days_left
+            FROM training_requests last_req
+            JOIN `{$workmenTable}` w ON w.id = last_req.workman_id
+            LEFT JOIN (
+                SELECT workman_id, COUNT(*) AS attempt_count
+                FROM training_requests
+                WHERE contractor_id = {$c_id}
+                  AND LOWER(COALESCE(status, 'pending')) IN ('failed','fail','absent','passed')
+                  AND created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                GROUP BY workman_id
+            ) attempts ON attempts.workman_id = last_req.workman_id
+            WHERE last_req.contractor_id = {$c_id}
+              AND LOWER(COALESCE(last_req.status, 'pending')) IN ('failed','fail','absent','training_failed')
+              AND last_req.id = (
+                  SELECT tr2.id
+                  FROM training_requests tr2
+                  WHERE tr2.workman_id = last_req.workman_id
+                    AND tr2.contractor_id = last_req.contractor_id
+                  ORDER BY tr2.id DESC
+                  LIMIT 1
+              )
+            ORDER BY {$updatedExpr} DESC
+            LIMIT 5
+        ");
+    }
+
     $a2Decision = [
         'title' => 'Contractor Registration',
         'status' => $display_contractor_status,
@@ -194,7 +277,8 @@ function renderContent() {
             ['label' => 'Representative', 'detail' => 'Register official representatives (Max 2)', 'icon' => 'fa-user-tie', 'link' => 'enrolment-4a.php?type=representative', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('representative'))],
             ['label' => 'Supervisor', 'detail' => 'Register site supervisors (1 per 50 workmen)', 'icon' => 'fa-user-shield', 'link' => 'enrolment-4a.php?type=supervisor', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('supervisor'))],
             ['label' => 'Workmen', 'detail' => 'Register and manage your workers', 'icon' => 'fa-users', 'link' => 'enrolment-4a.php?type=workmen', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('workmen'))],
-            ['label' => 'Safety Training', 'detail' => 'Request batches and view results', 'icon' => 'fa-graduation-cap', 'link' => 'training_request.php', 'status' => 'active', 'count' => 'Requests'],
+            ['label' => 'Safety Training Request', 'detail' => 'Submit requests and confirm Safety schedule', 'icon' => 'fa-graduation-cap', 'link' => 'training_request.php', 'status' => 'active', 'count' => $trainingRequestReady],
+            ['label' => 'Book Safety Training', 'detail' => 'Book appointment against available Safety batches', 'icon' => 'fa-calendar-check', 'link' => 'book_safety_training.php', 'status' => 'active', 'count' => $bookingPending],
             ['label' => 'Gate Pass', 'detail' => 'Generate temporary and monthly passes', 'icon' => 'fa-id-badge', 'link' => 'gatepass-6a.php', 'status' => 'active', 'count' => 'Generate'],
             ['label' => 'ACC Card', 'detail' => 'Track permanent biometric card status', 'icon' => 'fa-fingerprint', 'link' => 'pass_status.php', 'status' => 'active', 'count' => 'Track'],
             ['label' => 'Attendance', 'detail' => 'View daily and monthly attendance logs', 'icon' => 'fa-clipboard-list', 'link' => 'attendance.php', 'status' => 'active', 'count' => 'View'],
@@ -307,6 +391,119 @@ function renderContent() {
       <?php endforeach; ?>
     </div>
 
+    <?php if ($contractor_status === 'approved'): ?>
+    <div class="safety-booking-panel glass">
+      <div class="safety-booking-head">
+        <div>
+          <h3><i class="fas fa-calendar-check"></i> Book Appointment / Book Safety Training</h3>
+          <p>Contractor view for booking requests, open safety batches, worker results and retest follow-up.</p>
+        </div>
+        <div class="safety-booking-actions">
+          <a href="training_request.php" class="btn btn-outline"><i class="fas fa-paper-plane"></i> Request Training</a>
+          <a href="book_safety_training.php" class="btn btn-primary"><i class="fas fa-calendar-plus"></i> Book Appointment</a>
+        </div>
+      </div>
+
+      <div class="booking-snapshot">
+        <div class="booking-stat"><span>Pending Booking Requests</span><strong><?= (int)$bookingPending ?></strong></div>
+        <div class="booking-stat"><span>Upcoming Scheduled Batches</span><strong><?= (int)$upcomingScheduled ?></strong></div>
+        <div class="booking-stat"><span>Confirmed Workers</span><strong><?= (int)$confirmedWorkers ?></strong></div>
+        <div class="booking-stat danger"><span>Failed / Absent / Retest</span><strong><?= (int)$retestRequired ?></strong></div>
+      </div>
+
+      <div class="safety-dashboard-grid">
+        <div class="safety-mini-card">
+          <div class="mini-head">
+            <strong><i class="fas fa-chalkboard-user"></i> Upcoming Available Batches</strong>
+            <a href="book_safety_training.php">View all</a>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table compact-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Language</th>
+                  <th>Session</th>
+                  <th>Seats</th>
+                  <th>Batch No</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php foreach ($availableBatches as $batch): ?>
+                <tr>
+                  <td><strong><?= !empty($batch['training_date']) ? date('d M Y', strtotime($batch['training_date'])) : '-' ?></strong></td>
+                  <td><?= htmlspecialchars($batch['language_name'] ?? '-') ?></td>
+                  <td><?= htmlspecialchars($batch['session_name'] ?? '-') ?></td>
+                  <td><span class="badge badge-info"><?= (int)($batch['seats_available'] ?? 0) ?> / <?= (int)($batch['capacity'] ?? 0) ?></span></td>
+                  <td><?= htmlspecialchars($batch['batch_number'] ?? '-') ?></td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if (empty($availableBatches)): ?>
+                <tr><td colspan="5" style="text-align:center;padding:22px;color:var(--gray-500);">No upcoming safety batch available.</td></tr>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="safety-mini-card">
+          <div class="mini-head">
+            <strong><i class="fas fa-clipboard-check"></i> Recent Training Status</strong>
+            <a href="training_request.php">Open status</a>
+          </div>
+          <div class="recent-list training-status-list">
+            <?php foreach ($recentTrainingStatuses as $row):
+              $status = strtolower((string)($row['status'] ?? $row['worker_training_status'] ?? 'pending'));
+              $badge = in_array($status, ['passed','pass','completed'], true) ? 'badge-success' : (in_array($status, ['failed','fail','absent','training_failed'], true) ? 'badge-danger' : (in_array($status, ['scheduled','contractor_confirmed'], true) ? 'badge-info' : 'badge-warning'));
+            ?>
+            <div class="recent-item">
+              <div>
+                <div style="font-weight:700;font-size:13px;"><?= htmlspecialchars($row['worker_name'] ?? 'Worker') ?></div>
+                <div style="font-size:11px;color:var(--gray-500);">
+                  <?= !empty($row['aadhaar']) ? 'Aadhaar: ' . htmlspecialchars((string)$row['aadhaar']) : 'Temp ID: ' . htmlspecialchars((string)($row['temp_ref'] ?? '-')) ?>
+                  <?= !empty($row['batch_number']) ? ' | ' . htmlspecialchars($row['batch_number']) : '' ?>
+                </div>
+              </div>
+              <span class="badge <?= $badge ?>"><?= htmlspecialchars(strtoupper(str_replace('_', ' ', $status))) ?></span>
+            </div>
+            <?php endforeach; ?>
+            <?php if (empty($recentTrainingStatuses)): ?>
+              <div style="text-align:center;color:var(--gray-500);padding:24px 0;">No training status found yet.</div>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+
+      <div class="retest-box">
+        <div class="mini-head">
+          <strong><i class="fas fa-rotate-left"></i> Retest Reminder</strong>
+          <span>Failed/absent workers must be re-booked within 30 days. Maximum 3 attempts are allowed in the current safety cycle.</span>
+        </div>
+        <div class="retest-list">
+          <?php foreach ($retestWorkers as $row):
+            $attempts = (int)($row['attempt_count'] ?? 0);
+            $blocked = $attempts >= 3;
+          ?>
+          <div class="retest-item">
+            <div>
+              <strong><?= htmlspecialchars($row['worker_name'] ?? 'Worker') ?></strong>
+              <span><?= htmlspecialchars((string)($row['temp_ref'] ?? '-')) ?><?= !empty($row['aadhaar']) ? ' | ' . htmlspecialchars((string)$row['aadhaar']) : '' ?></span>
+            </div>
+            <span class="badge <?= $blocked ? 'badge-danger' : 'badge-warning' ?>">
+              <?= $blocked ? 'MAX ATTEMPTS' : max(0, 3 - $attempts) . ' attempts left' ?>
+            </span>
+            <span class="badge badge-gray"><?= (int)($row['days_left'] ?? 0) ?> days left</span>
+            <a href="book_safety_training.php" class="btn btn-sm btn-outline">Book Retest</a>
+          </div>
+          <?php endforeach; ?>
+          <?php if (empty($retestWorkers)): ?>
+            <div style="text-align:center;color:var(--gray-500);padding:18px 0;">No failed or absent worker pending retest.</div>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+    <?php endif; ?>
+
     <div style="display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:20px;margin-top:22px;align-items:start;">
       <div class="card glass">
         <div class="card-header">
@@ -321,6 +518,7 @@ function renderContent() {
             <!-- <a href="annexure-3a.php" class="action-tile"><i class="fas fa-file-signature"></i><span>Customer Registration</span></a> -->
             <a href="enrolment-4a.php" class="action-tile"><i class="fas fa-user-plus"></i><span>Enroll Worker 4A</span></a>
             <a href="training_request.php" class="action-tile"><i class="fas fa-calendar-check"></i><span>Request Training</span></a>
+            <a href="book_safety_training.php" class="action-tile action-tile-primary"><i class="fas fa-book-medical"></i><span>Book Safety Training</span></a>
             <a href="gatepass-6a.php" class="action-tile"><i class="fas fa-id-badge"></i><span>Gate Pass 6A</span></a>
             <a href="documents.php" class="action-tile"><i class="fas fa-upload"></i><span>Upload Documents</span></a>
             <a href="compliance.php" class="action-tile"><i class="fas fa-file-upload"></i><span>ESI/PF/KLWF</span></a>
@@ -333,23 +531,28 @@ function renderContent() {
       <div class="card glass">
         <div class="card-header"><div class="card-title"><i class="fas fa-clock-rotate-left"></i> Recent Enrollments</div></div>
         <div class="card-body">
-          <?php if (empty($recentWorkers)): ?>
-            <div style="text-align:center;color:var(--gray-500);padding:24px 0;">No worker enrollment found yet.</div>
-          <?php else: ?>
-            <div class="recent-list">
-              <?php foreach ($recentWorkers as $worker): ?>
+          <div class="recent-list">
+            <?php foreach ($recentWorkers as $worker):
+              $workerStatus = strtolower((string)($worker['training_status'] ?? 'pending'));
+              $workerBadge = in_array($workerStatus, ['pass','passed','completed','training_passed','qualified'], true)
+                  ? 'badge-success'
+                  : (in_array($workerStatus, ['fail','failed','training_failed'], true) ? 'badge-danger' : 'badge-warning');
+            ?>
               <div class="recent-item">
                 <div>
                   <div style="font-weight:700;font-size:13px;"><?= htmlspecialchars($worker['worker_name'] ?? 'Worker') ?></div>
-                  <div style="font-size:11px;color:var(--gray-500);">Temp ID: <?= htmlspecialchars((string)($worker['temp_ref'] ?? 'PENDING')) ?></div>
+                  <div style="font-size:11px;color:var(--gray-500);">Temp ID: <?= htmlspecialchars((string)($worker['temp_ref'] ?? '-')) ?></div>
                 </div>
-                <span class="badge badge-gray"><?= htmlspecialchars((string)($worker['training_status'] ?: 'pending')) ?></span>
+                <span class="badge <?= $workerBadge ?>"><?= htmlspecialchars(strtoupper(str_replace('_', ' ', $workerStatus ?: 'pending'))) ?></span>
               </div>
-              <?php endforeach; ?>
-            </div>
-          <?php endif; ?>
+            <?php endforeach; ?>
+            <?php if (empty($recentWorkers)): ?>
+              <div style="text-align:center;color:var(--gray-500);padding:24px 0;">No worker enrollment found yet.</div>
+            <?php endif; ?>
+          </div>
         </div>
       </div>
+
     </div>
 
     <div class="alert alert-info" style="margin-top:20px;">
@@ -373,9 +576,36 @@ function renderContent() {
       .action-tile { min-height:74px;border:1px solid var(--gray-200);border-radius:8px;background:var(--gray-50);display:flex;align-items:center;gap:10px;padding:12px;text-decoration:none;color:inherit;font-weight:700;font-size:13px; }
       .action-tile:hover { background:var(--gray-100); }
       .action-tile i { width:32px;height:32px;border-radius:8px;background:#fff;color:var(--primary);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm); }
+      .action-tile-primary { background:#eef2ff;border-color:#c7d2fe; }
+      .action-tile-primary i { background:#4f46e5;color:#fff; }
       .recent-list { display:flex;flex-direction:column;gap:10px; }
       .recent-item { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-200); }
       .recent-item:last-child { border-bottom:0; }
+      .safety-booking-panel { margin-top:20px;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow:hidden; }
+      .safety-booking-head { display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:16px 18px;background:#f8fafc;border-bottom:1px solid var(--gray-200); }
+      .safety-booking-head h3 { margin:0;display:flex;align-items:center;gap:8px;font-size:16px;color:#111827; }
+      .safety-booking-head p { margin:5px 0 0;color:var(--gray-500);font-size:12px;line-height:1.4; }
+      .safety-booking-actions { display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end; }
+      .booking-snapshot { display:grid;grid-template-columns:repeat(4,minmax(145px,1fr));gap:12px;padding:16px 18px;border-bottom:1px solid var(--gray-200); }
+      .booking-stat { border:1px solid #dbeafe;background:#eff6ff;border-radius:8px;padding:12px; }
+      .booking-stat span { display:block;font-size:11px;color:#1e40af;font-weight:800;text-transform:uppercase;line-height:1.25; }
+      .booking-stat strong { display:block;font-size:25px;color:#111827;margin-top:6px; }
+      .booking-stat.danger { background:#fef2f2;border-color:#fecaca; }
+      .booking-stat.danger span { color:#b91c1c; }
+      .safety-dashboard-grid { display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:16px;padding:16px 18px;align-items:start; }
+      .safety-mini-card { border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow:hidden; }
+      .mini-head { display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;background:#f9fafb;border-bottom:1px solid var(--gray-200); }
+      .mini-head strong { display:flex;align-items:center;gap:8px;font-size:13px;color:#111827; }
+      .mini-head a, .mini-head span { font-size:11px;color:var(--gray-500);font-weight:700;text-decoration:none; }
+      .compact-table th, .compact-table td { padding:10px 12px;font-size:12px; }
+      .training-status-list { padding:2px 14px; }
+      .retest-box { margin:0 18px 18px;border:1px solid #fde68a;background:#fffbeb;border-radius:8px;overflow:hidden; }
+      .retest-box .mini-head { background:#fef3c7;border-bottom-color:#fde68a; }
+      .retest-list { display:flex;flex-direction:column;gap:0;padding:0 14px; }
+      .retest-item { display:grid;grid-template-columns:minmax(170px,1fr) auto auto auto;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #fde68a; }
+      .retest-item:last-child { border-bottom:0; }
+      .retest-item strong { display:block;font-size:13px;color:#111827; }
+      .retest-item span:not(.badge) { display:block;font-size:11px;color:var(--gray-500);margin-top:2px; }
       .timeline-container { display:flex; align-items:center; justify-content:space-between; max-width:600px; margin:0 auto; padding: 20px 0; }
       .timeline-step { display:flex; flex-direction:column; align-items:center; position:relative; z-index:2; opacity:0.4; }
       .timeline-step.active { opacity:1; }
@@ -385,7 +615,17 @@ function renderContent() {
       .timeline-line { flex:1; height:4px; background:var(--gray-200); margin:0 15px; position:relative; top:-12px; border-radius:2px; }
       .timeline-line.active { background:var(--primary); }
       
-      @media (max-width: 900px) { .content-header, .card-header { align-items:flex-start; } }
+      @media (max-width: 1100px) {
+        .booking-snapshot { grid-template-columns:repeat(2,minmax(145px,1fr)); }
+        .safety-dashboard-grid { grid-template-columns:1fr; }
+      }
+      @media (max-width: 900px) { .content-header, .card-header, .safety-booking-head { align-items:flex-start; } }
+      @media (max-width: 640px) {
+        .booking-snapshot { grid-template-columns:1fr; }
+        .safety-booking-head { flex-direction:column; }
+        .safety-booking-actions .btn { width:100%;justify-content:center; }
+        .retest-item { grid-template-columns:1fr;align-items:flex-start; }
+      }
 
     </style>
     <?php

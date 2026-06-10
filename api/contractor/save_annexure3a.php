@@ -50,6 +50,7 @@ register_shutdown_function(function() {
 
 try {
 include '../../include/config.php';
+require_once __DIR__ . '/../../include/labour_license_threshold.php';
 
 // include/session.php installs diagnostic handlers; restore JSON handlers for this API.
 set_error_handler(function($severity, $message, $file, $line) {
@@ -368,6 +369,7 @@ $wage_declaration = trim($_POST['wage_declaration'] ?? '');
 $wage_category = trim($_POST['wage_category'] ?? '');
 $salary_category = trim($_POST['salary_category'] ?? ($_POST['wage_category'] ?? ''));
 $workers_proposed_to_be_engaged = max(0, intval($_POST['workers_proposed_to_be_engaged'] ?? $_POST['total_workers'] ?? 0));
+$labour_license_threshold = clms_get_labour_license_threshold($conn);
 $worker_categories = $_POST['worker_categories'] ?? [];
 if (!is_array($worker_categories)) $worker_categories = [];
 $worker_category = implode(',', array_map('trim', $worker_categories));
@@ -575,6 +577,12 @@ if (!empty($licenses)) {
 }
 if ($is_final_submit && !empty($labour_license_issue_date) && !empty($labour_license_expiry_date) && strtotime($labour_license_expiry_date) <= strtotime($labour_license_issue_date)) {
     failJson('Labour License Expiry Date must be later than Issue Date.');
+}
+if ($is_final_submit && $workers_proposed_to_be_engaged >= $labour_license_threshold) {
+    $licenseFilePath = $licenses[0]['file_path'] ?? '';
+    if (empty($labour_license_no) || empty($licenseFilePath)) {
+        failJson("Labour License is mandatory when proposed workmen are {$labour_license_threshold} or more.");
+    }
 }
 
 if ($limited_existing_edit && $existing_a3_row && empty($ecps)) {

@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../include/config.php';
 require_once __DIR__ . '/../include/customer_portal_context.php';
+require_once __DIR__ . '/../include/gate_pass_document_master.php';
 require_once __DIR__ . '/api_helper.php';
 require_once __DIR__ . '/WorkflowEngine.php';
 
@@ -11,7 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     apiError('Only POST requests are allowed', 405);
 }
 
-function uploadAnnexure6ADoc($conn, $workmanId, $docType, $key) {
+function ensureGatePassDocumentSchema($conn) {
+    @mysqli_query($conn, "ALTER TABLE documents ADD COLUMN gate_pass_request_id INT NULL");
+    @mysqli_query($conn, "ALTER TABLE documents MODIFY document_type VARCHAR(255) NULL");
+    @mysqli_query($conn, "ALTER TABLE documents MODIFY status VARCHAR(30) DEFAULT 'pending'");
+}
+
+function uploadAnnexure6ADoc($conn, $workmanId, $requestId, $docType, $key) {
     $dir = __DIR__ . '/../uploads/documents/';
     if (!is_dir($dir)) {
         if (!mkdir($dir, 0777, true)) {
@@ -37,15 +44,22 @@ function uploadAnnexure6ADoc($conn, $workmanId, $docType, $key) {
         throw new Exception("Could not upload $key");
     }
 
-    $stmt = $conn->prepare("INSERT INTO documents (workman_id, document_type, file_path, status, uploaded_at) VALUES (?, ?, ?, 'pending', NOW())");
-    $stmt->bind_param("iss", $workmanId, $docType, $filename);
-    $stmt->execute();
+    $stmt = $conn->prepare("INSERT INTO documents (workman_id, gate_pass_request_id, document_type, file_path, status, uploaded_at) VALUES (?, ?, ?, ?, 'pending', NOW())");
+    if (!$stmt) {
+        throw new Exception("Could not prepare document upload for $key");
+    }
+    $stmt->bind_param("iiss", $workmanId, $requestId, $docType, $filename);
+    if (!$stmt->execute()) {
+        $stmt->close();
+        throw new Exception("Could not save uploaded document: $key");
+    }
     $stmt->close();
     
     return true;
 }
 
 try {
+    ensureGatePassDocumentSchema($conn);
     clms_get_portal_contractor($conn);
     $userId = (int)($_SESSION['user_id'] ?? 0);
     $contractor = $userId ? db_single($conn, "SELECT id, application_no FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [$userId]) : null;
@@ -73,7 +87,7 @@ try {
 
     $worker = db_single(
         $conn,
-        "SELECT id, name, training_status, safety_training_status FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
+        "SELECT id, name, training_status, safety_training_status, training_valid_till FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
         'ii',
         [$workmanId, $contractorId]
     );
@@ -82,22 +96,19 @@ try {
     }
 
     $trainingStatus = strtolower((string)$worker['training_status']);
-    if (!in_array($trainingStatus, ['pass', 'passed', 'training_passed', 'qualified', 'completed'], true) && (int)$worker['safety_training_status'] !== 1) {
+    $safetyTrainingStatus = strtolower((string)($worker['safety_training_status'] ?? ''));
+    $trainingPassed = in_array($trainingStatus, ['pass', 'passed', 'training_passed', 'qualified', 'completed'], true)
+        || in_array($safetyTrainingStatus, ['1', 'training_passed', 'passed', 'pass'], true);
+    if (!$trainingPassed) {
         throw new Exception('Safety training is not passed. Annexure 5A gate pass request is blocked.');
     }
+    if (!empty($worker['training_valid_till']) && strtotime($worker['training_valid_till']) < strtotime(date('Y-m-d'))) {
+        throw new Exception('Safety training validity has expired. Please request re-training before gate pass.');
+    }
 
-    $requiredDocs = [
-        'medical_certificate' => 'Medical Fitness Certificate',
-        'police_clearance_certificate' => 'Online Police Clearance Certificate (PCC) for Employment Pass / Deck Hand including officer for Emergency Pass (Template Upload)',
-        'employee_compensation_policy' => 'Employee Compensation Policy if not covered under ESI'
-    ];
-
-    $optionalDocs = [
-        'pcc_forwarded_police' => 'Proof of forwarding PCC to Thane Police Station',
-        'pcc_forwarded_cisf' => 'Proof of forwarding PCC to CISF',
-        'pcc_police_station_name' => 'Name of Police Station from where PCC has been obtained',
-        'esi_epf_undertaking' => 'ESI / EPF Undertaking if not covered under ESI / EPF'
-    ];
+    $requiredDocs = clms_get_gate_pass_document_type_map($conn, true);
+    $allDocs = clms_get_gate_pass_document_type_map($conn, false);
+    $optionalDocs = array_diff_key($allDocs, $requiredDocs);
 
     foreach ($requiredDocs as $key => $name) {
         if (empty($_FILES[$key]) || $_FILES[$key]['error'] !== UPLOAD_ERR_OK) {
@@ -107,15 +118,6 @@ try {
 
     $requestNo = 'GPR-' . date('Ymd') . '-' . random_int(1000, 9999);
     $conn->begin_transaction();
-
-    // Upload and insert documents
-    foreach ($requiredDocs as $key => $docType) {
-        uploadAnnexure6ADoc($conn, $workmanId, $docType, $key);
-    }
-
-    foreach ($optionalDocs as $key => $docType) {
-        uploadAnnexure6ADoc($conn, $workmanId, $docType, $key);
-    }
 
     // Insert Gate Pass Request
     db_execute(
@@ -127,6 +129,15 @@ try {
         [$requestNo, $applicationNo, $contractorId, $passType, $validFrom, $validTo]
     );
     $requestId = $conn->insert_id;
+
+    // Upload and insert documents against this specific gate pass request.
+    foreach ($requiredDocs as $key => $docType) {
+        uploadAnnexure6ADoc($conn, $workmanId, $requestId, $docType, $key);
+    }
+
+    foreach ($optionalDocs as $key => $docType) {
+        uploadAnnexure6ADoc($conn, $workmanId, $requestId, $docType, $key);
+    }
 
     // Link worker to request
     db_execute(

@@ -129,7 +129,7 @@ $dp=wr($conn,"SELECT DATE(created_at)d,COUNT(*)c FROM gate_passes WHERE created_
   <div class="card-body">
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <a href="../admin/create_user.php" class="btn btn-primary"><i class="fas fa-user-plus"></i> Create User</a>
-      <a href="pass_limits.php" class="btn btn-primary"><i class="fas fa-sliders-h"></i> Configure Pass Limits</a>
+      <a href="pass_limits.php" class="btn btn-primary"><i class="fas fa-sliders-h"></i> Configure Pass Category Limit</a>
       <a href="approve_contractors.php" class="btn btn-outline"><i class="fas fa-check-circle"></i> Monitor Contractors</a>
       <a href="verify_documents.php#contractor-documents" class="btn btn-outline"><i class="fas fa-building-shield"></i> Contractor Docs <?= $cdp > 0 ? '(' . $cdp . ')' : '' ?></a>
       <a href="sap_logs.php" class="btn btn-outline"><i class="fas fa-sync"></i> SAP Logs</a>

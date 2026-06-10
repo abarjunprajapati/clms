@@ -61,17 +61,19 @@ function renderContent() {
     $workerStatsJoin = '';
     $workerStatsSelect = '0 AS assigned_count, 0 AS present_count, 0 AS result_done_count';
     if (conductResultsTableExists($conn, 'training_session_workers') && conductResultsColumnExists($conn, 'training_session_workers', 'session_id')) {
-        $attendanceCol = conductResultsColumnExists($conn, 'training_session_workers', 'attendance_status') ? 'attendance_status' : "''";
-        $resultCol = conductResultsColumnExists($conn, 'training_session_workers', 'result') ? 'result' : "''";
+        $attendanceExpr = conductResultsColumnExists($conn, 'training_session_workers', 'attendance_status') ? 'tsw.attendance_status' : "''";
+        $resultExpr = conductResultsColumnExists($conn, 'training_session_workers', 'result') ? 'tsw.result' : "'pending'";
         $workerStatsJoin = "
             LEFT JOIN (
                 SELECT
-                    session_id,
+                    tsw.session_id,
                     COUNT(*) AS assigned_count,
-                    SUM(CASE WHEN LOWER(COALESCE($attendanceCol, '')) = 'present' THEN 1 ELSE 0 END) AS present_count,
-                    SUM(CASE WHEN LOWER(COALESCE($resultCol, 'pending')) IN ('pass','fail','passed','failed') THEN 1 ELSE 0 END) AS result_done_count
-                FROM training_session_workers
-                GROUP BY session_id
+                    SUM(CASE WHEN LOWER(COALESCE($attendanceExpr, '')) = 'present' THEN 1 ELSE 0 END) AS present_count,
+                    SUM(CASE WHEN LOWER(COALESCE($resultExpr, 'pending')) IN ('pass','fail','passed','failed') THEN 1 ELSE 0 END) AS result_done_count
+                FROM training_session_workers tsw
+                JOIN training_requests tr ON tr.id = tsw.training_request_id
+                WHERE tr.status = 'contractor_confirmed'
+                GROUP BY tsw.session_id
             ) sws ON sws.session_id = ts.id
         ";
         $workerStatsSelect = "COALESCE(sws.assigned_count, 0) AS assigned_count, COALESCE(sws.present_count, 0) AS present_count, COALESCE(sws.result_done_count, 0) AS result_done_count";
@@ -91,6 +93,7 @@ function renderContent() {
             $workerStatsSelect
         FROM training_schedule ts
         $workerStatsJoin
+        WHERE LOWER(COALESCE($statusExpr, 'open')) <> 'cancelled'
         ORDER BY $dateExpr DESC, $timeExpr DESC
     ");
 

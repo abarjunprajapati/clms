@@ -18,6 +18,27 @@ try {
         wageSettingJson(['success' => false, 'message' => 'Invalid request payload.'], 400);
     }
 
+    if (isset($data['category']) || isset($data['wage_rate'])) {
+        $wageRate = clms_parse_wage_amount($data['wage_rate'] ?? '');
+        if ($wageRate === null || $wageRate <= 0) {
+            wageSettingJson(['success' => false, 'message' => 'Please enter a valid wage rate.'], 400);
+        }
+
+        $activeMap = clms_add_certified_wage_rate(
+            $conn,
+            $data['category'] ?? '',
+            $data['wage_from_date'] ?? '',
+            $data['wage_to_date'] ?? '9999-12-31',
+            $wageRate,
+            (int)($_SESSION['user_id'] ?? 0)
+        );
+        wageSettingJson([
+            'success' => true,
+            'message' => 'Certified wage rate added successfully.',
+            'active_wages' => $activeMap,
+        ]);
+    }
+
     $minimumWage = clms_parse_wage_amount($data['minimum_wage'] ?? '');
     if ($minimumWage === null || $minimumWage < 0) {
         wageSettingJson(['success' => false, 'message' => 'Please enter a valid minimum wage rate.'], 400);
@@ -29,6 +50,8 @@ try {
         'message' => 'Minimum certified wage rate updated successfully.',
         'minimum_wage' => $saved,
     ]);
+} catch (InvalidArgumentException $e) {
+    wageSettingJson(['success' => false, 'message' => $e->getMessage()], 400);
 } catch (Throwable $e) {
     error_log('[UPDATE_WAGE_SETTING] ' . $e->getMessage());
     wageSettingJson(['success' => false, 'message' => 'Minimum wage update failed on server.'], 500);
