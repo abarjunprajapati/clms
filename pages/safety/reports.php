@@ -13,9 +13,9 @@ function safetyReportsTableExists($conn, $table) {
         return $cache[$table];
     }
 
-    $safeTable = clms_db_real_escape_string($conn, $table);
-    $result = clms_db_query($conn, "SHOW TABLES LIKE '$safeTable'");
-    $cache[$table] = $result && clms_db_num_rows($result) > 0;
+    $safeTable = mysqli_real_escape_string($conn, $table);
+    $result = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
+    $cache[$table] = $result && mysqli_num_rows($result) > 0;
     return $cache[$table];
 }
 
@@ -31,9 +31,9 @@ function safetyReportsColumnExists($conn, $table, $column) {
         return false;
     }
 
-    $safeColumn = clms_db_real_escape_string($conn, $column);
-    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$safeColumn'");
-    $cache[$key] = $result && clms_db_num_rows($result) > 0;
+    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$safeColumn'");
+    $cache[$key] = $result && mysqli_num_rows($result) > 0;
     return $cache[$key];
 }
 
@@ -155,7 +155,7 @@ function safetyReportsRepairConfirmedSessions($conn) {
                         (string)($row['batch_number'] ?? '')
                     ]
                 );
-                $session = ['id' => clms_db_insert_id($conn), 'session_status' => 'open'];
+                $session = ['id' => mysqli_insert_id($conn), 'session_status' => 'open'];
             }
 
             $sessionId = (int)($session['id'] ?? 0);
@@ -211,11 +211,16 @@ function renderContent() {
 
     $from_date = $_GET['from_date'] ?? date('Y-m-01');
     $to_date = $_GET['to_date'] ?? date('Y-m-d');
+    $application_date = trim((string)($_GET['application_date'] ?? ''));
     $training_date = trim((string)($_GET['training_date'] ?? ''));
     $batch_no = trim((string)($_GET['batch_no'] ?? ''));
     $token_no = trim((string)($_GET['token_no'] ?? ''));
+    $aadhaar = trim((string)($_GET['aadhaar'] ?? ''));
+    $vendor = trim((string)($_GET['vendor'] ?? ''));
+    $global_search = trim((string)($_GET['q'] ?? ''));
     $status_filter = strtolower(trim((string)($_GET['status'] ?? '')));
     $contractor_id = isset($_GET['contractor_id']) ? (int)$_GET['contractor_id'] : 0;
+    $all_trainings = (int)($_GET['all'] ?? 0) === 1;
     $fromDateTime = $from_date . ' 00:00:00';
     $toDateTime = $to_date . ' 23:59:59';
 
@@ -240,6 +245,7 @@ function renderContent() {
         $typeExpr = safetyReportsColumnSql($conn, 'training_requests', 'tr', 'training_type', "'induction'");
         $workerName = safetyReportsColumnSql($conn, 'workmen', 'w', 'name', "'Worker'");
         $workerCode = safetyReportsColumnSql($conn, 'workmen', 'w', 'temp_id', "CONCAT('W-', w.id)");
+        $workerAadhaar = safetyReportsColumnSql($conn, 'workmen', 'w', 'aadhaar', "''");
         $contractorName = safetyReportsColumnSql($conn, 'contractors', 'c', 'contractor_name', "'N/A'");
         $contractorJoin = safetyReportsColumnExists($conn, 'training_requests', 'contractor_id') ? 'LEFT JOIN contractors c ON tr.contractor_id = c.id' : 'LEFT JOIN contractors c ON w.contractor_id = c.id';
         $attendanceJoin = '';
@@ -260,12 +266,27 @@ function renderContent() {
             $attendanceExpr = safetyReportsColumnSql($conn, 'training_session_workers', 'sw', 'attendance_status', 'NULL');
         }
 
-        $where = "$dateExpr BETWEEN ? AND ?";
-        $params = [$fromDateTime, $toDateTime];
-        $types = 'ss';
+        $where = $all_trainings ? '1=1' : "$dateExpr BETWEEN ? AND ?";
+        $params = $all_trainings ? [] : [$fromDateTime, $toDateTime];
+        $types = $all_trainings ? '' : 'ss';
         if ($training_date && safetyReportsColumnExists($conn, 'training_requests', 'scheduled_date')) {
             $where .= ' AND tr.scheduled_date = ?';
             $params[] = $training_date;
+            $types .= 's';
+        }
+        if ($application_date) {
+            $where .= ' AND DATE(COALESCE(tr.requested_date, tr.created_at)) = ?';
+            $params[] = $application_date;
+            $types .= 's';
+        }
+        if ($aadhaar) {
+            $where .= " AND $workerAadhaar LIKE ?";
+            $params[] = '%' . $aadhaar . '%';
+            $types .= 's';
+        }
+        if ($vendor) {
+            $where .= " AND $contractorName LIKE ?";
+            $params[] = '%' . $vendor . '%';
             $types .= 's';
         }
         if ($batch_no && safetyReportsColumnExists($conn, 'training_requests', 'batch_number')) {
@@ -289,6 +310,32 @@ function renderContent() {
             $types .= 's';
         }
 
+        if ($global_search) {
+            $like = '%' . $global_search . '%';
+            $searchParts = [
+                "$workerName LIKE ?",
+                "$workerCode LIKE ?",
+                "$workerAadhaar LIKE ?",
+                "$contractorName LIKE ?",
+                "$typeExpr LIKE ?",
+                "$statusExpr LIKE ?"
+            ];
+            $searchParams = [$like, $like, $like, $like, $like, $like];
+            if (safetyReportsColumnExists($conn, 'training_requests', 'batch_number')) {
+                $searchParts[] = 'tr.batch_number LIKE ?';
+                $searchParams[] = $like;
+            }
+            if (safetyReportsTableExists($conn, 'training_batch_workers') && safetyReportsColumnExists($conn, 'training_batch_workers', 'token_number')) {
+                $searchParts[] = 'EXISTS (SELECT 1 FROM training_batch_workers tbw_search WHERE tbw_search.training_request_id = tr.id AND tbw_search.token_number LIKE ?)';
+                $searchParams[] = $like;
+            }
+            $where .= ' AND (' . implode(' OR ', $searchParts) . ')';
+            foreach ($searchParams as $searchParam) {
+                $params[] = $searchParam;
+                $types .= 's';
+            }
+        }
+
         $batchSelect = safetyReportsColumnExists($conn, 'training_requests', 'batch_number') ? 'tr.batch_number' : 'NULL';
         $tokenSelect = (safetyReportsTableExists($conn, 'training_batch_workers') && safetyReportsColumnExists($conn, 'training_batch_workers', 'token_number'))
             ? "(
@@ -306,6 +353,7 @@ function renderContent() {
                 w.id AS worker_id,
                 $workerName AS worker_name,
                 $workerCode AS worker_code,
+                $workerAadhaar AS aadhaar,
                 c.id AS contractor_id,
                 $contractorName AS contractor_name,
                 $typeExpr AS training_type,
@@ -335,13 +383,14 @@ function renderContent() {
         $workerDateExpr = $workerDateExprs ? 'COALESCE(' . implode(', ', $workerDateExprs) . ')' : 'CURDATE()';
         $workerName = safetyReportsColumnSql($conn, 'workmen', 'w', 'name', "'Worker'");
         $workerCode = safetyReportsColumnSql($conn, 'workmen', 'w', 'temp_id', "CONCAT('W-', w.id)");
+        $workerAadhaar = safetyReportsColumnSql($conn, 'workmen', 'w', 'aadhaar', "''");
         $trainingStatus = safetyReportsColumnSql($conn, 'workmen', 'w', 'training_status', "'pending'");
         $safetyStatus = safetyReportsColumnSql($conn, 'workmen', 'w', 'safety_training_status', 'NULL');
         $contractorName = safetyReportsColumnSql($conn, 'contractors', 'c', 'contractor_name', "'N/A'");
 
-        $where = "$workerDateExpr BETWEEN ? AND ?";
-        $params = [$fromDateTime, $toDateTime];
-        $types = 'ss';
+        $where = $all_trainings ? '1=1' : "$workerDateExpr BETWEEN ? AND ?";
+        $params = $all_trainings ? [] : [$fromDateTime, $toDateTime];
+        $types = $all_trainings ? '' : 'ss';
         if ($status_filter) {
             $where .= " AND LOWER(COALESCE($trainingStatus, $safetyStatus, 'pending')) = ?";
             $params[] = $status_filter;
@@ -352,6 +401,29 @@ function renderContent() {
             $params[] = $contractor_id;
             $types .= 'i';
         }
+        if ($application_date) {
+            $where .= " AND DATE($workerDateExpr) = ?";
+            $params[] = $application_date;
+            $types .= 's';
+        }
+        if ($aadhaar) {
+            $where .= " AND $workerAadhaar LIKE ?";
+            $params[] = '%' . $aadhaar . '%';
+            $types .= 's';
+        }
+        if ($vendor) {
+            $where .= " AND $contractorName LIKE ?";
+            $params[] = '%' . $vendor . '%';
+            $types .= 's';
+        }
+        if ($global_search) {
+            $like = '%' . $global_search . '%';
+            $where .= " AND ($workerName LIKE ? OR $workerCode LIKE ? OR $workerAadhaar LIKE ? OR $contractorName LIKE ? OR $trainingStatus LIKE ? OR $safetyStatus LIKE ?)";
+            foreach ([$like, $like, $like, $like, $like, $like] as $searchParam) {
+                $params[] = $searchParam;
+                $types .= 's';
+            }
+        }
 
         $requestSuppressSql = '';
         if (safetyReportsTableExists($conn, 'training_requests') && safetyReportsColumnExists($conn, 'training_requests', 'workman_id')) {
@@ -361,7 +433,7 @@ function renderContent() {
                   FROM training_requests tr2
                   WHERE tr2.workman_id = w.id
                     AND LOWER(COALESCE(tr2.status, 'pending')) IN (
-                        'pending', 'welfare_pending', 'scheduled', 'contractor_confirmed',
+                        'pending_safety', 'welfare_pending', 'pending', 'scheduled', 'contractor_confirmed',
                         'passed', 'failed', 'completed', 'training_scheduled',
                         'training_passed', 'training_failed'
                     )
@@ -374,6 +446,7 @@ function renderContent() {
                 w.id AS worker_id,
                 $workerName AS worker_name,
                 $workerCode AS worker_code,
+                $workerAadhaar AS aadhaar,
                 c.id AS contractor_id,
                 $contractorName AS contractor_name,
                 'induction' AS training_type,
@@ -416,10 +489,11 @@ function renderContent() {
     ?>
     <div class="content-header safety-report-header">
       <div>
-        <h2 class="page-title"><i class="fas fa-chart-bar"></i> Safety Training Reports</h2>
+        <h2 class="page-title"><i class="fas fa-chart-bar"></i> Training Details / All Trainings</h2>
       </div>
       <div class="sr-actions">
         <a href="training_requests.php" class="btn btn-outline"><i class="fas fa-envelope-open-text"></i> Requests</a>
+        <a href="reports.php?all=1" class="btn btn-outline"><i class="fas fa-list"></i> All Trainings</a>
         <button type="button" class="btn btn-outline" onclick="exportTrainingReportCsv()"><i class="fas fa-file-excel"></i> XL</button>
         <button type="button" class="btn btn-primary" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
       </div>
@@ -436,6 +510,11 @@ function renderContent() {
     <div class="card glass sr-filter-card">
       <div class="card-body">
         <form method="GET" class="sr-filter-grid">
+          <?php if ($all_trainings): ?><input type="hidden" name="all" value="1"><?php endif; ?>
+          <div class="form-group sr-wide-field">
+            <label class="form-label">Search All Fields</label>
+            <input type="text" name="q" class="form-control" value="<?= htmlspecialchars($global_search) ?>" placeholder="Application date, training date, vendor, status, Aadhaar, token">
+          </div>
           <div class="form-group">
             <label class="form-label">From Date</label>
             <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars($from_date) ?>">
@@ -449,12 +528,24 @@ function renderContent() {
             <input type="date" name="training_date" class="form-control" value="<?= htmlspecialchars($training_date) ?>">
           </div>
           <div class="form-group">
+            <label class="form-label">Application Date</label>
+            <input type="date" name="application_date" class="form-control" value="<?= htmlspecialchars($application_date) ?>">
+          </div>
+          <div class="form-group">
             <label class="form-label">Batch No</label>
             <input type="text" name="batch_no" class="form-control" value="<?= htmlspecialchars($batch_no) ?>" placeholder="B20260609001">
           </div>
           <div class="form-group">
             <label class="form-label">Token No</label>
             <input type="text" name="token_no" class="form-control" value="<?= htmlspecialchars($token_no) ?>" placeholder="000001">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Aadhaar</label>
+            <input type="text" name="aadhaar" class="form-control" value="<?= htmlspecialchars($aadhaar) ?>" placeholder="Aadhaar no">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Vendor</label>
+            <input type="text" name="vendor" class="form-control" value="<?= htmlspecialchars($vendor) ?>" placeholder="Vendor / contractor">
           </div>
           <div class="form-group">
             <label class="form-label">Contractor</label>
@@ -469,7 +560,7 @@ function renderContent() {
             <label class="form-label">Status</label>
             <select name="status" class="form-control">
               <option value="">All</option>
-              <?php foreach (['pending', 'welfare_pending', 'contractor_confirmed', 'scheduled', 'passed', 'failed', 'absent'] as $statusOption): ?>
+              <?php foreach (['pending_safety', 'pending', 'contractor_confirmed', 'scheduled', 'passed', 'failed', 'absent'] as $statusOption): ?>
                 <option value="<?= htmlspecialchars($statusOption) ?>" <?= $status_filter === $statusOption ? 'selected' : '' ?>><?= htmlspecialchars(ucwords(str_replace('_', ' ', $statusOption))) ?></option>
               <?php endforeach; ?>
             </select>
@@ -499,6 +590,7 @@ function renderContent() {
               <th>Attendance</th>
               <th>Result</th>
               <th>Source</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -512,20 +604,31 @@ function renderContent() {
               <td><?= htmlspecialchars($row['token_number'] ?? '') ?></td>
               <td>
                 <div style="font-weight:700"><?= htmlspecialchars($row['worker_name'] ?? 'Worker') ?></div>
-                <div style="font-size:11px;color:var(--text-muted)"><?= htmlspecialchars($row['worker_code'] ?? '') ?></div>
+                <div style="font-size:11px;color:var(--text-muted)"><?= htmlspecialchars($row['worker_code'] ?? '') ?><?= !empty($row['aadhaar']) ? ' | ' . htmlspecialchars($row['aadhaar']) : '' ?></div>
               </td>
               <td><?= htmlspecialchars($row['contractor_name'] ?? 'N/A') ?></td>
               <td><span class="badge badge-outline"><?= htmlspecialchars(ucfirst((string)($row['training_type'] ?: 'Induction'))) ?></span></td>
               <td><?= htmlspecialchars(ucfirst(str_replace('_', ' ', $attendance))) ?></td>
               <td><span class="badge <?= safetyReportsStatusBadge($status) ?>"><?= htmlspecialchars(ucfirst(str_replace('_', ' ', $status))) ?></span></td>
               <td><span class="badge badge-gray"><?= htmlspecialchars($row['source'] ?? 'Report') ?></span></td>
+              <td><button type="button" class="btn btn-sm btn-outline" onclick='openTrainingView(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>View</button></td>
             </tr>
             <?php endforeach; ?>
             <?php if(empty($reportRows)): ?>
-            <tr><td colspan="9" class="text-center" style="padding:40px;">No data found for the selected period.</td></tr>
+            <tr><td colspan="10" class="text-center" style="padding:40px;">No data found for the selected period.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="training-view-modal" id="trainingViewModal" style="display:none">
+      <div class="training-view-dialog">
+        <div class="training-view-head">
+          <h3>Training Details</h3>
+          <button type="button" class="btn btn-sm btn-outline" onclick="closeTrainingView()">Close</button>
+        </div>
+        <div class="training-view-grid" id="trainingViewContent"></div>
       </div>
     </div>
 
@@ -540,9 +643,19 @@ function renderContent() {
       .sr-stat span{font-size:11px;color:#64748b;font-weight:800;text-transform:uppercase}
       .sr-filter-card{margin-bottom:18px}
       .sr-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr)) auto;gap:12px;align-items:end}
+      .sr-wide-field{grid-column:span 2}
       .sr-filter-actions{display:flex;gap:8px}
+      .training-view-modal{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;align-items:center;justify-content:center;padding:20px}
+      .training-view-dialog{background:#fff;border-radius:8px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(15,23,42,.25);overflow:hidden}
+      .training-view-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid #e5e7eb}
+      .training-view-head h3{margin:0;font-size:17px}
+      .training-view-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px}
+      .training-view-item{border:1px solid #e5e7eb;border-radius:8px;padding:10px;background:#f8fafc}
+      .training-view-item span{display:block;font-size:11px;color:#64748b;text-transform:uppercase;font-weight:800;margin-bottom:4px}
+      .training-view-item strong{font-size:13px;color:#111827}
       @media(max-width:1000px){.sr-stats{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}.sr-filter-grid{grid-template-columns:1fr 1fr}}
       @media(max-width:640px){.safety-report-header{flex-direction:column;align-items:stretch}.sr-actions,.sr-filter-actions{width:100%}.sr-actions .btn,.sr-filter-actions .btn{flex:1}.sr-filter-grid{grid-template-columns:1fr}}
+      @media(max-width:640px){.training-view-grid{grid-template-columns:1fr}}
       @media print{.sidebar,.topbar,.sr-actions,.sr-filter-card{display:none!important}.main-content{margin:0!important}.card{box-shadow:none!important}}
     </style>
     <script>
@@ -559,6 +672,28 @@ function renderContent() {
         a.download = 'all-trainings-report.csv';
         a.click();
         URL.revokeObjectURL(url);
+      }
+      function openTrainingView(row) {
+        const modal = document.getElementById('trainingViewModal');
+        const content = document.getElementById('trainingViewContent');
+        const fields = [
+          ['Worker', row.worker_name || '-'],
+          ['Aadhaar', row.aadhaar || '-'],
+          ['Enrollment No', row.worker_code || '-'],
+          ['Vendor / Contractor', row.contractor_name || '-'],
+          ['Training Date', row.report_date ? new Date(row.report_date).toLocaleDateString() : '-'],
+          ['Batch No', row.batch_number || '-'],
+          ['Token No', row.token_number || '-'],
+          ['Training Type', row.training_type || '-'],
+          ['Attendance', row.attendance_status || '-'],
+          ['Status', row.status || '-'],
+          ['Source', row.source || '-']
+        ];
+        content.innerHTML = fields.map(([label, value]) => `<div class="training-view-item"><span>${label}</span><strong>${String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]))}</strong></div>`).join('');
+        modal.style.display = 'flex';
+      }
+      function closeTrainingView() {
+        document.getElementById('trainingViewModal').style.display = 'none';
       }
     </script>
     <?php

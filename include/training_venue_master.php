@@ -1,13 +1,13 @@
 <?php
 
 function clms_training_venue_column_exists($conn, $column) {
-    $column = clms_db_real_escape_string($conn, $column);
-    $result = clms_db_query($conn, "SHOW COLUMNS FROM `training_venue_masters` LIKE '$column'");
-    return $result && clms_db_num_rows($result) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `training_venue_masters` LIKE '$column'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function clms_ensure_training_venue_masters($conn) {
-    $created = clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_venue_masters (
+    $created = mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_venue_masters (
         id INT NOT NULL AUTO_INCREMENT,
         venue_name VARCHAR(300) NOT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -27,7 +27,7 @@ function clms_ensure_training_venue_masters($conn) {
         'updated_at' => "ALTER TABLE `training_venue_masters` ADD COLUMN `updated_at` DATETIME NULL AFTER `created_at`",
     ] as $column => $sql) {
         if (!clms_training_venue_column_exists($conn, $column)) {
-            clms_db_query($conn, $sql);
+            mysqli_query($conn, $sql);
         }
     }
 
@@ -41,15 +41,21 @@ function clms_ensure_training_venue_masters($conn) {
 
 function clms_get_training_venue_rows($conn, $activeOnly = true) {
     if (!clms_ensure_training_venue_masters($conn)) return [];
-    $where = $activeOnly ? "WHERE LOWER(status) = 'active'" : "";
+    $dateColumns = clms_training_venue_column_exists($conn, 'from_date') && clms_training_venue_column_exists($conn, 'to_date');
+    $where = $activeOnly
+        ? "WHERE LOWER(status) = 'active'" . ($dateColumns ? " AND (from_date IS NULL OR from_date <= CURDATE()) AND (to_date IS NULL OR to_date >= CURDATE())" : "")
+        : "";
     return db_fetch_all($conn, "SELECT id, venue_name, status, created_at FROM training_venue_masters $where ORDER BY venue_name ASC");
 }
 
 function clms_training_venue_is_active($conn, $venueName) {
     if (!clms_ensure_training_venue_masters($conn)) return false;
+    $dateCondition = clms_training_venue_column_exists($conn, 'from_date') && clms_training_venue_column_exists($conn, 'to_date')
+        ? " AND (from_date IS NULL OR from_date <= CURDATE()) AND (to_date IS NULL OR to_date >= CURDATE())"
+        : "";
     $row = db_single(
         $conn,
-        "SELECT id FROM training_venue_masters WHERE LOWER(status) = 'active' AND LOWER(TRIM(venue_name)) = LOWER(TRIM(?)) LIMIT 1",
+        "SELECT id FROM training_venue_masters WHERE LOWER(status) = 'active' $dateCondition AND LOWER(TRIM(venue_name)) = LOWER(TRIM(?)) LIMIT 1",
         's',
         [trim((string)$venueName)]
     );

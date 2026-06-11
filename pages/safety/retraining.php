@@ -14,9 +14,9 @@ function retrainingColumnExists($conn, $table, $column) {
         return $cache[$key];
     }
 
-    $safeColumn = clms_db_real_escape_string($conn, $column);
-    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$safeColumn'");
-    $cache[$key] = $result && clms_db_num_rows($result) > 0;
+    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$safeColumn'");
+    $cache[$key] = $result && mysqli_num_rows($result) > 0;
     return $cache[$key];
 }
 
@@ -47,8 +47,8 @@ function renderContent() {
     $contractorNameExpr = retrainingColumnSql($conn, 'contractors', 'c', 'contractor_name', "'N/A'");
     $resultJoin = "";
     $resultSelect = "NULL AS latest_training_date, 0 AS attempts_30";
-    $resultTable = clms_db_query($conn, "SHOW TABLES LIKE 'training_results'");
-    if ($resultTable && clms_db_num_rows($resultTable) > 0) {
+    $resultTable = mysqli_query($conn, "SHOW TABLES LIKE 'training_results'");
+    if ($resultTable && mysqli_num_rows($resultTable) > 0) {
         $resultJoin = "
         LEFT JOIN (
             SELECT
@@ -152,7 +152,9 @@ function renderContent() {
                   $daysSinceFirst = $firstTrainingDate ? floor((strtotime(date('Y-m-d')) - strtotime($firstTrainingDate)) / 86400) : 0;
                   $attempts = (int)($w['attempts_30'] ?? 0);
                   $retestBlocked = ($attempts >= 3) || ($firstTrainingDate && $daysSinceFirst > 30);
-                  $blockMessage = $attempts >= 3 ? 'Maximum Attempt Reached' : (($firstTrainingDate && $daysSinceFirst > 30) ? 'Retest Period Expired' : '');
+                  $blockMessage = $attempts >= 3
+                      ? 'Maximum Attempt Reached'
+                      : (($firstTrainingDate && $daysSinceFirst > 30) ? 'Retest period exceeded 30 days. Please apply for training again.' : '');
                 ?>
                 <?php if ($retestBlocked): ?>
                   <span class="badge badge-danger"><?= htmlspecialchars($blockMessage) ?></span>

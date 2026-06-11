@@ -32,7 +32,7 @@ try {
     }
 
     // --- START TRANSACTION ---
-    clms_db_begin_transaction($conn);
+    mysqli_begin_transaction($conn);
 
     if ($role === 'customer') {
         // --- CUSTOMER ACTIVATION ---
@@ -40,11 +40,8 @@ try {
         if (!$sap) throw new Exception('SAP Customer data missing.');
 
         $name = $sap['customer_name'] ?? 'N/A';
-        $email = $sap['EMAIL_ADDRESS'] ?: ($sap['email'] ?? '');
-        $mobile = $sap['Customer_MOB1'] ?: ($sap['mobile'] ?? '');
-
-        // Update SAP Master
-        db_execute($conn, "UPDATE sap_customer_master SET login_password = ?, is_password_created = 1, password_updated_at = NOW(), status = 'ACTIVE' WHERE customer_code = ?", 'ss', [$hashed_password, $code]);
+        $email = $sap['EMAIL_ADDRESS'] ?? '';
+        $mobile = $sap['Customer_MOB1'] ?? '';
 
         // Sync with users table
         $user = db_single($conn, "SELECT id FROM users WHERE contractor_id = ?", 's', [$code]);
@@ -73,8 +70,8 @@ try {
             $new_user_id = $user['id'];
         } else {
             $ok = db_execute($conn, "INSERT INTO users (contractor_id, password, name, role, email, mobile, status) VALUES (?, ?, ?, 'contractor', ?, ?, 'active')", 'sssss', [$code, $hashed_password, $name, $email, $mobile]);
-            if (!$ok) throw new Exception("Failed to create user record. Error: " . clms_db_error($conn));
-            $new_user_id = clms_db_insert_id($conn);
+            if (!$ok) throw new Exception("Failed to create user record. Error: " . mysqli_error($conn));
+            $new_user_id = mysqli_insert_id($conn);
         }
 
         // Sync/Create Contractor Profile
@@ -89,7 +86,7 @@ try {
     }
 
     // --- COMMIT TRANSACTION ---
-    clms_db_commit($conn);
+    mysqli_commit($conn);
 
     // Clear activation session
     unset($_SESSION['activation_otp']);
@@ -109,7 +106,7 @@ try {
     }
 
 } catch (Exception $e) {
-    if (isset($conn)) clms_db_rollback($conn);
+    if (isset($conn)) mysqli_rollback($conn);
     apiError($e->getMessage());
 }
 ?>

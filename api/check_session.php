@@ -3,14 +3,9 @@
  * Check Session API
  * Validates current user session
  */
-// Clean output buffer
-if (ob_get_level() > 0) ob_end_clean();
-ob_start();
-
-// Load config (which includes session.php) FIRST, before helpers
-require_once __DIR__ . '/../include/config.php';
-// Then load API helpers
+// Session handled by config.php -> session.php
 require_once 'api_helper.php';
+require_once __DIR__ . '/../include/config.php';
 
 header('Content-Type: application/json; charset=utf-8');
 

@@ -42,18 +42,11 @@ if ($active_ind !== 'A') {
     exit;
 }
 
-// 3. Check if already activated
-if ($is_customer) {
-    if ($master['is_password_created']) {
-        echo json_encode(['success' => false, 'message' => 'Customer account already activated. Please go to Login page.']);
-        exit;
-    }
-} else {
-    $existing = db_single($conn, "SELECT id FROM users WHERE contractor_id = ?", 's', [$vendor_code]);
-    if ($existing) {
-        echo json_encode(['success' => false, 'message' => 'Contractor account already activated. Please go to Login page.']);
-        exit;
-    }
+// 3. Check if already activated. Portal credentials live in users table for both vendors and customers.
+$existing = db_single($conn, "SELECT id FROM users WHERE contractor_id = ? AND status = 'active' LIMIT 1", 's', [$vendor_code]);
+if ($existing) {
+    echo json_encode(['success' => false, 'message' => ucfirst($role) . ' account already activated. Please go to Login page.']);
+    exit;
 }
 
 $_SESSION['activation_role'] = $role;

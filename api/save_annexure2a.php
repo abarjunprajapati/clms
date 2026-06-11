@@ -80,15 +80,15 @@ if (!function_exists('clean')) {
 
 function annexure2a_table_exists($conn, $table) {
     $safeTable = str_replace('`', '``', $table);
-    $result = clms_db_query($conn, "SHOW TABLES LIKE '" . clms_db_real_escape_string($conn, $safeTable) . "'");
-    return $result && clms_db_num_rows($result) > 0;
+    $result = mysqli_query($conn, "SHOW TABLES LIKE '" . mysqli_real_escape_string($conn, $safeTable) . "'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function annexure2a_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $safeColumn = clms_db_real_escape_string($conn, $column);
-    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
-    return $result && clms_db_num_rows($result) > 0;
+    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$safeColumn'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function annexure2a_ensure_column($conn, $table, $column, $definition) {
@@ -97,8 +97,8 @@ function annexure2a_ensure_column($conn, $table, $column, $definition) {
     }
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    if (!clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
-        throw new Exception("Missing DB column `$table.$column` and auto-create failed: " . clms_db_error($conn));
+    if (!mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
+        throw new Exception("Missing DB column `$table.$column` and auto-create failed: " . mysqli_error($conn));
     }
 }
 
@@ -177,7 +177,7 @@ function annexure2a_ensure_submit_schema($conn) {
         annexure2a_ensure_column($conn, 'annexure2a', $column, $definition);
     }
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS contractor_ecp_history (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS contractor_ecp_history (
         id INT AUTO_INCREMENT PRIMARY KEY,
         contractor_id INT NOT NULL,
         ecp_number VARCHAR(100) NULL,
@@ -188,7 +188,7 @@ function annexure2a_ensure_submit_schema($conn) {
         uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_contractor (contractor_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS contractor_documents (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS contractor_documents (
         id INT AUTO_INCREMENT PRIMARY KEY,
         contractor_id INT NOT NULL,
         doc_type VARCHAR(100) NULL,
@@ -197,28 +197,28 @@ function annexure2a_ensure_submit_schema($conn) {
         uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_contractor (contractor_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS contractor_po_selection (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS contractor_po_selection (
         id INT AUTO_INCREMENT PRIMARY KEY,
         contractor_id INT NOT NULL,
         po_number VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_contractor (contractor_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS contractor_pwo_selection (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS contractor_pwo_selection (
         id INT AUTO_INCREMENT PRIMARY KEY,
         contractor_id INT NOT NULL,
         pwo_number VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_contractor (contractor_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS contractor_so_selection (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS contractor_so_selection (
         id INT AUTO_INCREMENT PRIMARY KEY,
         contractor_id INT NOT NULL,
         sale_order_no VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_contractor (contractor_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS system_settings (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS system_settings (
         id INT AUTO_INCREMENT PRIMARY KEY,
         setting_key VARCHAR(100) NOT NULL UNIQUE,
         setting_value VARCHAR(255) NULL,

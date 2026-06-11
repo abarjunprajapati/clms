@@ -8,6 +8,7 @@ include '../../include/layout.php';
 require_once '../../include/wage_settings.php';
 require_once '../../include/nationality_location_masters.php';
 require_once '../../include/age_range_mapping.php';
+require_once '../../include/safety_training_control.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -27,22 +28,37 @@ if (!isset($enrolmentTypeMap[$requestedType])) {
 $selectedType = $enrolmentTypeMap[$requestedType];
 $prefillAadhaar = preg_replace('/\D+/', '', (string)($_GET['aadhaar'] ?? ''));
 clms_get_portal_contractor($conn);
+clms_safety_ensure_control_schema($conn);
 $educationFlow = clms_get_education_flow($conn);
 $minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
 $activeCertifiedWages = clms_get_active_certified_wage_map($conn);
 $activeAgeRange = clms_get_active_age_range($conn);
+$trainingLanguages = db_fetch_all($conn, "SELECT id, language_name FROM training_language_masters WHERE LOWER(status) = 'active' ORDER BY sort_order ASC, language_name ASC");
+if (empty($trainingLanguages)) {
+    $trainingLanguages = db_fetch_all($conn, "SELECT id, language_name FROM training_language_masters ORDER BY sort_order ASC, language_name ASC");
+}
+if (empty($trainingLanguages)) {
+    $trainingLanguages = [
+        ['id' => 1, 'language_name' => 'Malayalam'],
+        ['id' => 2, 'language_name' => 'English'],
+        ['id' => 3, 'language_name' => 'Hindi'],
+        ['id' => 4, 'language_name' => 'Tamil'],
+        ['id' => 5, 'language_name' => 'Kannada'],
+    ];
+}
+
 
 function enrolment_table_exists($conn, $table) {
-    $table = clms_db_real_escape_string($conn, $table);
-    $result = clms_db_query($conn, "SHOW TABLES LIKE '{$table}'");
-    return $result && clms_db_num_rows($result) > 0;
+    $table = mysqli_real_escape_string($conn, $table);
+    $result = mysqli_query($conn, "SHOW TABLES LIKE '{$table}'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function enrolment_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
-    return $result && clms_db_num_rows($result) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function enrolment_expr($conn, $table, $column, $alias = null, $default = "''") {
@@ -80,15 +96,15 @@ function enrolment_add_work_option(&$workOptions, &$seenWorkOrders, $workOrderNo
 }
 
 function enrolment_fetch_one($conn, $sql) {
-    $result = clms_db_query($conn, $sql);
-    return ($result && clms_db_num_rows($result) > 0) ? clms_db_fetch_assoc($result) : null;
+    $result = mysqli_query($conn, $sql);
+    return ($result && mysqli_num_rows($result) > 0) ? mysqli_fetch_assoc($result) : null;
 }
 
 function enrolment_fetch_all($conn, $sql) {
-    $result = clms_db_query($conn, $sql);
+    $result = mysqli_query($conn, $sql);
     $rows = [];
     if ($result) {
-        while ($row = clms_db_fetch_assoc($result)) {
+        while ($row = mysqli_fetch_assoc($result)) {
             $rows[] = $row;
         }
     }
@@ -112,10 +128,10 @@ function enrolment_insert_contractor_from_a3($conn, $a3) {
 
     $whereParts = [];
     if ($vendorCode !== '' && enrolment_column_exists($conn, 'contractors', 'vendor_code')) {
-        $whereParts[] = "vendor_code = '" . clms_db_real_escape_string($conn, $vendorCode) . "'";
+        $whereParts[] = "vendor_code = '" . mysqli_real_escape_string($conn, $vendorCode) . "'";
     }
     if ($workOrderNo !== '' && enrolment_column_exists($conn, 'contractors', 'work_order_no')) {
-        $whereParts[] = "work_order_no = '" . clms_db_real_escape_string($conn, $workOrderNo) . "'";
+        $whereParts[] = "work_order_no = '" . mysqli_real_escape_string($conn, $workOrderNo) . "'";
     }
 
     if ($whereParts) {
@@ -127,7 +143,7 @@ function enrolment_insert_contractor_from_a3($conn, $a3) {
 
     $displayName = $vendorCode ?: ($workOrderNo ?: 'Approved Contractor');
     if ($vendorCode !== '' && enrolment_table_exists($conn, 'sap_vendors')) {
-        $safeVendor = clms_db_real_escape_string($conn, $vendorCode);
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCode);
         $vendorNameExpr = enrolment_column_exists($conn, 'sap_vendors', 'vendor_name') ? 'vendor_name' : "'' AS vendor_name";
         $contractorNameExpr = enrolment_column_exists($conn, 'sap_vendors', 'contractor_name') ? 'contractor_name' : "'' AS contractor_name";
         $nameExpr = enrolment_column_exists($conn, 'sap_vendors', 'name') ? 'name' : "'' AS name";
@@ -157,15 +173,15 @@ function enrolment_insert_contractor_from_a3($conn, $a3) {
             continue;
         }
         $columns[] = '`' . str_replace('`', '``', $column) . '`';
-        $escapedValues[] = "'" . clms_db_real_escape_string($conn, (string)$value) . "'";
+        $escapedValues[] = "'" . mysqli_real_escape_string($conn, (string)$value) . "'";
     }
 
     if (!$columns) {
         return 0;
     }
 
-    $ok = clms_db_query($conn, "INSERT INTO contractors (" . implode(',', $columns) . ") VALUES (" . implode(',', $escapedValues) . ")");
-    return $ok ? (int)clms_db_insert_id($conn) : 0;
+    $ok = mysqli_query($conn, "INSERT INTO contractors (" . implode(',', $columns) . ") VALUES (" . implode(',', $escapedValues) . ")");
+    return $ok ? (int)mysqli_insert_id($conn) : 0;
 }
 
 function enrolment_worker_type_condition($conn, $table, $type) {
@@ -187,7 +203,7 @@ function enrolment_worker_type_condition($conn, $table, $type) {
         return '1=1';
     }
     $quoted = array_map(function($value) use ($conn) {
-        return "'" . clms_db_real_escape_string($conn, $value) . "'";
+        return "'" . mysqli_real_escape_string($conn, $value) . "'";
     }, $values);
 
     return 'worker_type IN (' . implode(',', $quoted) . ')';
@@ -199,7 +215,7 @@ function enrolment_customer_contractor_ids($conn) {
         return [];
     }
 
-    $customerCode = clms_db_real_escape_string($conn, $customerCode);
+    $customerCode = mysqli_real_escape_string($conn, $customerCode);
     $ids = [];
 
     if (enrolment_table_exists($conn, 'contractor_annexure3a')) {
@@ -250,7 +266,7 @@ function enrolment_get_contractor_from_approved_a3($conn, $vendorCode) {
         return null;
     }
 
-    $safeVendor = clms_db_real_escape_string($conn, $vendorCode);
+    $safeVendor = mysqli_real_escape_string($conn, $vendorCode);
     $a3 = enrolment_fetch_one($conn, "
         SELECT *
         FROM contractor_annexure3a
@@ -293,7 +309,7 @@ function enrolment_get_customer_portal_contractor($conn) {
     }
 
     if (enrolment_column_exists($conn, 'contractors', 'status') && strtolower((string)($portal['status'] ?? '')) !== 'approved') {
-        clms_db_query($conn, "UPDATE contractors SET status = 'approved' WHERE id = " . (int)$portal['id'] . " LIMIT 1");
+        mysqli_query($conn, "UPDATE contractors SET status = 'approved' WHERE id = " . (int)$portal['id'] . " LIMIT 1");
     }
 
     $contractorSelect = enrolment_contractor_select_expr($conn);
@@ -301,7 +317,7 @@ function enrolment_get_customer_portal_contractor($conn) {
 }
 
 function renderContent() {
-    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages, $activeAgeRange;
+    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages, $activeAgeRange, $trainingLanguages;
     $nationalityOptions = clms_get_nationality_options($conn);
     $religionOptions = clms_get_religion_options($conn);
     $stateDistrictMap = clms_get_state_district_map($conn);
@@ -319,7 +335,7 @@ function renderContent() {
         $contractorSelect = enrolment_contractor_select_expr($conn);
         $where = enrolment_column_exists($conn, 'contractors', 'user_id')
             ? "user_id = " . (int)$user_id
-            : "vendor_code = '" . clms_db_real_escape_string($conn, $vendor_code) . "'";
+            : "vendor_code = '" . mysqli_real_escape_string($conn, $vendor_code) . "'";
         $contractor = enrolment_fetch_one($conn, "SELECT $contractorSelect FROM contractors WHERE $where LIMIT 1");
         if (!$contractor) {
             $contractor = enrolment_get_contractor_from_approved_a3($conn, $vendor_code);
@@ -410,7 +426,7 @@ function renderContent() {
     }
 
     if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_po_master') && enrolment_column_exists($conn, 'sap_po_master', 'po_number')) {
-        $safeVendor = clms_db_real_escape_string($conn, $vendorCodeForSap);
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
         $vendorFilters = [];
         if (enrolment_column_exists($conn, 'sap_po_master', 'vendor_code')) {
             $vendorFilters[] = "vendor_code = '$safeVendor'";
@@ -435,7 +451,7 @@ function renderContent() {
     }
 
     if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_pwo_master') && enrolment_column_exists($conn, 'sap_pwo_master', 'pwo_number')) {
-        $safeVendor = clms_db_real_escape_string($conn, $vendorCodeForSap);
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
         $vendorFilters = [];
         if (enrolment_column_exists($conn, 'sap_pwo_master', 'vendor_code')) {
             $vendorFilters[] = "vendor_code = '$safeVendor'";
@@ -460,7 +476,7 @@ function renderContent() {
         }
     }
     if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_sale_order_master') && enrolment_column_exists($conn, 'sap_sale_order_master', 'sale_order_no')) {
-        $safeVendor = clms_db_real_escape_string($conn, $vendorCodeForSap);
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
         $vendorFilters = [];
         if (enrolment_column_exists($conn, 'sap_sale_order_master', 'vendor_code')) {
             $vendorFilters[] = "vendor_code = '$safeVendor'";
@@ -484,7 +500,7 @@ function renderContent() {
         }
     }
     if (empty($workOptions) && $vendorCodeForSap !== '' && enrolment_table_exists($conn, 'work_orders')) {
-        $safeVendor = clms_db_real_escape_string($conn, $vendorCodeForSap);
+        $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
         $workOrderRows = enrolment_fetch_all($conn, "
             SELECT work_order_no, project_name, department, work_order_no AS project_no
             FROM work_orders
@@ -503,7 +519,7 @@ function renderContent() {
             enrolment_expr($conn, 'work_orders', 'project_name', 'project_name'),
             enrolment_expr($conn, 'work_orders', 'department', 'department'),
         ]);
-        $woNo = clms_db_real_escape_string($conn, $contractor['work_order_no']);
+        $woNo = mysqli_real_escape_string($conn, $contractor['work_order_no']);
         $wo_row = enrolment_fetch_one($conn, "SELECT $woSelect FROM work_orders WHERE work_order_no = '$woNo' LIMIT 1");
         $project_name = $wo_row['project_name'] ?? '';
         if ($department_name === '') {
@@ -558,6 +574,7 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'pincode', 'pincode') . ",
                 '' AS police_station,
                 " . enrolment_expr($conn, 'workmen', 'mobile', 'mobile') . ",
+                " . enrolment_expr($conn, 'workmen', 'whatsapp_no', 'whatsapp_no') . ",
                 '' AS emergency_contact,
                 " . enrolment_expr($conn, 'workmen', 'department', 'department') . ",
                 " . enrolment_expr($conn, 'workmen', 'nature_of_work', 'nature_of_work') . ",
@@ -573,25 +590,66 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'dcate', 'dcate') . ",
                 " . enrolment_expr($conn, 'workmen', 'certified_wage_rate', 'certified_wage_rate') . ",
                 " . enrolment_expr($conn, 'workmen', 'safety_language', 'safety_language') . ",
+                " . enrolment_expr($conn, 'workmen', 'work_order_source', 'work_order_source') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_fee_payment_option', 'safety_fee_payment_option') . ",
                 " . enrolment_expr($conn, 'workmen', 'executing_officer_code', 'executing_officer_code') . ",
                 " . enrolment_expr($conn, 'workmen', 'executing_officer_name', 'executing_officer_name') . ",
                 " . enrolment_expr($conn, 'workmen', 'execution_training_status', 'execution_training_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'execution_training_remarks', 'execution_training_remarks') . ",
                 " . enrolment_expr($conn, 'workmen', 'execution_training_reviewed_by', 'execution_training_reviewed_by', '0') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_enrollment_status', 'safety_enrollment_status', "'pending'") . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_enrollment_remarks', 'safety_enrollment_remarks') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_enrollment_reviewed_by', 'safety_enrollment_reviewed_by', '0') . ",
                 " . enrolment_expr($conn, 'workmen', 'uan_number', 'pf_no') . ",
                 " . enrolment_expr($conn, 'workmen', 'esic_number', 'esi_no') . ",
                 '' AS bank_account,
                 '' AS ifsc,
                 " . enrolment_expr($conn, 'workmen', 'photo', 'photo') . ",
-                '' AS signature,
-                '' AS aadhaar_doc,
-                '' AS medical_doc,
-                '' AS police_doc,
-                '' AS insurance_doc,
+                " . enrolment_expr($conn, 'workmen', 'signature_doc', 'signature') . ",
+                " . enrolment_expr($conn, 'workmen', 'aadhaar_doc', 'aadhaar_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'education_doc', 'education_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'bank_doc', 'bank_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'gatepass_doc', 'gatepass_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'skill_cert_doc', 'skill_cert_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'medical_doc', 'medical_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'police_doc', 'police_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'insurance_doc', 'insurance_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'training_approval_doc', 'training_approval_doc') . ",
                 " . enrolment_expr($conn, 'workmen', 'education', 'education') . ",
                 " . $roleTypeExpr . ",
                 " . enrolment_expr($conn, 'workmen', 'training_status', 'safety_status') . ",
+                (
+                    SELECT tr.status
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_request_status,
+                (
+                    SELECT tr.batch_number
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_batch,
+                (
+                    SELECT tr.scheduled_date
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_date,
+                (
+                    SELECT COUNT(*)
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                      AND LOWER(COALESCE(tr.status, 'pending')) IN ('failed','fail','absent','passed')
+                      AND tr.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                ) AS training_attempts_30,
                 " . enrolment_expr($conn, 'workmen', 'status', 'gate_pass_status') . ",
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
+                " . enrolment_expr($conn, 'workmen', 'is_blocked', 'is_blocked', '0') . ",
+                " . enrolment_expr($conn, 'workmen', 'blocked_source', 'blocked_source') . ",
                 " . enrolment_expr($conn, 'workmen', 'created_at', 'created_at') . "
             FROM workmen
             WHERE $contractorWhere AND $typeWhere $nonDraftWhere
@@ -659,7 +717,7 @@ function renderContent() {
     .doc-card { border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; padding:14px; }
     .doc-card .form-label { margin-bottom:8px; }
     @media (max-width: 900px) { .form-grid-3, .form-grid-4 { grid-template-columns: 1fr 1fr; } }
-    @media (max-width: 640px) { .form-grid-2, .form-grid-3, .form-grid-4 { grid-template-columns: 1fr; } .enroll-actions { flex-direction:column; align-items:stretch; } .enroll-actions-left, .enroll-actions-right { width:100%; } .enroll-actions .btn { flex:1; } }
+    @media (max-width: 640px) { .form-grid-2, .form-grid-3, .form-grid-4, .preview-grid, .preview-section-grid { grid-template-columns: 1fr; } .enroll-actions { flex-direction:column; align-items:stretch; } .enroll-actions-left, .enroll-actions-right { width:100%; } .enroll-actions .btn { flex:1; } }
     .work-flow-panel { grid-column:1 / -1; border:1px solid var(--border-color); border-radius:8px; background:#f8fafc; padding:16px; margin-bottom:5px; }
     .work-flow-title { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700; color:#0f172a; margin-bottom:14px; }
     .work-flow-title i { color:#6366f1; }
@@ -678,6 +736,34 @@ function renderContent() {
     
     .doc-card { background:#f8fafc; border:1px solid var(--border-color); border-radius:10px; padding:12px; }
     .badge-status { font-size:10px; padding:3px 8px; border-radius:10px; font-weight:600; text-transform:uppercase; }
+    .booking-cell { min-width:180px; }
+    .booking-status { display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:800;text-transform:uppercase; }
+    .booking-status.pending { background:#fef3c7;color:#92400e; }
+    .booking-status.scheduled { background:#dbeafe;color:#1d4ed8; }
+    .booking-status.pass { background:#dcfce7;color:#166534; }
+    .booking-status.fail { background:#fee2e2;color:#991b1b; }
+    .booking-meta { display:block;font-size:11px;color:#64748b;margin-top:5px;line-height:1.35; }
+    .booking-actions { display:flex;gap:6px;flex-wrap:wrap;margin-top:7px; }
+    .training-booking-box { display:grid; gap:12px; max-width:720px; }
+    .choice-row { display:flex; align-items:center; gap:10px; border:1px solid #cbd5e1; border-radius:8px; padding:12px; font-weight:700; cursor:pointer; }
+    .choice-row.active { border-color:#2563eb; background:#eff6ff; color:#1d4ed8; }
+    .choice-row input { width:18px; height:18px; }
+    .training-booking-form { margin-top:16px; border:1px solid #bfdbfe; background:#eff6ff; border-radius:10px; padding:16px; }
+    .training-booking-form.hidden { display:none; }
+    .preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .preview-section { border:1px solid #dbe4ef; border-radius:8px; background:#fff; overflow:hidden; }
+    .preview-section.full { grid-column:1 / -1; }
+    .preview-section-title { padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:11px; font-weight:900; color:#334155; text-transform:uppercase; }
+    .preview-section-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; }
+    .preview-item { border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#fff; }
+    .preview-item span { display:block; color:#64748b; font-size:11px; font-weight:800; text-transform:uppercase; margin-bottom:4px; }
+    .preview-section .preview-item { border:0; border-radius:0; border-right:1px solid #eef2f7; border-bottom:1px solid #eef2f7; min-width:0; }
+    .preview-section .preview-item strong { display:block; overflow-wrap:anywhere; line-height:1.35; }
+    .preview-doc-value { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .preview-doc-value strong { min-width:0; flex:1; }
+    .preview-doc-view { flex:0 0 auto; border:1px solid #cbd5e1; background:#f8fafc; color:#1e293b; border-radius:6px; padding:5px 9px; font-size:11px; font-weight:800; cursor:pointer; }
+    .preview-doc-view:hover { border-color:#2563eb; color:#1d4ed8; background:#eff6ff; }
+    .preview-question { margin:16px 0 0; padding:10px 12px; border:1px solid #bfdbfe; border-radius:8px; background:#eff6ff; color:#1e3a8a; font-weight:800; }
     #enrollForm .form-control {
       min-height: 42px;
       border: 1.5px solid #cbd5e1 !important;
@@ -713,37 +799,51 @@ function renderContent() {
       <button class="btn btn-primary" id="btnOpenModal"><i class="fas fa-plus"></i> New <?= htmlspecialchars($selectedType['pass']) ?></button>
     </div>
 
-    <!-- Summary Stats -->
-    <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;">
-      <div class="stat-card glass">
-        <div class="stat-icon" style="background:rgba(99,102,241,0.1);color:#6366f1"><i class="fas fa-users"></i></div>
-        <div class="stat-value"><?= count($workers) ?></div>
-        <div class="stat-label"><?= htmlspecialchars($selectedType['plural']) ?> Enrolled</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; align-items: stretch;">
+      <div style="flex: 1; min-width: 260px;">
+        <!-- Summary Stats -->
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 0; height: 100%;">
+          <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px;">
+            <div class="stat-icon" style="background:rgba(99,102,241,0.1);color:#6366f1; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-users"></i></div>
+            <div>
+              <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count($workers) ?></div>
+              <div class="stat-label" style="font-size:10px;"><?= htmlspecialchars($selectedType['plural']) ?> Enrolled</div>
+            </div>
+          </div>
+          <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px;">
+            <div class="stat-icon" style="background:rgba(16,185,129,0.1);color:#10b981; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-check"></i></div>
+            <div>
+              <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return ($w['safety_status']??'')==='pass'; })) ?></div>
+              <div class="stat-label" style="font-size:10px;">Safety Passed</div>
+            </div>
+          </div>
+          <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px;">
+            <div class="stat-icon" style="background:rgba(245,158,11,0.1);color:#f59e0b; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-id-badge"></i></div>
+            <div>
+              <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return !empty($w['temp_id']); })) ?></div>
+              <div class="stat-label" style="font-size:10px;">Temp IDs Issued</div>
+            </div>
+          </div>
+          <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px;">
+            <div class="stat-icon" style="background:rgba(239,68,68,0.1);color:#ef4444; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-door-open"></i></div>
+            <div>
+              <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return ($w['gate_pass_status']??'')==='active'; })) ?></div>
+              <div class="stat-label" style="font-size:10px;">Active Passes</div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="stat-card glass">
-        <div class="stat-icon" style="background:rgba(16,185,129,0.1);color:#10b981"><i class="fas fa-check"></i></div>
-        <div class="stat-value"><?= count(array_filter($workers, function($w) { return ($w['safety_status']??'')==='pass'; })) ?></div>
-        <div class="stat-label">Safety Passed</div>
-      </div>
-      <div class="stat-card glass">
-        <div class="stat-icon" style="background:rgba(245,158,11,0.1);color:#f59e0b"><i class="fas fa-id-badge"></i></div>
-        <div class="stat-value"><?= count(array_filter($workers, function($w) { return !empty($w['temp_id']); })) ?></div>
-        <div class="stat-label">Temp IDs Issued</div>
-      </div>
-      <div class="stat-card glass">
-        <div class="stat-icon" style="background:rgba(239,68,68,0.1);color:#ef4444"><i class="fas fa-door-open"></i></div>
-        <div class="stat-value"><?= count(array_filter($workers, function($w) { return ($w['gate_pass_status']??'')==='active'; })) ?></div>
-        <div class="stat-label">Active Passes</div>
-      </div>
-    </div>
 
-    <!-- Annexure 5/A: Pass Limits Widget -->
-    <div class="card glass" style="margin-bottom:20px;">
-      <div class="card-header">
-        <div class="card-title"><i class="fas fa-shield-alt" style="color:#6366f1;"></i>   Pass Limits</div>
-      </div>
-      <div class="card-body" id="passLimitsWidget">
-        <p style="color:var(--text-muted);font-size:13px;">Loading pass limits...</p>
+      <div style="flex: 1; min-width: 260px;">
+        <!-- Annexure 5/A: Pass Limits Widget -->
+        <div class="card glass h-100" style="margin-bottom:0;">
+          <div class="card-header" style="padding:6px 12px; min-height:0;">
+            <div class="card-title" style="font-size:12px;"><i class="fas fa-shield-alt" style="color:#6366f1;"></i> Pass Limits</div>
+          </div>
+          <div class="card-body" id="passLimitsWidget" style="padding:8px 12px;">
+            <p style="color:var(--text-muted);font-size:12px;">Loading pass limits...</p>
+          </div>
+        </div>
       </div>
     </div>
     <script src="../../js/passLimitValidator.js"></script>
@@ -779,13 +879,35 @@ function renderContent() {
               <th>Pass / Role</th>
               <th>Department / Work</th>
               <th>Temp ID</th>
-              <th>Executing Officer</th>
-              <th>Status</th>
+              <th>Workflow Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            <?php foreach ($workers as $w): ?>
+            <?php foreach ($workers as $w):
+              $bookingStatus = strtolower((string)($w['latest_training_request_status'] ?: ($w['safety_status'] ?? 'pending')));
+              $safetyEnrollmentStatus = strtolower((string)($w['safety_enrollment_status'] ?? 'pending'));
+              $bookingClass = in_array($bookingStatus, ['pass','passed','completed','training_passed','qualified'], true)
+                  ? 'pass'
+                  : (in_array($bookingStatus, ['fail','failed','absent','training_failed'], true) ? 'fail' : (in_array($bookingStatus, ['scheduled','contractor_confirmed'], true) ? 'scheduled' : 'pending'));
+              $bookingLabels = [
+                  'welfare_pending' => 'Safety Booking Pending',
+                  'pending' => 'Safety Booking Pending',
+                  'training_pending' => 'Safety Booking Pending',
+                  'pending_eo' => 'EO Approval Pending',
+                  'pending_safety' => 'Safety Approval Pending',
+                  'pending_payment' => 'Safety Fee Pending',
+                  'safety_rejected' => 'Correction Required',
+                  'contractor_confirmed' => 'Booking Confirmed',
+                  'passed' => 'Safety Passed',
+                  'pass' => 'Safety Passed',
+                  'failed' => 'Safety Failed',
+                  'fail' => 'Safety Failed',
+              ];
+              $bookingLabel = $bookingLabels[$bookingStatus] ?? strtoupper(str_replace('_', ' ', $bookingStatus ?: 'pending'));
+              $attemptsLeft = max(0, 3 - (int)($w['training_attempts_30'] ?? 0));
+              $bookUrl = 'book_safety_training.php?worker_id=' . (int)$w['id'];
+            ?>
             <tr>
               <td>
                 <div class="d-flex align-items-center gap-2">
@@ -812,24 +934,87 @@ function renderContent() {
                 <small><?= $w['nature_of_work'] ?></small>
               </td>
               <td><code class="text-primary"><?= $w['temp_id'] ?? 'PENDING' ?></code></td>
-              <td>
-                <?php if (!empty($w['executing_officer_code'])): ?>
-                  <code style="background:rgba(14,165,233,0.1);color:#0369a1;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:700;"><?= htmlspecialchars($w['executing_officer_code']) ?></code>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:3px;"><?= htmlspecialchars($w['executing_officer_name'] ?: 'Name not found') ?></div>
-                  <?php
-                    $eoStatus = strtolower((string)($w['execution_training_status'] ?? 'pending'));
-                    $eoReviewed = (int)($w['execution_training_reviewed_by'] ?? 0) > 0;
-                    $eoIsApproved = $eoStatus === 'approved' && $eoReviewed;
-                    $eoBadge = $eoIsApproved ? 'bg-success text-white' : ($eoStatus === 'rejected' ? 'bg-danger text-white' : 'bg-warning');
-                    $eoLabel = $eoIsApproved ? 'EO Approved' : ($eoStatus === 'rejected' ? 'EO Rejected' : 'EO Pending');
-                  ?>
-                  <span class="badge-status <?= $eoBadge ?>" style="margin-top:4px;display:inline-block;"><?= $eoLabel ?></span>
-                <?php else: ?>
-                  <span style="opacity:0.4;">-</span>
+              <td style="min-width: 220px;">
+                <?php if (!empty($w['is_blocked'])): ?>
+                  <div style="margin-bottom: 8px; padding: 6px; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px;">
+                    <div style="color: #b91c1c; font-weight: bold; font-size: 12px;"><i class="fas fa-ban"></i> BLOCKED BY WELFARE</div>
+                    <?php if (!empty($w['blocked_source'])): ?>
+                      <div style="font-size: 11px; color: #991b1b; margin-top: 2px;">Source: <?= htmlspecialchars($w['blocked_source']) ?></div>
+                    <?php endif; ?>
+                  </div>
                 <?php endif; ?>
-              </td>
-              <td>
-                <span class="badge-status <?= $w['safety_status']==='pass'?'bg-success text-white':'bg-warning' ?>">Safety: <?= $w['safety_status'] ?></span>
+
+                <!-- Executing Officer -->
+                <div style="margin-bottom: 6px; font-size: 12px;">
+                  <span class="text-muted">EO:</span>
+                  <?php if (!empty($w['executing_officer_code'])): ?>
+                    <?php
+                      $eoStatus = strtolower((string)($w['execution_training_status'] ?? 'pending'));
+                      $eoReviewed = (int)($w['execution_training_reviewed_by'] ?? 0) > 0;
+                      $eoIsApproved = $eoStatus === 'approved' && $eoReviewed;
+                      $eoBadge = $eoIsApproved ? 'text-success' : ($eoStatus === 'rejected' ? 'text-danger' : 'text-warning');
+                      $eoLabel = $eoIsApproved ? 'Approved' : ($eoStatus === 'rejected' ? 'Rejected' : 'Pending');
+                    ?>
+                    <strong class="<?= $eoBadge ?>"><?= $eoLabel ?></strong>
+                    <span style="font-size:11px;">(<?= htmlspecialchars($w['executing_officer_code']) ?>)</span>
+                    <?php if ($eoStatus === 'rejected' && !empty($w['execution_training_remarks'])): ?>
+                      <div style="font-size:11px;color:#b91c1c;margin-top:2px;">Reason: <?= htmlspecialchars($w['execution_training_remarks']) ?></div>
+                    <?php endif; ?>
+                  <?php else: ?>
+                    <span class="text-muted">N/A</span>
+                  <?php endif; ?>
+                </div>
+
+                <!-- Safety Booking -->
+                <div style="margin-bottom: 6px; font-size: 12px;">
+                  <span class="text-muted">Booking:</span>
+                  <strong class="booking-status <?= $bookingClass ?>" style="padding:0; background:none; font-size:12px; border:none; display:inline;"><?= htmlspecialchars($bookingLabel) ?></strong>
+                  <div class="booking-meta" style="margin-top: 2px;">
+                    <?= !empty($w['latest_training_batch']) ? 'Batch: ' . htmlspecialchars($w['latest_training_batch']) : 'Batch: Not booked' ?>
+                    <?= !empty($w['latest_training_date']) ? ' | Date: ' . htmlspecialchars(date('d-m-Y', strtotime($w['latest_training_date']))) : '' ?>
+                    | Attempts left: <?= (int)$attemptsLeft ?>
+                  </div>
+                  <?php if (!in_array($bookingClass, ['pass'], true) && $safetyEnrollmentStatus !== 'rejected'): ?>
+                    <div style="margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px;">
+                      <a class="btn btn-sm btn-outline-primary" style="padding: 2px 6px; font-size: 11px;" href="<?= htmlspecialchars($bookUrl) ?>"><i class="fas fa-calendar-check"></i> <?= $bookingClass === 'fail' ? 'Book Retest' : 'Book Safety' ?></a>
+                      <?php if ($bookingClass === 'fail' && $attemptsLeft > 0): ?>
+                      <button class="btn btn-sm" style="padding:2px 6px; font-size:11px; background:#fef3c7; color:#92400e; border:1px solid #fcd34d;" onclick="openReEnrollModal(<?= htmlspecialchars(json_encode([
+                          'id'            => (int)$w['id'],
+                          'name'          => $w['name'],
+                          'work_order_no' => $w['work_order_no'] ?? '',
+                          'work_order_source' => $w['work_order_source'] ?? '',
+                          'attempts_left' => $attemptsLeft
+                      ])) ?>)">
+                        <i class="fas fa-redo"></i> Re-enroll
+                      </button>
+                      <?php endif; ?>
+                    </div>
+                  <?php elseif ($safetyEnrollmentStatus === 'rejected'): ?>
+                    <div style="font-size:11px; color:#b91c1c; margin-top:2px;">Edit worker to resubmit.</div>
+                  <?php endif; ?>
+                </div>
+
+                <!-- Safety Approval -->
+                <div style="font-size: 12px;">
+                  <span class="text-muted">Safety Approval:</span>
+                  <?php
+                    if ($bookingClass === 'pass') {
+                        $safetyEnrollmentStatus = 'approved';
+                    }
+                    $safetyEnrollmentBadge = $safetyEnrollmentStatus === 'approved'
+                        ? 'text-success'
+                        : ($safetyEnrollmentStatus === 'rejected' ? 'text-danger' : 'text-warning');
+                    $safetyEnrollmentLabel = $safetyEnrollmentStatus === 'approved'
+                        ? 'Approved'
+                        : ($safetyEnrollmentStatus === 'rejected' ? 'Rejected' : 'Pending');
+                  ?>
+                  <strong class="<?= $safetyEnrollmentBadge ?>"><?= htmlspecialchars($safetyEnrollmentLabel) ?></strong>
+                  <?php if ($safetyEnrollmentStatus === 'rejected' && !empty($w['safety_enrollment_remarks'])): ?>
+                    <div style="font-size:11px;color:#b91c1c;margin-top:2px;"><?= htmlspecialchars($w['safety_enrollment_remarks']) ?></div>
+                  <?php elseif ($safetyEnrollmentStatus === 'approved'): ?>
+                    <span class="text-muted" style="font-size:11px;">(<?= htmlspecialchars($w['safety_status'] ?? 'pending') ?>)</span>
+                  <?php endif; ?>
+                </div>
               </td>
               <td>
                 <div style="display:flex;gap:5px;">
@@ -856,15 +1041,24 @@ function renderContent() {
     </div> <!-- end listSection -->
 
     <!-- Inline Form Section -->
-    <div id="formSection" class="hidden">
+    <div id="formSection" style="margin-bottom:20px;">
       <div class="card">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
           <h3 class="card-title" id="enrollFormTitle">Workmen Enrollment</h3>
-          <button class="btn btn-outline" onclick="closeForm()">Back to List</button>
         </div>
+        <script>
+          document.addEventListener("DOMContentLoaded", function() {
+            var formSec = document.getElementById("formSection");
+            var listSec = document.getElementById("listSection");
+            if (formSec && listSec && listSec.parentNode) {
+              listSec.parentNode.insertBefore(formSec, listSec);
+            }
+          });
+        </script>
         <form id="enrollForm" enctype="multipart/form-data">
           <input type="hidden" name="worker_id" id="workerEditId" value="">
           <input type="hidden" name="source" id="workerSource" value="MANUAL">
+          <input type="hidden" name="work_order_source" id="workOrderSource" value="">
           <input type="hidden" name="contractor_id" value="<?= (int)$c_id ?>">
           <div class="square-tabs">
             <button type="button" class="square-tab active" data-tab="basic">1. Basic Info</button>
@@ -872,6 +1066,8 @@ function renderContent() {
             <button type="button" class="square-tab" data-tab="address">3. Address / Contact</button>
             <button type="button" class="square-tab" data-tab="work">4. Work / Compliance</button>
             <button type="button" class="square-tab" data-tab="docs">5. Documents</button>
+            <button type="button" class="square-tab" data-tab="payment">6. Safety Fee Payment</button>
+            <button type="button" class="square-tab" data-tab="training">7. Book Appointment for Safety Training</button>
           </div>
 
           <!-- Tab 1: Basic -->
@@ -894,7 +1090,8 @@ function renderContent() {
                     <option value="<?= htmlspecialchars($wo['work_order_no']) ?>"
                             data-project="<?= htmlspecialchars($wo['project_name'] ?? '') ?>"
                             data-project-no="<?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>"
-                            data-department="<?= htmlspecialchars($wo['department'] ?? '') ?>">
+                            data-department="<?= htmlspecialchars($wo['department'] ?? '') ?>"
+                            data-source="<?= htmlspecialchars($wo['source'] ?? '') ?>">
                       <?= !empty($wo['source']) ? '[' . htmlspecialchars($wo['source']) . '] ' : '' ?><?= htmlspecialchars($wo['work_order_no']) ?>
                     </option>
                   <?php endforeach; ?>
@@ -912,8 +1109,8 @@ function renderContent() {
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label required">Date of Joining</label>
-                <input type="date" class="form-control" name="registration_date" value="<?= date('Y-m-d') ?>" required>
+                <label class="form-label required">Date of Registration</label>
+                <input type="date" class="form-control" name="registration_date" value="<?= date('Y-m-d') ?>" min="<?= date('Y-m-d') ?>" required>
               </div>
               <div class="form-group">
                 <label class="form-label required">Aadhaar Number <span id="aadhaarStatus" class="badge-status" style="display:none; margin-left:10px;"></span></label>
@@ -1045,6 +1242,10 @@ function renderContent() {
                 <label class="form-label required">Mobile Number</label>
                 <input type="tel" class="form-control" name="mobile" maxlength="10" required>
               </div>
+              <div class="form-group">
+                <label class="form-label required">WhatsApp Number</label>
+                <input type="tel" class="form-control" name="whatsapp_no" maxlength="10" required>
+              </div>
             </div>
           </div>
 
@@ -1146,9 +1347,86 @@ function renderContent() {
               </div>
               <div class="doc-card">
                 <label class="form-label">Training Attendance Approval by Executing Officer / Mentor</label>
-                <input type="file" class="form-control" name="training_approval_doc" accept=".pdf,application/pdf" data-max-size="5242880">
+                <input type="file" class="form-control" name="training_approval_doc" id="trainingApprovalDocInput" accept=".pdf,application/pdf" data-max-size="5242880">
                 <small class="form-hint">PDF only, max 5 MB.</small>
               </div>
+            </div>
+          </div>
+
+          <!-- Tab 6: Safety Fee Payment -->
+          <div class="modal-tab-content hidden" id="tab-payment">
+            <div class="training-booking-box" id="pwoPaymentOptionBox" style="margin-bottom:12px;display:none;">
+              <label class="choice-row active">
+                <input type="radio" name="safety_fee_payment_option" value="pay_now" checked>
+                <span>Pay Safety Fee Now</span>
+              </label>
+              <label class="choice-row">
+                <input type="radio" name="safety_fee_payment_option" value="pay_later">
+                <span>Pay Safety Fee Later</span>
+              </label>
+            </div>
+            <div class="alert alert-info" id="pwoPaymentRequiredNote" style="margin:0 0 12px;display:none;">
+              Pay Safety Fee first. Safety Training & Seat Booking will open after payment.
+            </div>
+            <div class="alert alert-info" id="nonPwoPaymentNote" style="margin:0 0 12px;">
+              Safety Fee Payment is applicable only for PWO. For non-PWO, continue to Safety Seat Booking.
+            </div>
+          </div>
+
+          <!-- Tab 7: Book Appointment for Safety Training -->
+          <div class="modal-tab-content hidden" id="tab-training">
+            <div class="training-booking-box" id="trainingBookingChoiceBox">
+              <label class="choice-row">
+                <input type="radio" name="training_booking_choice" value="book_now" checked>
+                <span>I need to book an appointment for Safety Training</span>
+              </label>
+              <label class="choice-row" id="trainingLaterChoiceRow">
+                <input type="radio" name="training_booking_choice" value="not_now">
+                <span id="trainingLaterChoiceText">I don't need to book now</span>
+              </label>
+            </div>
+            <div id="trainingBookingForm" class="training-booking-form hidden">
+              <div class="form-grid-3">
+                <div class="form-group">
+                  <label class="form-label">Aadhaar No</label>
+                  <input type="text" class="form-control" id="trainingAadhaarDisplay" readonly>
+                  <small class="form-hint">Auto fetched from Basic Info.</small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Name</label>
+                  <input type="text" class="form-control" id="trainingNameDisplay" readonly>
+                  <small class="form-hint">Auto fetched from Basic Info.</small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label required">Language of Training</label>
+                  <select class="form-control" name="training_booking_language" id="trainingBookingLanguage">
+                    <option value="">Select Language</option>
+                    <?php foreach($trainingLanguages as $lang): ?>
+                      <option value="<?= htmlspecialchars($lang['language_name']) ?>"><?= htmlspecialchars($lang['language_name']) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                  <small class="form-hint">Auto fetched from Safety Language, but you can change it.</small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label required">Select Training Date</label>
+                  <input type="hidden" name="training_booking_batch_id" id="trainingBookingBatchId">
+                  <select class="form-control" name="training_booking_date" id="trainingBookingDate">
+                    <option value="">Select scheduled date</option>
+                  </select>
+                  <small class="form-hint" id="trainingDateHint">Scheduled batches will appear after selecting language.</small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label required">Session</label>
+                  <select class="form-control" name="training_booking_session" id="trainingBookingSession" style="pointer-events: none; background-color: #e9ecef;" tabindex="-1">
+                    <option value="">Select session</option>
+                    <option value="FN">FN</option>
+                    <option value="AN">AN</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="alert alert-info" style="margin-top:12px;">
+              Save Draft will not submit this entitlement for processing. Training can be booked later from the Book Safety Training menu.
             </div>
           </div>
 
@@ -1159,7 +1437,7 @@ function renderContent() {
               <button type="button" class="btn btn-outline" id="btnPrevTab">Previous</button>
               <button type="button" class="btn btn-primary-soft" id="btnNextTab">Next</button>
               <button type="button" class="btn btn-primary-soft" id="btnSaveDraft" style="display:none;">Save Draft</button>
-              <button type="button" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit Enrollment</button>
+              <button type="button" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit</button>
             </div>
           </div>
         </form>
@@ -1174,6 +1452,56 @@ function renderContent() {
           <button class="modal-close" onclick="closeViewModal()">&times;</button>
         </div>
         <div id="viewContent" style="padding:20px;"></div>
+      </div>
+    </div>
+
+    <div id="submitPreviewModal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:1180px;width:96%;">
+        <div class="modal-header">
+          <h3 class="modal-title">Preview Entitlement Details</h3>
+          <button class="modal-close" type="button" onclick="closeSubmitPreview()">&times;</button>
+        </div>
+        <div style="padding:20px;">
+          <div id="submitPreviewContent" class="preview-grid"></div>
+          <div class="preview-question">Are you sure to submit?</div>
+          <label class="choice-row" style="margin-top:16px;">
+            <input type="checkbox" id="submitVerifiedCheckbox">
+            <span>I hereby verify that all the information provided is true and correct in all respects.</span>
+          </label>
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">
+            <button type="button" class="btn btn-outline" onclick="closeSubmitPreview()">No, Back</button>
+            <button type="button" class="btn btn-primary" id="btnProceedSubmit">Yes, Proceed to Submit</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="inlineSafetyPaymentBox" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:520px;width:96%;">
+        <div class="modal-header">
+          <h3 class="modal-title">Safety Fee Payment</h3>
+          <button class="modal-close" type="button" onclick="closeInlinePaymentPopup()">&times;</button>
+        </div>
+        <div style="padding:20px;">
+          <div style="text-align:center;margin-bottom:14px;">
+            <div id="inlinePaymentQrBox" style="width:220px;height:220px;border:1px solid #dbe4ef;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fff;margin:0 auto 12px;overflow:hidden;">
+              <i class="fas fa-qrcode" style="font-size:70px;color:#94a3b8;"></i>
+            </div>
+            <div id="inlinePaymentSummary" style="font-size:20px;font-weight:900;color:#0f766e;">Safety Fee</div>
+            <small class="form-hint" id="inlinePaymentMerchant">Scan QR and enter payment reference.</small>
+          </div>
+          <div class="form-group">
+            <label class="form-label required">Payment Reference / UTR</label>
+            <input type="text" class="form-control" id="inlinePayerReference" placeholder="Enter UTR / payment ref">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Payment Note</label>
+            <textarea class="form-control" id="inlinePayerNote" rows="2" placeholder="Optional payment note"></textarea>
+          </div>
+          <button type="button" class="btn btn-primary" id="btnConfirmInlinePayment" style="width:100%;justify-content:center;">
+            <i class="fas fa-check"></i> Payment Successful
+          </button>
+        </div>
       </div>
     </div>
 
@@ -1325,7 +1653,8 @@ function renderContent() {
         const formSection = document.getElementById('formSection');
         const viewModal = document.getElementById('viewModal');
         const form = document.getElementById('enrollForm');
-        const tabOrder = ['basic', 'personal', 'address', 'work', 'docs'];
+        const tabOrder = ['basic', 'personal', 'address', 'work', 'docs', 'payment', 'training'];
+        const scheduledTrainingSessions = <?= json_encode(db_fetch_all($conn, "SELECT id, batch_number, training_date, session_name, language_name, capacity FROM training_class_batches WHERE training_date >= CURDATE() AND LOWER(COALESCE(status, 'open')) IN ('open','draft','scheduled','active') ORDER BY training_date ASC, session_name ASC, id ASC"), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
         
         const defaultDepartment = <?= json_encode($department_name) ?>;
         const workOptions = <?= json_encode($workOptions, JSON_UNESCAPED_SLASHES) ?>;
@@ -1333,6 +1662,12 @@ function renderContent() {
         const requestedPassLabel = <?= json_encode($selectedType['label']) ?>;
         const prefillAadhaar = <?= json_encode($prefillAadhaar) ?>;
         const currentContractorId = <?= $c_id ? (int)$c_id : 0 ?>;
+        
+        // Enforce min registration date as today client-side
+        const regDateInput = document.querySelector('input[name="registration_date"]');
+        if (regDateInput) {
+            regDateInput.setAttribute('min', new Date().toISOString().slice(0, 10));
+        }
         const dobInput = document.getElementById('dobInput');
         const minAllowedAge = <?= json_encode((int)$minAge) ?>;
         const maxAllowedAge = <?= json_encode((int)$maxAge) ?>;
@@ -1559,6 +1894,7 @@ function renderContent() {
 
         document.getElementById('btnOpenModal').onclick = () => {
           form.reset();
+          resetInlineSafetyPaymentState();
           document.getElementById('workerEditId').value = '';
           document.getElementById('enrollFormTitle').textContent = ' New ' + requestedPassLabel;
           setFieldValue('pass_type', requestedPassType);
@@ -1575,6 +1911,8 @@ function renderContent() {
           if (woSelect && workOptions.length === 1) {
             woSelect.value = workOptions[0].work_order_no;
             syncWorkOrderFields(woSelect.value);
+          } else {
+            refreshWorkflowPaymentState(false);
           }
           const photoInput = form.querySelector('[name="photo"]');
           const requiredDocInputs = form.querySelectorAll('#tab-docs input[type="file"]');
@@ -1583,9 +1921,7 @@ function renderContent() {
               input.setAttribute('required', 'true');
             }
           });
-          listSection.style.display = 'none';
-          formSection.style.display = 'block';
-          formSection.classList.remove('hidden');
+          formSection.scrollIntoView({ behavior: 'smooth' });
           activateTab('basic');
           updateNationalityLocationMode();
           toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
@@ -1596,24 +1932,66 @@ function renderContent() {
         };
         
         function closeForm() {
-          formSection.style.display = 'none';
-          listSection.style.display = 'block';
           form.reset();
+          form.reset();
+          resetInlineSafetyPaymentState();
           document.getElementById('workerEditId').value = '';
           document.getElementById('enrollFormTitle').textContent = ' New ' + requestedPassLabel;
           resetWorkFlow();
           updateNationalityLocationMode();
+          refreshWorkflowPaymentState(false);
         }
         
+        function refreshWorkflowTabs() {
+          const isPwo = isPwoWorkOrder();
+          const paymentTab = document.querySelector('.square-tab[data-tab="payment"]');
+          const trainingTab = document.querySelector('.square-tab[data-tab="training"]');
+          if (paymentTab) paymentTab.style.display = isPwo ? '' : 'none';
+          if (trainingTab) {
+            trainingTab.textContent = isPwo
+              ? '7. Book Appointment for Safety Training'
+              : '6. Book Appointment for Safety Training';
+          }
+          return isPwo ? tabOrder : tabOrder.filter(tab => tab !== 'payment');
+        }
+
+        function visibleTabOrder() {
+          return refreshWorkflowTabs();
+        }
+
         function activateTab(tabId) {
+          const visibleTabs = visibleTabOrder();
+          if (tabId === 'payment' && !isPwoWorkOrder()) {
+            tabId = 'training';
+          }
+          if (tabId === 'training' && isPwoWorkOrder() && !canBookPwoTrainingInline() && !isPwoPayLater()) {
+            tabId = 'payment';
+            notify('Safety Fee Required', 'Pay Safety Fee first. Safety Training & Seat Booking will open after payment.', 'warning');
+          }
           document.querySelectorAll('.square-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
           document.querySelectorAll('.modal-tab-content').forEach(c => c.classList.toggle('hidden', c.id !== 'tab-' + tabId));
-          const index = tabOrder.indexOf(tabId);
+          const index = visibleTabs.indexOf(tabId);
+          const isPwo = isPwoWorkOrder();
+          const nextBtn = document.getElementById('btnNextTab');
+          const submitBtn = document.getElementById('btnSubmit');
           document.getElementById('btnPrevTab').style.visibility = index <= 0 ? 'hidden' : 'visible';
-          document.getElementById('btnNextTab').style.display = index === tabOrder.length - 1 ? 'none' : 'inline-flex';
+          const isLastTab = index === visibleTabs.length - 1;
+          const isPaymentTab = tabId === 'payment';
+          let showSubmit = isLastTab;
+          let showNext = !isLastTab;
+          if (isPaymentTab && isPwo && !canBookPwoTrainingInline() && !isPwoPayLater()) {
+            showNext = false;
+            showSubmit = false;
+          }
+          nextBtn.style.display = showNext ? 'inline-flex' : 'none';
           const draftBtn = document.getElementById('btnSaveDraft');
-          if (draftBtn) draftBtn.style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
-          document.getElementById('btnSubmit').style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
+          if (draftBtn) draftBtn.style.display = isLastTab ? 'inline-flex' : 'none';
+          submitBtn.style.display = showSubmit ? 'inline-flex' : 'none';
+          submitBtn.innerText = isPaymentTab && isPwo
+            ? (isPwoPayLater() ? 'Complete Enrollment' : 'Pay Now')
+            : 'Submit';
+          if (tabId === 'payment') refreshWorkflowPaymentState(false);
+          if (tabId === 'training') refreshTrainingBookingFields();
         }
         
         document.querySelectorAll('.square-tab').forEach(btn => {
@@ -1622,24 +2000,41 @@ function renderContent() {
 
         document.getElementById('btnPrevTab').onclick = () => {
           const current = document.querySelector('.square-tab.active')?.dataset.tab || 'basic';
-          const index = Math.max(0, tabOrder.indexOf(current) - 1);
-          activateTab(tabOrder[index]);
+          const tabs = visibleTabOrder();
+          const index = Math.max(0, tabs.indexOf(current) - 1);
+          activateTab(tabs[index]);
         };
         document.getElementById('btnNextTab').onclick = () => {
           const current = document.querySelector('.square-tab.active')?.dataset.tab || 'basic';
-          const index = Math.min(tabOrder.length - 1, tabOrder.indexOf(current) + 1);
-          activateTab(tabOrder[index]);
+          if (current === 'payment' && isPwoWorkOrder() && !canBookPwoTrainingInline() && !isPwoPayLater()) return;
+          const tabs = visibleTabOrder();
+          const index = Math.min(tabs.length - 1, tabs.indexOf(current) + 1);
+          activateTab(tabs[index]);
         };
 
         function syncWorkOrderFields(workOrderNo) {
           const option = workOptions.find(item => String(item.work_order_no) === String(workOrderNo));
           const projectSelect = form.querySelector('[name="project_name"]');
           const deptField = form.querySelector('[name="department"]');
+          const sourceInput = document.getElementById('workOrderSource');
           if (projectSelect && option) projectSelect.value = option.project_no || option.work_order_no || '';
+          if (sourceInput) {
+            const inferred = String(option?.source || '').toUpperCase()
+              || (String(workOrderNo || '').toUpperCase().indexOf('PWO') === 0 ? 'PWO' : '');
+            sourceInput.value = inferred;
+          }
           if (deptField && option && option.department) {
             deptField.value = option.department;
             deptField.setAttribute('readonly', true);
             deptField.style.backgroundColor = '#f1f5f9';
+          }
+          refreshWorkflowTabs();
+          refreshWorkflowPaymentState();
+          const activeTab = document.querySelector('.square-tab.active')?.dataset.tab || '';
+          if (activeTab === 'payment' && !isPwoWorkOrder()) {
+            activateTab('training');
+          } else if (activeTab === 'training' && isPwoWorkOrder() && !canBookPwoTrainingInline() && !isPwoPayLater()) {
+            activateTab('payment');
           }
         }
 
@@ -2025,10 +2420,10 @@ function renderContent() {
         function resetAutoFilledFields(options = {}) {
             const preserveWorkFlow = Boolean(options.preserveWorkFlow);
             const fieldsToReset = [
-                'name', 'gender', 'dob', 'marital_status', 'nationality', 'mobile', 'present_address', 
+                'name', 'gender', 'dob', 'marital_status', 'nationality', 'mobile', 'whatsapp_no', 'present_address', 
                 'permanent_address', 'state', 'district', 'nature_of_work', 
                 'skill_category', 'education', 'role_type', 'blood_group', 'pf_no', 'esi_no', 'uan_number', 'email', 'father_name',
-                'executing_officer_code', 'executing_officer_name'
+                'executing_officer_code'
             ];
             
             fieldsToReset.forEach(key => {
@@ -2050,8 +2445,13 @@ function renderContent() {
                 resetWorkFlow();
             }
             updateNationalityLocationMode();
+            executingOfficerNameInput?.setAttribute('readonly', 'readonly');
+            if (executingOfficerNameInput) executingOfficerNameInput.style.backgroundColor = '#f1f5f9';
             const photoInput = form.querySelector('[name="photo"]');
             if(photoInput) photoInput.setAttribute('required', 'true');
+            document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => {
+              delete input.dataset.existing;
+            });
         }
 
         function setFieldValue(name, value) {
@@ -2063,6 +2463,13 @@ function renderContent() {
           }
           const field = form.querySelector(`[name="${name}"]`);
           if (!field) return;
+          if (field.type === 'radio') {
+            form.querySelectorAll(`[name="${name}"]`).forEach(input => {
+              input.checked = String(input.value) === String(value ?? '');
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            return;
+          }
           field.value = value ?? '';
           field.dispatchEvent(new Event('input', { bubbles: true }));
           field.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2079,6 +2486,7 @@ function renderContent() {
 
         function editWorker(worker) {
           form.reset();
+          resetInlineSafetyPaymentState();
           document.getElementById('workerEditId').value = worker.id || '';
           document.getElementById('enrollFormTitle').textContent = ' Edit ' + requestedPassLabel;
 
@@ -2086,7 +2494,13 @@ function renderContent() {
             work_order_no: worker.work_order_no,
             project_name: worker.project_name || <?= json_encode($project_name ?: 'General Project') ?>,
             pass_type: passTypeFromWorker(worker),
-            registration_date: worker.registration_date || new Date().toISOString().slice(0, 10),
+            registration_date: (() => {
+              const todayStr = new Date().toISOString().slice(0, 10);
+              if (worker.registration_date && worker.registration_date >= todayStr) {
+                return worker.registration_date;
+              }
+              return todayStr;
+            })(),
             aadhaar: worker.aadhaar,
             name: worker.name,
             father_name: worker.father_name,
@@ -2101,6 +2515,7 @@ function renderContent() {
             district: worker.district,
             pincode: worker.pincode,
             mobile: worker.mobile,
+            whatsapp_no: worker.whatsapp_no,
             department: worker.department || defaultDepartment,
             experience: worker.experience,
             pf_no: worker.pf_no,
@@ -2109,6 +2524,8 @@ function renderContent() {
             esi_registered_worker: worker.esi_no ? 'YES' : 'NO',
             certified_wage_rate: worker.certified_wage_rate,
             safety_language: worker.safety_language,
+            work_order_source: worker.work_order_source,
+            safety_fee_payment_option: worker.safety_fee_payment_option || 'pay_now',
             blood_group: worker.blood_group,
             region: worker.region,
             pwd_status: worker.pwd_status,
@@ -2126,6 +2543,8 @@ function renderContent() {
           };
 
           Object.entries(values).forEach(([name, value]) => setFieldValue(name, value));
+          executingOfficerNameInput?.setAttribute('readonly', 'readonly');
+          if (executingOfficerNameInput) executingOfficerNameInput.style.backgroundColor = '#f1f5f9';
           setStateDistrictValues(values.state || '', values.district || '');
           toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
           toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
@@ -2135,16 +2554,88 @@ function renderContent() {
             deptField.style.backgroundColor = '#f1f5f9';
           }
           document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => input.removeAttribute('required'));
+          const existingDocumentMap = {
+            photo: worker.photo,
+            aadhaar_doc: worker.aadhaar_doc,
+            education_doc: worker.education_doc,
+            bank_doc: worker.bank_doc,
+            gatepass_doc: worker.gatepass_doc,
+            skill_cert_doc: worker.skill_cert_doc,
+            medical_doc: worker.medical_doc,
+            police_doc: worker.police_doc,
+            insurance_doc: worker.insurance_doc,
+            training_approval_doc: worker.training_approval_doc
+          };
+          Object.entries(existingDocumentMap).forEach(([name, fileName]) => {
+            const input = form.querySelector(`[name="${name}"]`);
+            if (input) input.dataset.existing = fileName || '';
+          });
           const trainingApprovalInput = form.querySelector('[name="training_approval_doc"]');
           const rejectedByEO = String(worker.execution_training_status || '').toLowerCase() === 'rejected';
-          if (trainingApprovalInput && rejectedByEO) {
-            trainingApprovalInput.setAttribute('required', 'true');
-            notify('Document Required', 'Executing Officer ne request reject ki hai. Corrected Training Approval document dobara upload karein.', 'warning');
+          const rejectedBySafety = String(worker.safety_enrollment_status || '').toLowerCase() === 'rejected';
+          if (rejectedByEO) {
+            const eoRemarks = worker.execution_training_remarks || 'No remarks provided by the Executing Officer.';
+            Swal.fire({
+              icon: 'warning',
+              title: '<span style="color:#b45309;font-size:18px;font-weight:700;">&#9888; Enrollment Returned for Correction</span>',
+              html: `
+                <div style="text-align:left;font-size:14px;line-height:1.7;">
+                  <p style="margin:0 0 10px;color:#374151;">Your enrollment request has been <strong style="color:#dc2626;">returned by the Executing Officer</strong> and requires correction before it can proceed.</p>
+                  <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+                    <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">&#128221; Reason / Remarks</div>
+                    <div style="color:#78350f;font-weight:500;">${eoRemarks}</div>
+                  </div>
+                  <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 14px;">
+                    <div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">&#10003; Steps to Resolve</div>
+                    <ol style="margin:0;padding-left:18px;color:#15803d;">
+                      <li>Review the remarks mentioned above carefully.</li>
+                      <li>Correct the required details or re-upload the document.</li>
+                      <li>Click <strong>Submit</strong> to resubmit for review.</li>
+                    </ol>
+                  </div>
+                </div>`,
+              confirmButtonText: '&#10003; Got it, I will correct',
+              confirmButtonColor: '#b45309',
+              customClass: { popup: 'swal-wide-popup' },
+              width: 520
+            });
+            if (trainingApprovalInput && worker.training_approval_doc) {
+              trainingApprovalInput.removeAttribute('required');
+            }
+          } else if (rejectedBySafety) {
+            const safetyRemarks = worker.safety_enrollment_remarks || 'No remarks provided by the Safety Department.';
+            Swal.fire({
+              icon: 'warning',
+              title: '<span style="color:#1e40af;font-size:18px;font-weight:700;">&#128196; Safety Department Review Required</span>',
+              html: `
+                <div style="text-align:left;font-size:14px;line-height:1.7;">
+                  <p style="margin:0 0 10px;color:#374151;">Your enrollment has been <strong style="color:#dc2626;">returned by the Safety Department</strong> for correction. Please review the remarks and resubmit.</p>
+                  <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+                    <div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">&#128221; Safety Department Remarks</div>
+                    <div style="color:#1e3a8a;font-weight:500;">${safetyRemarks}</div>
+                  </div>
+                  <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 14px;">
+                    <div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">&#10003; Steps to Resolve</div>
+                    <ol style="margin:0;padding-left:18px;color:#15803d;">
+                      <li>Read the Safety Department remarks above.</li>
+                      <li>Update the relevant details in this form.</li>
+                      <li>Click <strong>Submit</strong> to resubmit for Safety approval.</li>
+                    </ol>
+                  </div>
+                </div>`,
+              confirmButtonText: '&#10003; Understood, I will correct',
+              confirmButtonColor: '#1e40af',
+              customClass: { popup: 'swal-wide-popup' },
+              width: 520
+            });
           }
           syncWorkFlowFromFields();
-          listSection.style.display = 'none';
-          formSection.style.display = 'block';
-          formSection.classList.remove('hidden');
+          syncWorkOrderFields(values.work_order_no || '');
+          if (worker.safety_fee_payment_option) {
+            setFieldValue('safety_fee_payment_option', worker.safety_fee_payment_option);
+          }
+          refreshWorkflowPaymentState(false);
+          formSection.scrollIntoView({ behavior: 'smooth' });
           activateTab(rejectedByEO ? 'docs' : 'basic');
         }
 
@@ -2206,7 +2697,669 @@ function renderContent() {
 
         certifiedWageInput?.addEventListener('blur', () => validateCertifiedWage(true));
 
-        async function submitEnrollment(action = 'submit') {
+        function refreshTrainingBookingFields() {
+          refreshWorkflowPaymentState(false);
+          const isPwo = isPwoWorkOrder();
+          const choice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
+          const bookingBox = document.getElementById('trainingBookingForm');
+          const isBookingNow = (!isPwo || canBookPwoTrainingInline() || isPwoPayLater()) && choice === 'book_now';
+          bookingBox?.classList.toggle('hidden', !isBookingNow);
+          document.querySelectorAll('.choice-row').forEach(row => {
+            const input = row.querySelector('[name="training_booking_choice"]');
+            if (!input) return;
+            row.classList.toggle('active', Boolean(input?.checked));
+          });
+          const aadhaarValue = form.querySelector('[name="aadhaar"]')?.value || '';
+          const nameValue = form.querySelector('[name="name"]')?.value || '';
+          const safetyLanguage = form.querySelector('[name="safety_language"]')?.value || 'Malayalam';
+          const aadhaarDisplay = document.getElementById('trainingAadhaarDisplay');
+          const nameDisplay = document.getElementById('trainingNameDisplay');
+          const languageSelect = document.getElementById('trainingBookingLanguage');
+          const dateSelect = document.getElementById('trainingBookingDate');
+          const sessionSelect = document.getElementById('trainingBookingSession');
+          const submitBtn = document.getElementById('btnSubmit');
+          if (aadhaarDisplay) aadhaarDisplay.value = aadhaarValue;
+          if (nameDisplay) nameDisplay.value = nameValue;
+          if (languageSelect && !languageSelect.value) languageSelect.value = safetyLanguage || 'Malayalam';
+          [dateSelect, sessionSelect].forEach(field => {
+            if (field) field.disabled = !isBookingNow;
+          });
+          if (languageSelect) languageSelect.disabled = !isBookingNow;
+          if (!isBookingNow) {
+            if (dateSelect) dateSelect.value = '';
+            if (sessionSelect) sessionSelect.value = '';
+          } else {
+            populateTrainingDateOptions();
+          }
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.title = isPwo
+              ? 'Submit enrollment and continue as per Safety Fee option.'
+              : 'Submit enrollment after selecting Safety Training seat booking.';
+          }
+        }
+
+        let inlineSafetyPaymentToken = '';
+        let inlineSafetyPaymentWorkerId = '';
+        let pwoPaymentCompleted = false;
+
+        function resetInlineSafetyPaymentState() {
+          inlineSafetyPaymentToken = '';
+          inlineSafetyPaymentWorkerId = '';
+          pwoPaymentCompleted = false;
+          const box = document.getElementById('inlineSafetyPaymentBox');
+          if (box) {
+            box.classList.remove('show');
+            box.classList.add('hidden');
+          }
+          const ref = document.getElementById('inlinePayerReference');
+          const note = document.getElementById('inlinePayerNote');
+          const qrBox = document.getElementById('inlinePaymentQrBox');
+          const summary = document.getElementById('inlinePaymentSummary');
+          const merchant = document.getElementById('inlinePaymentMerchant');
+          if (ref) ref.value = '';
+          if (note) note.value = '';
+          if (qrBox) qrBox.innerHTML = '<i class="fas fa-qrcode" style="font-size:70px;color:#94a3b8;"></i>';
+          if (summary) summary.textContent = 'Safety Fee';
+          if (merchant) merchant.textContent = 'Scan QR and enter payment reference.';
+        }
+
+        function selectedWorkOrderSource() {
+          const hidden = document.getElementById('workOrderSource')?.value || '';
+          if (hidden) return hidden.toUpperCase();
+          const select = form.querySelector('[name="work_order_no"]');
+          const selected = select?.selectedOptions?.[0];
+          const source = String(selected?.dataset?.source || '').trim().toUpperCase();
+          if (source) return source;
+          const combinedText = `${select?.value || ''} ${selected?.textContent || ''}`.toUpperCase();
+          if (/\bPWO\b/.test(combinedText) || combinedText.indexOf('PWO') === 0 || combinedText.indexOf('-PWO') >= 0) return 'PWO';
+          if (/\bSO\b/.test(combinedText)) return 'SO';
+          if (/\bPO\b/.test(combinedText)) return 'PO';
+          return '';
+        }
+
+        function isPwoWorkOrder() {
+          return selectedWorkOrderSource() === 'PWO';
+        }
+
+        function selectedSafetyFeeOption() {
+          return form.querySelector('[name="safety_fee_payment_option"]:checked')?.value || 'pay_now';
+        }
+
+        function isPwoPayLater() {
+          return isPwoWorkOrder() && selectedSafetyFeeOption() === 'pay_later';
+        }
+
+        function canBookPwoTrainingInline() {
+          return isPwoWorkOrder() && pwoPaymentCompleted;
+        }
+
+        function isPaymentTabActive() {
+          return (document.querySelector('.square-tab.active')?.dataset.tab || '') === 'payment';
+        }
+
+        let safetyPaymentActionRunning = false;
+        async function runSafetyFeeOptionAction(option) {
+          if (!isPwoWorkOrder() || !isPaymentTabActive() || canBookPwoTrainingInline() || safetyPaymentActionRunning) return;
+          if (option === 'pay_later') {
+            const laterInput = form.querySelector('[name="training_booking_choice"][value="not_now"]');
+            if (laterInput) laterInput.checked = true;
+            refreshWorkflowPaymentState(true);
+            return;
+          }
+          if (inlineSafetyPaymentToken) {
+            const box = document.getElementById('inlineSafetyPaymentBox');
+            if (box) {
+              box.classList.remove('hidden');
+              box.classList.add('show');
+            }
+            return;
+          }
+          safetyPaymentActionRunning = true;
+          renderInlinePaymentLoading();
+          try {
+            await prepareInlineSafetyPayment();
+          } catch (err) {
+            notify('Payment Error', err.message || 'Unable to prepare safety fee payment.', 'error');
+          } finally {
+            safetyPaymentActionRunning = false;
+            if (!inlineSafetyPaymentToken) closeInlinePaymentPopup();
+          }
+        }
+
+        function refreshWorkflowPaymentState(syncBooking = true) {
+          refreshWorkflowTabs();
+          const isPwo = isPwoWorkOrder();
+          const paymentBox = document.getElementById('pwoPaymentOptionBox');
+          const paymentRequiredNote = document.getElementById('pwoPaymentRequiredNote');
+          const nonPwoPaymentNote = document.getElementById('nonPwoPaymentNote');
+          const laterText = document.getElementById('trainingLaterChoiceText');
+          const laterRow = document.getElementById('trainingLaterChoiceRow');
+          const laterInput = form.querySelector('[name="training_booking_choice"][value="not_now"]');
+          const bookNowInput = form.querySelector('[name="training_booking_choice"][value="book_now"]');
+          if (paymentBox) paymentBox.style.display = isPwo ? 'grid' : 'none';
+          if (nonPwoPaymentNote) nonPwoPaymentNote.style.display = isPwo ? 'none' : 'block';
+          if (laterRow) laterRow.style.display = ''; // Always show both options
+          if (paymentRequiredNote) {
+            paymentRequiredNote.style.display = isPwo ? 'block' : 'none';
+            paymentRequiredNote.textContent = canBookPwoTrainingInline()
+              ? 'Safety fee payment successful. Please complete Safety Training seat booking.'
+              : isPwoPayLater()
+              ? 'Enrollment Complete. Please do safety payment for proceeding further.'
+              : 'Pay Safety Fee first. Safety Training & Seat Booking will open after payment.';
+          }
+          document.querySelectorAll('[name="safety_fee_payment_option"]').forEach(input => {
+            const row = input.closest('.choice-row');
+            if (row) row.classList.toggle('active', Boolean(input.checked));
+          });
+          if (laterText) {
+            laterText.textContent = canBookPwoTrainingInline()
+              ? 'Book Safety Training later from the Book Safety Training menu'
+              : isPwoWorkOrder() && selectedSafetyFeeOption() === 'pay_now'
+              ? 'Pay Safety Fee first. Safety Training & Seat Booking will open after payment.'
+              : isPwoPayLater()
+              ? 'Enrollment Complete. Please do safety payment for proceeding further.'
+              : 'Book Safety Training later from the Book Safety Training menu';
+          }
+          if (isPwo && laterInput && !canBookPwoTrainingInline() && !isPwoPayLater()) laterInput.checked = true;
+          if (bookNowInput) {
+            bookNowInput.disabled = isPwo && !canBookPwoTrainingInline() && !isPwoPayLater();
+          }
+          if (laterInput) laterInput.disabled = false;
+          // Do NOT force book_now for non-PWO — let the user choose freely
+          const activeTab = document.querySelector('.square-tab.active')?.dataset.tab || '';
+          const submitBtn = document.getElementById('btnSubmit');
+          const nextBtn = document.getElementById('btnNextTab');
+          if (activeTab === 'payment') {
+            if (nextBtn) {
+              nextBtn.style.display = (isPwo && !canBookPwoTrainingInline() && !isPwoPayLater()) ? 'none' : 'inline-flex';
+            }
+            if (submitBtn) {
+              submitBtn.style.display = 'none';
+              submitBtn.innerText = isPwoPayLater() ? 'Complete Enrollment' : 'Pay Now';
+            }
+          }
+          const trainingApprovalInput = form.querySelector('[name="training_approval_doc"]');
+          if (trainingApprovalInput) {
+            trainingApprovalInput.removeAttribute('required');
+            trainingApprovalInput.closest('.doc-card')?.querySelector('.form-label')?.classList.remove('required');
+          }
+          if (syncBooking) refreshTrainingBookingFields();
+        }
+
+        function fallbackTrainingDates() {
+          const dates = [];
+          const cursor = new Date();
+          for (let i = 1; i <= 30; i++) {
+            const d = new Date(cursor);
+            d.setDate(cursor.getDate() + i);
+            const day = d.getDay();
+            if (day === 0) continue;
+            const value = d.toISOString().slice(0, 10);
+            dates.push({ training_date: value, session_name: '', batch_number: 'Preferred date', manual: true });
+            if (dates.length >= 12) break;
+          }
+          return dates;
+        }
+
+        function populateTrainingDateOptions() {
+          const language = document.getElementById('trainingBookingLanguage')?.value || '';
+          const dateSelect = document.getElementById('trainingBookingDate');
+          const hint = document.getElementById('trainingDateHint');
+          if (!dateSelect) return;
+          const current = dateSelect.value;
+          let rows = scheduledTrainingSessions;
+          if (language) {
+            rows = rows.filter(row => String(row.language_name || 'English').trim().toLowerCase() === language.trim().toLowerCase());
+          }
+          const hasScheduledRows = rows.length > 0;
+          if (!hasScheduledRows) {
+            rows = fallbackTrainingDates();
+          }
+          dateSelect.innerHTML = '<option value="">Select scheduled date</option>' + rows.map(row => {
+            const session = row.session_name || '';
+            const label = row.manual
+              ? `${row.training_date} - preferred booking`
+              : `${row.training_date} - ${session} (${row.batch_number || 'Batch'} - ${row.language_name || 'English'})`;
+            return `<option value="${row.training_date}" data-batch-id="${row.id || ''}" data-session="${session}">${label}</option>`;
+          }).join('');
+          if (current && Array.from(dateSelect.options).some(option => option.value === current)) {
+            dateSelect.value = current;
+          } else if (rows.length > 0) {
+            dateSelect.selectedIndex = 1;
+          }
+          const sessionSelect = document.getElementById('trainingBookingSession');
+          const selectedOption = dateSelect.selectedOptions[0];
+          const selectedSession = selectedOption?.dataset.session || '';
+          const batchIdInput = document.getElementById('trainingBookingBatchId');
+          if (batchIdInput) batchIdInput.value = selectedOption?.dataset.batchId || '';
+          if (sessionSelect) sessionSelect.value = selectedSession || sessionSelect.value || 'FN';
+          if (hint) {
+            hint.textContent = hasScheduledRows
+              ? 'Scheduled safety batches are available for the selected language.'
+              : 'No scheduled batch found for this language. Select a preferred date; Safety will schedule it.';
+            hint.style.color = hasScheduledRows ? '#64748b' : '#92400e';
+          }
+        }
+
+        document.querySelectorAll('[name="training_booking_choice"]').forEach(input => {
+          input.addEventListener('change', refreshTrainingBookingFields);
+        });
+        document.querySelectorAll('[name="safety_fee_payment_option"]').forEach(input => {
+          input.addEventListener('click', () => {
+            refreshWorkflowPaymentState(true);
+            runSafetyFeeOptionAction(input.value);
+          });
+        });
+        document.getElementById('trainingBookingDate')?.addEventListener('change', e => {
+          const selectedOption = e.target.selectedOptions[0];
+          const session = selectedOption?.dataset.session || '';
+          const sessionSelect = document.getElementById('trainingBookingSession');
+          const batchIdInput = document.getElementById('trainingBookingBatchId');
+          if (sessionSelect) sessionSelect.value = session || sessionSelect.value || 'FN';
+          if (batchIdInput) batchIdInput.value = selectedOption?.dataset.batchId || '';
+        });
+        document.getElementById('trainingBookingLanguage')?.addEventListener('change', () => {
+          populateTrainingDateOptions();
+        });
+        ['aadhaar', 'name', 'safety_language'].forEach(name => {
+          form.querySelector(`[name="${name}"]`)?.addEventListener('input', refreshTrainingBookingFields);
+          form.querySelector(`[name="${name}"]`)?.addEventListener('change', refreshTrainingBookingFields);
+        });
+        refreshTrainingBookingFields();
+
+        function previewValue(name) {
+          const field = form.querySelector(`[name="${name}"]`);
+          if (!field) return '';
+          if (field.type === 'radio') {
+            return form.querySelector(`[name="${name}"]:checked`)?.value || '';
+          }
+          if (field.tagName === 'SELECT') return field.selectedOptions[0]?.textContent?.trim() || field.value;
+          return field.value || '';
+        }
+
+        function previewRawValue(name) {
+          const field = form.querySelector(`[name="${name}"]`);
+          if (!field) return '';
+          if (field.type === 'radio') return form.querySelector(`[name="${name}"]:checked`)?.value || '';
+          return field.value || '';
+        }
+
+        function escapePreviewHtml(value) {
+          return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+        }
+
+        function previewLabel(value) {
+          const normalized = String(value || '').replace(/_/g, ' ').trim();
+          return normalized ? normalized.replace(/\b\w/g, char => char.toUpperCase()) : '';
+        }
+
+        function previewFiles() {
+          const fileLabels = [
+            ['photo', 'Photo'],
+            ['aadhaar_doc', 'Aadhaar Copy'],
+            ['education_doc', 'Education Certificate'],
+            ['bank_doc', 'Bank Document'],
+            ['gatepass_doc', 'Gate Pass Document'],
+            ['skill_cert_doc', 'Skill Certificate'],
+            ['medical_doc', 'Medical Document'],
+            ['police_doc', 'Police Verification'],
+            ['insurance_doc', 'Insurance Document']
+          ];
+          const isEdit = Boolean(document.getElementById('workerEditId')?.value);
+          return fileLabels.map(([name, label]) => {
+            const input = form.querySelector(`[name="${name}"]`);
+            const selectedFile = input?.files?.[0] || null;
+            const existingFile = input?.dataset?.existing || input?.dataset?.current || input?.dataset?.file || input?.getAttribute('data-existing-file') || '';
+            const fileName = selectedFile?.name || existingFile || '';
+            if (!fileName) return null;
+            const canView = ['photo', 'aadhaar_doc'].includes(name);
+            return {
+              label,
+              value: fileName,
+              fileInputName: name,
+              viewUrl: selectedFile ? '' : existingFile,
+              canView
+            };
+          }).filter(Boolean);
+        }
+
+        function renderPreviewSection(title, items, full = false) {
+          const filtered = items.filter(item => item && (Array.isArray(item) ? item.length >= 2 : item.label));
+          const body = filtered.map(item => {
+            const label = Array.isArray(item) ? item[0] : item.label;
+            const value = Array.isArray(item) ? item[1] : item.value;
+            if (!Array.isArray(item) && item.canView) {
+              return `
+                <div class="preview-item">
+                  <span>${escapePreviewHtml(label)}</span>
+                  <div class="preview-doc-value">
+                    <strong>${escapePreviewHtml(value || '-')}</strong>
+                    <button type="button" class="preview-doc-view" onclick="viewPreviewDocument('${escapePreviewHtml(item.fileInputName || '')}', '${escapePreviewHtml(item.viewUrl || '')}')">View</button>
+                  </div>
+                </div>
+              `;
+            }
+            return `
+            <div class="preview-item">
+              <span>${escapePreviewHtml(label)}</span>
+              <strong>${escapePreviewHtml(value || '-')}</strong>
+            </div>
+          `;
+          }).join('');
+          return `
+            <section class="preview-section ${full ? 'full' : ''}">
+              <div class="preview-section-title">${escapePreviewHtml(title)}</div>
+              <div class="preview-section-grid">${body}</div>
+            </section>
+          `;
+        }
+
+        function viewPreviewDocument(inputName, existingFile) {
+          const input = form.querySelector(`[name="${inputName}"]`);
+          const file = input?.files?.[0] || null;
+          if (file) {
+            window.open(URL.createObjectURL(file), '_blank', 'noopener');
+            return;
+          }
+          const fileName = String(existingFile || '').trim();
+          if (!fileName) {
+            notify('Document Not Available', 'No uploaded document found to view.', 'warning');
+            return;
+          }
+          const cleanName = fileName.replace(/^(\.\.\/)+uploads\/workers\//, '').replace(/^uploads\/workers\//, '');
+          window.open('../../uploads/workers/' + encodeURIComponent(cleanName), '_blank', 'noopener');
+        }
+        window.viewPreviewDocument = viewPreviewDocument;
+
+        function renderInlinePaymentLoading() {
+          const box = document.getElementById('inlineSafetyPaymentBox');
+          const qrBox = document.getElementById('inlinePaymentQrBox');
+          const summary = document.getElementById('inlinePaymentSummary');
+          const merchant = document.getElementById('inlinePaymentMerchant');
+          const ref = document.getElementById('inlinePayerReference');
+          const note = document.getElementById('inlinePayerNote');
+          const confirmBtn = document.getElementById('btnConfirmInlinePayment');
+          if (box) {
+            box.classList.remove('hidden');
+            box.classList.add('show');
+          }
+          if (qrBox) qrBox.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size:54px;color:#2563eb;"></i>';
+          if (summary) summary.textContent = 'Preparing Safety Fee Payment...';
+          if (merchant) merchant.textContent = 'Please wait while the payment QR is generated.';
+          if (ref) ref.disabled = true;
+          if (note) note.disabled = true;
+          if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing Payment';
+          }
+        }
+
+        function renderInlinePaymentDetails(details = {}, payment = {}) {
+          const box = document.getElementById('inlineSafetyPaymentBox');
+          const qrBox = document.getElementById('inlinePaymentQrBox');
+          const summary = document.getElementById('inlinePaymentSummary');
+          const merchant = document.getElementById('inlinePaymentMerchant');
+          const ref = document.getElementById('inlinePayerReference');
+          const note = document.getElementById('inlinePayerNote');
+          const confirmBtn = document.getElementById('btnConfirmInlinePayment');
+          if (box) {
+            box.classList.remove('hidden');
+            box.classList.add('show');
+          }
+          if (qrBox) {
+            qrBox.innerHTML = details.qr_url
+              ? `<img src="${details.qr_url}" alt="Payment QR" style="width:100%;height:100%;object-fit:contain;">`
+              : '<i class="fas fa-qrcode" style="font-size:54px;color:#94a3b8;"></i>';
+          }
+          if (summary) {
+            const amount = Number(payment.amount || details.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            summary.textContent = `${payment.payment_ref || 'Safety Fee'} | Rs. ${amount}`;
+          }
+          if (merchant) {
+            merchant.textContent = `${details.merchant_name || 'CLMS Safety Training'}${details.upi_id ? ' | UPI: ' + details.upi_id : ''}`;
+          }
+          if (ref) ref.disabled = false;
+          if (note) note.disabled = false;
+          if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="fas fa-check"></i> Payment Successful';
+          }
+        }
+
+        function closeInlinePaymentPopup() {
+          const box = document.getElementById('inlineSafetyPaymentBox');
+          if (!box) return;
+          box.classList.remove('show');
+          box.classList.add('hidden');
+        }
+        window.closeInlinePaymentPopup = closeInlinePaymentPopup;
+
+        async function prepareInlineSafetyPayment() {
+          setHiddenWorkFields();
+          const formData = new FormData(form);
+          formData.set('action', 'draft');
+          const saveResponse = await fetch('../../api/save_worker_4a.php', { method: 'POST', body: formData });
+          const saveText = await saveResponse.text();
+          let saveResult = {};
+          try {
+            saveResult = saveText ? JSON.parse(saveText) : {};
+          } catch (parseErr) {
+            saveResult = { success: false, message: saveText || 'Invalid server response.' };
+          }
+          if (!saveResult.success) {
+            notify('Payment Error', saveResult.message || 'Unable to prepare enrollment for payment.', 'error');
+            return;
+          }
+
+          const workerId = saveResult.worker_id || saveResult.workman_id || '';
+          if (!workerId) {
+            notify('Payment Error', 'Worker draft could not be prepared for payment.', 'error');
+            return;
+          }
+          document.getElementById('workerEditId').value = workerId;
+
+          const paymentResponse = await fetch('../../api/payments/create_enrollment_payment.php', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ worker_id: workerId })
+          });
+          const paymentResult = await paymentResponse.json();
+          if (paymentResult.success && paymentResult.already_paid) {
+            pwoPaymentCompleted = true;
+            closeInlinePaymentPopup();
+            const bookNowInput = form.querySelector('[name="training_booking_choice"][value="book_now"]');
+            if (bookNowInput) bookNowInput.disabled = false;
+            refreshWorkflowPaymentState(true);
+            activateTab('training');
+            return;
+          }
+          if (!paymentResult.success || !paymentResult.payment) {
+            notify('Payment Error', paymentResult.message || 'Unable to generate safety fee payment.', 'error');
+            return;
+          }
+          await startInlineSafetyPayment(paymentResult.payment, workerId);
+        }
+
+        async function startInlineSafetyPayment(payment, workerId) {
+          inlineSafetyPaymentWorkerId = workerId || inlineSafetyPaymentWorkerId;
+          inlineSafetyPaymentToken = payment?.payment_token || '';
+          if (!inlineSafetyPaymentToken && payment?.payment_link) {
+            try {
+              inlineSafetyPaymentToken = new URL(payment.payment_link, window.location.href).searchParams.get('token') || '';
+            } catch (err) {
+              inlineSafetyPaymentToken = '';
+            }
+          }
+          if (!inlineSafetyPaymentToken) {
+            notify('Payment Error', 'Payment token generate nahi ho pa raha.', 'error');
+            return;
+          }
+          try {
+            const res = await fetch('../../api/payments/create_training_order.php', {
+              method: 'POST',
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ token: inlineSafetyPaymentToken })
+            });
+            const result = await res.json();
+            if (!result.success) {
+              inlineSafetyPaymentToken = '';
+              closeInlinePaymentPopup();
+              notify('Payment Error', result.message || 'Payment gateway is not ready.', 'error');
+              return;
+            }
+            renderInlinePaymentDetails(result.demo || payment?.demo || {}, payment || result);
+          } catch (err) {
+            inlineSafetyPaymentToken = '';
+            closeInlinePaymentPopup();
+            notify('Payment Error', 'Unable to start safety fee payment.', 'error');
+          }
+        }
+
+        async function confirmInlineSafetyPayment() {
+          const btn = document.getElementById('btnConfirmInlinePayment');
+          const payerReference = document.getElementById('inlinePayerReference')?.value.trim() || '';
+          if (!inlineSafetyPaymentToken) {
+            notify('Payment Required', 'Please submit enrollment and generate payment QR first.', 'warning');
+            return;
+          }
+          if (!payerReference) {
+            notify('Payment Reference Required', 'Please enter Payment Reference / UTR.', 'warning');
+            return;
+          }
+          if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Confirming Payment';
+          }
+          try {
+            const res = await fetch('../../api/payments/submit_demo_payment.php', {
+              method: 'POST',
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({
+                token: inlineSafetyPaymentToken,
+                payer_reference: payerReference,
+                note: document.getElementById('inlinePayerNote')?.value || ''
+              })
+            });
+            const result = await res.json();
+            if (!result.success) {
+              notify('Payment Failed', result.message || 'Payment failed.', 'error');
+              return;
+            }
+            pwoPaymentCompleted = true;
+            closeInlinePaymentPopup();
+            if (inlineSafetyPaymentWorkerId) document.getElementById('workerEditId').value = inlineSafetyPaymentWorkerId;
+            const bookNowInput = form.querySelector('[name="training_booking_choice"][value="book_now"]');
+            if (bookNowInput) {
+              bookNowInput.disabled = false;
+              bookNowInput.checked = true;
+            }
+            refreshWorkflowPaymentState(true);
+            notify('Payment Successful', result.message || 'Safety fee payment successful. Please book Safety Training seat.', 'success').then(() => {
+              activateTab('training');
+            });
+          } catch (err) {
+            notify('Payment Error', 'Unable to submit payment details.', 'error');
+          } finally {
+            if (btn) {
+              btn.disabled = false;
+              btn.innerHTML = '<i class="fas fa-check"></i> Payment Successful';
+            }
+          }
+        }
+
+        document.getElementById('btnConfirmInlinePayment')?.addEventListener('click', confirmInlineSafetyPayment);
+
+        function showSubmitPreview() {
+          const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
+          const safetyPaymentOption = isPwoWorkOrder()
+            ? previewLabel(selectedSafetyFeeOption())
+            : 'Not applicable';
+          const sections = [
+            renderPreviewSection('Basic Info', [
+              ['Pass Type', previewValue('pass_type')],
+              ['Work Order No', previewValue('work_order_no')],
+              ['Work Order Type', selectedWorkOrderSource() || '-'],
+              ['Project No / WBS No', previewValue('project_name')],
+              ['Date of Joining', previewValue('registration_date')],
+              ['Aadhaar Number', previewValue('aadhaar')],
+              ['Full Name', previewValue('name')],
+              ['Father Name', previewValue('father_name')]
+            ]),
+            renderPreviewSection('Personal / Medical', [
+              ['Gender', previewValue('gender')],
+              ['Date of Birth', previewValue('dob')],
+              ['Marital Status', previewValue('marital_status')],
+              ['Nationality', previewValue('nationality')],
+              ['Identification Mark', previewValue('identification_mark')],
+              ['Blood Group', previewValue('blood_group')],
+              ['Religion', previewValue('region')],
+              ['Person with Disability', previewValue('pwd_status')],
+              ['Passport No', previewValue('passport_no')],
+              ['Driving Licence No', previewValue('driving_licence_no')]
+            ]),
+            renderPreviewSection('Address / Contact', [
+              ['Permanent Address', previewValue('permanent_address')],
+              ['Present Address', previewValue('present_address')],
+              ['State', previewValue('state')],
+              ['District', previewValue('district')],
+              ['Pin Code', previewValue('pincode')],
+              ['Mobile Number', previewValue('mobile')],
+              ['WhatsApp Number', previewValue('whatsapp_no')],
+              ['Email', previewValue('email')],
+              ['Emergency Contact', previewValue('emergency_contact')]
+            ], true),
+            renderPreviewSection('Work / Compliance', [
+              ['Department', previewValue('department')],
+              ['Years of Experience', previewValue('experience')],
+              ['Category', flowState.category],
+              ['Qualification', flowState.qualification],
+              ['Job Profile / Nature of Work', previewValue('nature_of_work')],
+              ['Skill Category', previewValue('skill_category')],
+              ['Role Type', previewValue('role_type')],
+              ['Education', previewValue('education')],
+              ['EPF Registered', previewValue('epf_registered_worker')],
+              ['UAN Number', previewValue('pf_no') || previewValue('uan_number')],
+              ['ESI Registered', previewValue('esi_registered_worker')],
+              ['ESI Number', previewValue('esi_no')],
+              ['Certified Wage Rate', previewValue('certified_wage_rate')],
+              ['Safety Induction Language', previewValue('safety_language')]
+            ], true),
+            renderPreviewSection('Executing Officer', [
+              ['E-Code', previewValue('executing_officer_code')],
+              ['Officer Name', previewValue('executing_officer_name')]
+            ]),
+            renderPreviewSection('Safety Training / Payment', [
+              ['PO Type PWO?', isPwoWorkOrder() ? 'Yes' : 'No'],
+              ['Safety Fee Option', safetyPaymentOption],
+              ['Booking Choice', bookingChoice === 'book_now' ? 'Safety seat booking selected' : 'Book/pay later'],
+              ['Training Date', bookingChoice === 'book_now' ? previewRawValue('training_booking_date') : '-'],
+              ['Training Session', bookingChoice === 'book_now' ? previewRawValue('training_booking_session') : '-'],
+              ['Training Language', previewRawValue('training_booking_language') || previewValue('safety_language')]
+            ]),
+            renderPreviewSection('Documents', previewFiles(), true),
+            renderPreviewSection('Declaration', [
+              ['Final Confirmation', 'Please verify all details before final submission.']
+            ], true)
+          ];
+          document.getElementById('submitPreviewContent').innerHTML = sections.join('');
+          document.getElementById('submitVerifiedCheckbox').checked = false;
+          document.getElementById('submitPreviewModal').classList.remove('hidden');
+          document.getElementById('submitPreviewModal').classList.add('show');
+        }
+
+        function closeSubmitPreview() {
+          document.getElementById('submitPreviewModal').classList.add('hidden');
+          document.getElementById('submitPreviewModal').classList.remove('show');
+        }
+        window.closeSubmitPreview = closeSubmitPreview;
+
+        async function submitEnrollment(action = 'submit', confirmedPreview = false) {
           setHiddenWorkFields();
 
           if (action === 'draft') {
@@ -2223,9 +3376,11 @@ function renderContent() {
               if (result.success) {
                 const draftId = result.worker_id || result.workman_id || '';
                 if (draftId) document.getElementById('workerEditId').value = draftId;
-                notify('Saved', result.message || 'Draft saved successfully.', 'success');
+                const msg = 'Your submission has been saved as a draft only. Please click the Submit button to proceed with processing';
+                notify('Draft Saved', msg, 'success');
               } else {
-                notify('Error', result.message || `Draft save failed. HTTP ${res.status}`, 'error');
+                const detail = result.message || responseText || `Draft save failed. HTTP ${res.status}`;
+                notify('Error', detail.length > 500 ? detail.slice(0, 500) : detail, 'error');
               }
             } catch (err) {
               notify('Error', err.message || 'Server error.', 'error');
@@ -2258,6 +3413,13 @@ function renderContent() {
 
           if (!(await verifyExecutingOfficerCode(true))) {
             focusInvalidField(executingOfficerCodeInput);
+            return;
+          }
+
+          const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
+          if (bookingChoice === 'book_now' && (!previewValue('training_booking_date') || !previewValue('training_booking_session'))) {
+            activateTab('training');
+            notify('Training Booking Required', 'Please select safety training date and session.', 'warning');
             return;
           }
 
@@ -2296,6 +3458,11 @@ function renderContent() {
           }
           // ========== END ANNEXURE 5/A CHECK ==========
 
+          if (!confirmedPreview) {
+            showSubmitPreview();
+            return;
+          }
+
           const btn = document.getElementById('btnSubmit');
           btn.disabled = true; btn.innerText = 'Submitting...';
           
@@ -2311,12 +3478,35 @@ function renderContent() {
               result = { success: false, message: responseText || 'Invalid server response.' };
             }
             if (result.success) {
-              notify('Success', result.message + '\nTemp ID: ' + result.temp_id, 'success').then(() => location.reload());
+              if (result.payment && result.payment.payment_link && selectedSafetyFeeOption() === 'pay_now') {
+                document.getElementById('workerEditId').value = result.worker_id || result.workman_id || '';
+                startInlineSafetyPayment(result.payment, result.worker_id || result.workman_id || '');
+                return;
+              }
+              let successMessage = 'Worker enrolled successfully.\n';
+              if (bookingChoice === 'book_now') {
+                successMessage += 'Safety Training booking submitted.';
+              } else {
+                successMessage += 'Safety Training not booked.';
+              }
+              successMessage += '\nTemp ID: ' + result.temp_id;
+              if (result.payment && result.payment.payment_link) {
+                successMessage += '\nPayment Ref: ' + result.payment.payment_ref + '\nAmount: Rs. ' + result.payment.amount;
+              }
+              notify('Success', successMessage, 'success').then(() => {
+                if (result.booking_menu_link) {
+                  location.reload();
+                } else if (result.booking_link) {
+                  window.location.href = result.booking_link;
+                } else {
+                  location.reload();
+                }
+              });
             } else {
               notify('Error', result.message || `Enrollment failed. HTTP ${res.status}`, 'error');
             }
           } catch (err) { notify('Error', err.message || 'Server error.', 'error'); }
-          finally { btn.disabled = false; btn.innerText = 'Submit Enrollment'; }
+          finally { btn.disabled = false; btn.innerText = 'Submit'; }
         }
 
         const saveDraftButton = document.getElementById('btnSaveDraft');
@@ -2336,6 +3526,33 @@ function renderContent() {
             submitEnrollment('submit');
           });
         }
+
+        document.getElementById('btnProceedSubmit')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const verified = document.getElementById('submitVerifiedCheckbox');
+          if (!verified?.checked) {
+            closeSubmitPreview();
+            if (typeof Swal !== 'undefined' && Swal.fire) {
+              Swal.fire({
+                icon: 'warning',
+                title: 'Verification Required',
+                text: 'Please tick "I hereby verify that all the information provided is true and correct in all respects" before proceeding.',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#1e3a8a'
+              }).then(() => {
+                showSubmitPreview();
+              });
+            } else {
+              notify('Verification Required', 'Please tick "I hereby verify that all the information provided is true and correct in all respects" before proceeding.', 'warning').then(() => {
+                showSubmitPreview();
+              });
+            }
+            return;
+          }
+          closeSubmitPreview();
+          submitEnrollment('submit', true);
+        });
 
         executingOfficerCodeInput?.addEventListener('input', () => {
           executingOfficerCodeInput.value = executingOfficerCodeInput.value.toUpperCase();
@@ -2383,6 +3600,7 @@ function renderContent() {
           <div><strong>State:</strong> ${w.state}</div>
           <div><strong>District:</strong> ${w.district}</div>
           <div><strong>Mobile:</strong> ${w.mobile}</div>
+          <div><strong>WhatsApp:</strong> ${w.whatsapp_no || 'N/A'}</div>
           <div><strong>Emergency:</strong> ${w.emergency_contact}</div>
           <div><strong>Blood Group:</strong> ${w.blood_group || 'N/A'}</div>
           <div><strong>Skill:</strong> ${w.skill_category}</div>
@@ -2403,6 +3621,139 @@ function renderContent() {
         row.style.display = row.innerText.toLowerCase().includes(q) ? '' : 'none';
       });
     };
+    </script>
+
+    <!-- ===== RE-ENROLL MODAL ===== -->
+    <div id="reEnrollModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); backdrop-filter:blur(4px); z-index:10999; align-items:center; justify-content:center; padding:20px;">
+      <div style="background:#fff; border-radius:20px; width:min(100%,500px); box-shadow:0 25px 60px rgba(0,0,0,.3); overflow:hidden; animation:modalIn .25s ease;">
+        <div style="background:linear-gradient(135deg,#f59e0b,#d97706); padding:20px 24px; display:flex; align-items:center; gap:14px;">
+          <div style="width:44px;height:44px;background:rgba(255,255,255,.2);border-radius:12px;display:flex;align-items:center;justify-content:center;">
+            <i class="fas fa-redo" style="color:white;font-size:20px;"></i>
+          </div>
+          <div>
+            <div style="color:white;font-size:16px;font-weight:700;">Re-enroll for Training</div>
+            <div style="color:rgba(255,255,255,.8);font-size:12px;" id="reEnrollSubtitle">Choose how to re-enroll this worker</div>
+          </div>
+          <button onclick="closeReEnrollModal()" style="margin-left:auto;background:rgba(255,255,255,.2);border:none;width:32px;height:32px;border-radius:8px;color:white;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;">&times;</button>
+        </div>
+        <div style="padding:24px;">
+          <div id="reEnrollWorkerInfo" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:14px;margin-bottom:20px;">
+            <div style="font-weight:700;font-size:14px;" id="reEnrollWorkerName"></div>
+            <div style="font-size:12px;color:#92400e;margin-top:4px;">Current PWO/PO: <strong id="reEnrollWorkOrder"></strong></div>
+            <div style="font-size:11px;color:#78716c;margin-top:2px;" id="reEnrollAttemptsInfo"></div>
+          </div>
+          <p style="font-size:13px;color:#374151;margin-bottom:18px;">This worker failed their last training. How would you like to re-enroll?</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <button id="btnSamePO" onclick="doReEnroll('same_po')" style="padding:16px 12px;border:2px solid #6366f1;border-radius:12px;background:#f0f0ff;color:#4338ca;font-weight:700;font-size:13px;cursor:pointer;text-align:center;transition:all .2s;">
+              <i class="fas fa-link" style="display:block;font-size:22px;margin-bottom:8px;color:#6366f1;"></i>
+              Same PWO/PO<br>
+              <small style="font-weight:400;color:#6366f1;font-size:11px;">Re-queue directly into training</small>
+            </button>
+            <button id="btnFreshPO" onclick="doReEnroll('fresh_po')" style="padding:16px 12px;border:2px solid #10b981;border-radius:12px;background:#f0fdf4;color:#065f46;font-weight:700;font-size:13px;cursor:pointer;text-align:center;transition:all .2s;">
+              <i class="fas fa-plus-circle" style="display:block;font-size:22px;margin-bottom:8px;color:#10b981;"></i>
+              Fresh PWO/PO<br>
+              <small style="font-weight:400;color:#10b981;font-size:11px;">Fill new work order details</small>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    let _reEnrollWorker = null;
+
+    function openReEnrollModal(worker) {
+        _reEnrollWorker = worker;
+        document.getElementById('reEnrollWorkerName').textContent = worker.name;
+        const wo = worker.work_order_no || '—';
+        const src = worker.work_order_source ? ' [' + worker.work_order_source + ']' : '';
+        document.getElementById('reEnrollWorkOrder').textContent = src + wo;
+        document.getElementById('reEnrollAttemptsInfo').textContent = 'Attempts remaining: ' + worker.attempts_left + ' of 3';
+        document.getElementById('reEnrollSubtitle').textContent = 'Choose how to re-enroll ' + worker.name;
+        const modal = document.getElementById('reEnrollModal');
+        modal.style.display = 'flex';
+    }
+
+    function closeReEnrollModal() {
+        document.getElementById('reEnrollModal').style.display = 'none';
+        _reEnrollWorker = null;
+    }
+
+    async function doReEnroll(mode) {
+        if (!_reEnrollWorker) return;
+        const worker = _reEnrollWorker;
+
+        if (mode === 'fresh_po') {
+            // Close modal and trigger the edit form for re-enrolment with fresh PO
+            closeReEnrollModal();
+            if (typeof editWorker === 'function') {
+                // Scroll to form and open edit with this worker
+                editWorker(worker);
+                // Show hint after short delay
+                setTimeout(() => {
+                    const woSelect = document.getElementById('workOrderSelect');
+                    if (woSelect) {
+                        woSelect.style.border = '2px solid #10b981';
+                        woSelect.style.boxShadow = '0 0 0 3px rgba(16,185,129,.2)';
+                        woSelect.title = 'Please select new PWO/PO for re-enrolment';
+                    }
+                }, 500);
+            } else {
+                window.location.href = 'enrolment-4a.php?type=workmen#formSection';
+            }
+            return;
+        }
+
+        // Same PO → API call
+        const btn = document.getElementById('btnSamePO');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing…';
+
+        try {
+            const fd = new FormData();
+            fd.append('workman_id', worker.id);
+            fd.append('mode', 'same_po');
+            const res = await fetch('../../api/contractor/re_enroll_training.php', { method: 'POST', body: fd });
+            const data = await res.json();
+
+            closeReEnrollModal();
+
+            if (data.success) {
+                if (typeof Swal !== 'undefined') {
+                    await Swal.fire({
+                        icon: 'success',
+                        title: 'Re-enrolled!',
+                        text: data.message,
+                        confirmButtonColor: '#6366f1'
+                    });
+                } else {
+                    alert('✅ ' + data.message);
+                }
+                location.reload();
+            } else {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ icon: 'error', title: 'Error', text: data.error || 'Re-enrolment failed.', confirmButtonColor: '#ef4444' });
+                } else {
+                    alert('Error: ' + (data.error || 'Re-enrolment failed.'));
+                }
+            }
+        } catch (e) {
+            closeReEnrollModal();
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({ icon: 'error', title: 'Network Error', text: 'Could not connect. Please try again.', confirmButtonColor: '#ef4444' });
+            } else {
+                alert('Network error. Please try again.');
+            }
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-link" style="display:block;font-size:22px;margin-bottom:8px;color:#6366f1;"></i>Same PWO/PO<br><small style="font-weight:400;color:#6366f1;font-size:11px;">Re-queue directly into training</small>';
+        }
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('reEnrollModal').addEventListener('click', function(e) {
+        if (e.target === this) closeReEnrollModal();
+    });
     </script>
     <?php
 }

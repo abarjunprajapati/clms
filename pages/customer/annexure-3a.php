@@ -15,7 +15,7 @@ if (empty($customer_code) || $role !== 'customer') {
 
 // 1. Fetch All Active Work Orders & Mapped Contractors for this Customer
 $work_orders = db_fetch_all($conn, "
-    SELECT wo.*, c.customer_name, v.vendor_name, v.gst_no, v.pf_no as epf_code, v.esi_no as esi_code, v.address as vendor_address
+    SELECT wo.*, c.customer_name, v.vendor_name, v.address as vendor_address
     FROM work_orders wo
     LEFT JOIN sap_customer_master c ON c.customer_code = wo.customer_code
     LEFT JOIN sap_vendor_master v ON v.vendor_code = wo.vendor_code
@@ -46,9 +46,6 @@ if (!$work_order) {
         'department' => '',
         'vendor_code' => '',
         'vendor_name' => '',
-        'gst_no' => '',
-        'epf_code' => '',
-        'esi_code' => '',
         'vendor_address' => '',
     ];
 }

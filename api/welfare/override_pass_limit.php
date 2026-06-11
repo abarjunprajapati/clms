@@ -63,17 +63,17 @@ try {
                (user_id, action, module, details, ip_address, created_at) 
                VALUES (?, ?, ?, ?, ?, NOW())";
     
-    $stmt = clms_db_prepare($conn, $log_sql);
+    $stmt = mysqli_prepare($conn, $log_sql);
     if ($stmt) {
-        clms_db_stmt_bind_param($stmt, 'issss', 
+        mysqli_stmt_bind_param($stmt, 'issss', 
             $admin_id,
             $action = 'pass_limit_override',
             $module = 'pass_limits',
             $details,
             $ip
         );
-        clms_db_stmt_execute($stmt);
-        clms_db_stmt_close($stmt);
+        mysqli_stmt_execute($stmt);
+        mysqli_stmt_close($stmt);
     }
     
     // ========== GET CURRENT STATS FOR RESPONSE ==========

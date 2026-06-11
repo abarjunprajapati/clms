@@ -97,7 +97,11 @@ try {
     foreach ($workerIds as $workerId) {
         $worker = db_single(
             $conn,
-            "SELECT id, training_status, execution_training_status, execution_training_reviewed_by FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
+            "SELECT id, training_status, execution_training_status, execution_training_reviewed_by,
+                    COALESCE(safety_enrollment_status, 'pending') AS safety_enrollment_status
+             FROM workmen
+             WHERE id = ? AND contractor_id = ?
+             LIMIT 1",
             'ii',
             [$workerId, $contractorId]
         );
@@ -106,6 +110,9 @@ try {
         }
 
         if (strtolower((string)($worker['execution_training_status'] ?? 'pending')) !== 'approved' || (int)($worker['execution_training_reviewed_by'] ?? 0) <= 0) {
+            continue;
+        }
+        if (strtolower((string)($worker['safety_enrollment_status'] ?? 'pending')) !== 'approved') {
             continue;
         }
 
@@ -118,7 +125,7 @@ try {
             $conn,
             "SELECT id FROM training_requests
              WHERE workman_id = ?
-               AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed')
+               AND status IN ('pending','scheduled','contractor_confirmed','passed')
              ORDER BY id DESC LIMIT 1",
             'i',
             [$workerId]
@@ -150,7 +157,7 @@ try {
                      remarks = ?,
                      source = 'contractor',
                      requested_by = ?,
-                     status = 'welfare_pending',
+                     status = 'pending',
                      contractor_confirmed = 0,
                      scheduled_date = NULL,
                      scheduled_shift = NULL,
@@ -189,7 +196,7 @@ try {
             'remarks' => trim($input['remarks'] ?? ''),
             'source' => 'contractor',
             'requested_by' => $userId,
-            'status' => 'welfare_pending',
+            'status' => 'pending',
             'created_at' => date('Y-m-d H:i:s'),
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
@@ -263,31 +270,31 @@ try {
 }
 
 function training_table_exists($conn, $table) {
-    $table = clms_db_real_escape_string($conn, $table);
-    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && clms_db_num_rows($res) > 0;
+    $table = mysqli_real_escape_string($conn, $table);
+    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function training_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && clms_db_num_rows($res) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function training_column_meta($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return ($res && clms_db_num_rows($res) > 0) ? clms_db_fetch_assoc($res) : null;
+    $column = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return ($res && mysqli_num_rows($res) > 0) ? mysqli_fetch_assoc($res) : null;
 }
 
 function training_ensure_column($conn, $table, $column, $definition) {
     if (training_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    if (!clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
-        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . clms_db_error($conn));
+    if (!mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
+        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . mysqli_error($conn));
     }
 }
 
@@ -300,7 +307,7 @@ function training_ensure_schema($conn) {
         training_ensure_column($conn, 'contractors', 'block_reason', 'VARCHAR(255) NULL');
     }
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,
@@ -340,11 +347,11 @@ function training_ensure_schema($conn) {
     ] as $column => $definition) {
         training_ensure_column($conn, 'training_requests', $column, $definition);
     }
-    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
     $idMeta = training_column_meta($conn, 'training_requests', 'id');
     if ($idMeta && stripos($idMeta['Extra'] ?? '', 'auto_increment') === false) {
-        @clms_db_query($conn, "ALTER TABLE training_requests MODIFY id INT NOT NULL AUTO_INCREMENT");
+        @mysqli_query($conn, "ALTER TABLE training_requests MODIFY id INT NOT NULL AUTO_INCREMENT");
     }
 
     if (training_table_exists($conn, 'workmen')) {
@@ -352,13 +359,14 @@ function training_ensure_schema($conn) {
         training_ensure_column($conn, 'workmen', 'safety_training_status', "VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
         training_ensure_column($conn, 'workmen', 'execution_training_status', "VARCHAR(30) DEFAULT 'pending'");
         training_ensure_column($conn, 'workmen', 'execution_training_reviewed_by', 'BIGINT NULL');
+        training_ensure_column($conn, 'workmen', 'safety_enrollment_status', "VARCHAR(30) DEFAULT 'pending'");
         training_ensure_column($conn, 'workmen', 'updated_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP');
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
     }
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS application_workflow (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS application_workflow (
         id INT NOT NULL AUTO_INCREMENT,
         application_id VARCHAR(50) NULL,
         contractor_id INT NULL,
@@ -382,16 +390,16 @@ function training_ensure_schema($conn) {
 
 function training_filter_row($conn, $table, $row) {
     $safeTable = str_replace('`', '``', $table);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable`");
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable`");
     $cols = [];
-    if ($res) while ($c = clms_db_fetch_assoc($res)) $cols[$c['Field']] = true;
+    if ($res) while ($c = mysqli_fetch_assoc($res)) $cols[$c['Field']] = true;
     return array_intersect_key($row, $cols);
 }
 
 function training_next_id($conn, $table) {
     $safeTable = str_replace('`', '``', $table);
-    $res = clms_db_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 next_id FROM `$safeTable`");
-    $row = $res ? clms_db_fetch_assoc($res) : null;
+    $res = mysqli_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 next_id FROM `$safeTable`");
+    $row = $res ? mysqli_fetch_assoc($res) : null;
     return (int)($row['next_id'] ?? 1);
 }
 
@@ -432,7 +440,7 @@ function training_update_workman_status($conn, $workerId) {
     if (training_column_exists($conn, 'workmen', 'safety_training_status')) $sets[] = "safety_training_status = 'PENDING_TRAINING'";
     if (training_column_exists($conn, 'workmen', 'updated_at')) $sets[] = "updated_at = NOW()";
     if (!$sets) return;
-    clms_db_query($conn, "UPDATE workmen SET " . implode(', ', $sets) . " WHERE id = " . (int)$workerId);
+    mysqli_query($conn, "UPDATE workmen SET " . implode(', ', $sets) . " WHERE id = " . (int)$workerId);
 }
 
 function training_update_annexure_status($conn, $applicationNo) {
@@ -441,17 +449,17 @@ function training_update_annexure_status($conn, $applicationNo) {
     if (training_column_exists($conn, 'annexure2a', 'workflow_status')) $sets[] = "workflow_status = 'enrolment_done'";
     if (training_column_exists($conn, 'annexure2a', 'updated_at')) $sets[] = "updated_at = NOW()";
     if (!$sets) return;
-    $app = clms_db_real_escape_string($conn, $applicationNo);
-    clms_db_query($conn, "UPDATE annexure2a SET " . implode(', ', $sets) . " WHERE application_id = '$app'");
+    $app = mysqli_real_escape_string($conn, $applicationNo);
+    mysqli_query($conn, "UPDATE annexure2a SET " . implode(', ', $sets) . " WHERE application_id = '$app'");
 }
 
 function training_upsert_workflow($conn, $applicationNo, $contractorId) {
     if (!training_table_exists($conn, 'application_workflow')) return;
-    $app = clms_db_real_escape_string($conn, $applicationNo);
+    $app = mysqli_real_escape_string($conn, $applicationNo);
     $existing = null;
     if (training_column_exists($conn, 'application_workflow', 'application_id')) {
-        $res = clms_db_query($conn, "SELECT id FROM application_workflow WHERE application_id = '$app' LIMIT 1");
-        $existing = ($res && clms_db_num_rows($res) > 0) ? clms_db_fetch_assoc($res) : null;
+        $res = mysqli_query($conn, "SELECT id FROM application_workflow WHERE application_id = '$app' LIMIT 1");
+        $existing = ($res && mysqli_num_rows($res) > 0) ? mysqli_fetch_assoc($res) : null;
     }
     $row = [
         'application_id' => $applicationNo,
@@ -465,8 +473,8 @@ function training_upsert_workflow($conn, $applicationNo, $contractorId) {
         $row = training_filter_row($conn, 'application_workflow', $row);
         unset($row['application_id']);
         $sets = [];
-        foreach ($row as $col => $value) $sets[] = "`$col` = '" . clms_db_real_escape_string($conn, (string)$value) . "'";
-        clms_db_query($conn, "UPDATE application_workflow SET " . implode(', ', $sets) . " WHERE id = " . (int)$existing['id']);
+        foreach ($row as $col => $value) $sets[] = "`$col` = '" . mysqli_real_escape_string($conn, (string)$value) . "'";
+        mysqli_query($conn, "UPDATE application_workflow SET " . implode(', ', $sets) . " WHERE id = " . (int)$existing['id']);
     } else {
         training_insert_row($conn, 'application_workflow', $row);
     }

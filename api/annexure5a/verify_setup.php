@@ -5,10 +5,10 @@ echo "\n════════════════════════
 echo "   ANNEXURE 5/A - PASS LIMITS VERIFICATION\n";
 echo "════════════════════════════════════════════════════════════════\n\n";
 
-$result = clms_db_query($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0 ORDER BY pass_type");
+$result = mysqli_query($conn, "SELECT * FROM pass_limits WHERE contractor_id = 0 ORDER BY pass_type");
 
 if (!$result) {
-    echo "❌ Query failed: " . clms_db_error($conn) . "\n";
+    echo "❌ Query failed: " . mysqli_error($conn) . "\n";
     exit(1);
 }
 
@@ -16,7 +16,7 @@ echo "Pass Type        │ Max Allowed │ Ratio  │ Rule    │ Override Allow
 echo str_repeat("─", 80) . "\n";
 
 $count = 0;
-while ($row = clms_db_fetch_assoc($result)) {
+while ($row = mysqli_fetch_assoc($result)) {
     printf(
         "%-16s │ %-11s │ %-6s │ %-7s │ %s\n",
         $row['pass_type'],

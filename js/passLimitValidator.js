@@ -123,17 +123,19 @@ const PassLimitValidator = (() => {
       };
 
       html += `
-        <div style="padding:14px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid rgba(148,163,184,.15);">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:${typeColors[l.pass_type] || '#94a3b8'};margin-bottom:6px;">
-            ${l.pass_type}
+        <div style="padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(148,163,184,.15);display:flex;align-items:center;gap:8px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:${typeColors[l.pass_type] || '#94a3b8'};margin-bottom:2px;">
+              ${l.pass_type}
+            </div>
+            <div style="font-size:15px;font-weight:700;line-height:1;">
+              ${current} <span style="font-size:11px;color:var(--text-muted,#94a3b8);font-weight:400;">/ ${allowed}</span>
+            </div>
+            <div style="font-size:9px;color:var(--text-muted,#94a3b8);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${l.rule || 'No rule'}</div>
           </div>
-          <div style="font-size:22px;font-weight:700;margin-bottom:4px;">
-            ${current} <span style="font-size:13px;color:var(--text-muted,#94a3b8);font-weight:400;">/ ${allowed}</span>
+          <div style="width:4px;height:36px;background:rgba(148,163,184,.15);border-radius:4px;overflow:hidden;flex-shrink:0;">
+            <div style="width:100%;height:${Math.min(util, 100)}%;background:${barColor};border-radius:4px;transition:.3s;margin-top:${100-Math.min(util,100)}%;"></div>
           </div>
-          <div style="width:100%;background:rgba(148,163,184,.15);border-radius:4px;height:6px;overflow:hidden;margin-bottom:4px;">
-            <div style="width:${Math.min(util, 100)}%;background:${barColor};height:100%;border-radius:4px;transition:.3s;"></div>
-          </div>
-          <div style="font-size:10px;color:var(--text-muted,#94a3b8);">${l.rule || 'No rule'}</div>
         </div>
       `;
     });

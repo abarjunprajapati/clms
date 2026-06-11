@@ -14,12 +14,13 @@ function renderContent() {
     $contractor = db_single($conn, "SELECT id, vendor_code FROM contractors WHERE user_id = ?", 'i', [$user_id]);
     $vendor_code = $contractor['vendor_code'] ?? '';
 
-    // Fetch PWOs linked to this contractor's POs
+    // Fetch PWOs by the SAP PWO master schema.
     $pwos = db_fetch_all($conn, "
-        SELECT p.*, po.po_type 
-        FROM sap_pwo_master p
-        JOIN sap_po_master po ON p.po_number = po.po_number
-        WHERE po.vendor_code = ?
+        SELECT pwo_number, vendor_code, vessel, work_completion_date, created_time,
+               pwo_description, project, status, created_at
+        FROM sap_pwo_master
+        WHERE vendor_code = ?
+        ORDER BY created_at DESC
     ", 's', [$vendor_code]);
 
     ?>
@@ -39,7 +40,6 @@ function renderContent() {
           <thead>
             <tr>
               <th>PWO Number</th>
-              <th>PO Number</th>
               <th>Vessel / Project</th>
               <th>Description</th>
               <th>Completion Date</th>
@@ -48,17 +48,17 @@ function renderContent() {
           </thead>
           <tbody>
             <?php foreach ($pwos as $p): 
-                $is_expired = strtotime($p['completion_date'] ?? '') < time();
+                $completionDate = $p['work_completion_date'] ?? '';
+                $is_expired = $completionDate !== '' && strtotime($completionDate) < time();
             ?>
             <tr>
               <td><b class="text-primary"><?= htmlspecialchars($p['pwo_number']) ?></b></td>
-              <td><code><?= htmlspecialchars($p['po_number']) ?></code></td>
               <td>
                 <div style="font-weight:700;"><?= htmlspecialchars($p['vessel'] ?? 'N/A') ?></div>
                 <div style="font-size:11px; color:var(--gray-500);"><?= htmlspecialchars($p['project'] ?? 'General') ?></div>
               </td>
-              <td><?= htmlspecialchars($p['description']) ?></td>
-              <td><?= !empty($p['completion_date']) ? date('d M Y', strtotime($p['completion_date'])) : 'N/A' ?></td>
+              <td><?= htmlspecialchars($p['pwo_description'] ?? '') ?></td>
+              <td><?= !empty($completionDate) ? date('d M Y', strtotime($completionDate)) : 'N/A' ?></td>
               <td>
                 <?php if ($is_expired): ?>
                   <span class="badge badge-danger">Expired</span>
@@ -69,7 +69,7 @@ function renderContent() {
             </tr>
             <?php endforeach; ?>
             <?php if (empty($pwos)): ?>
-              <tr><td colspan="6" class="text-center py-4">No PWO records found for your vendor code.</td></tr>
+              <tr><td colspan="5" class="text-center py-4">No PWO records found for your vendor code.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>

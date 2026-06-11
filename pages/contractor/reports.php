@@ -16,9 +16,9 @@ function contractorReportTableExists($conn, $table) {
         return $cache[$table];
     }
 
-    $safeTable = clms_db_real_escape_string($conn, $table);
-    $result = clms_db_query($conn, "SHOW TABLES LIKE '$safeTable'");
-    $cache[$table] = $result && clms_db_num_rows($result) > 0;
+    $safeTable = mysqli_real_escape_string($conn, $table);
+    $result = mysqli_query($conn, "SHOW TABLES LIKE '$safeTable'");
+    $cache[$table] = $result && mysqli_num_rows($result) > 0;
     return $cache[$table];
 }
 
@@ -34,9 +34,9 @@ function contractorReportColumnExists($conn, $table, $column) {
         return false;
     }
 
-    $safeColumn = clms_db_real_escape_string($conn, $column);
-    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$safeColumn'");
-    $cache[$key] = $result && clms_db_num_rows($result) > 0;
+    $safeColumn = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$safeColumn'");
+    $cache[$key] = $result && mysqli_num_rows($result) > 0;
     return $cache[$key];
 }
 
@@ -90,48 +90,16 @@ function contractorReportWorkOrders($conn, $contractorId, $vendorCode, $fallback
         $pwoStatusExpr = contractorReportColumnExists($conn, 'sap_pwo_master', 'status') ? 'p.status' : "'active'";
         $pwoOrderExpr = contractorReportColumnExists($conn, 'sap_pwo_master', 'created_at') ? 'p.created_at DESC' : 'p.pwo_number DESC';
 
-        if (
-            contractorReportTableExists($conn, 'sap_po_master') &&
-            contractorReportColumnExists($conn, 'sap_pwo_master', 'po_number') &&
-            contractorReportColumnExists($conn, 'sap_po_master', 'po_number') &&
-            contractorReportColumnExists($conn, 'sap_po_master', 'vendor_code')
-        ) {
-            $poDeptExpr = contractorReportColumnExists($conn, 'sap_po_master', 'purchasing_group') ? 'po.purchasing_group' : "''";
-            $rows = db_fetch_all($conn, "
-                SELECT p.pwo_number AS work_order_no,
-                       COALESCE($pwoProjectExpr, $pwoVesselExpr, $pwoDescExpr, '') AS project_name,
-                       COALESCE($poDeptExpr, '') AS department,
-                       COALESCE($pwoStatusExpr, 'active') AS wo_status
-                FROM sap_pwo_master p
-                JOIN sap_po_master po ON p.po_number = po.po_number
-                WHERE po.vendor_code = ?
-                ORDER BY $pwoOrderExpr
-                LIMIT 100
-            ", 's', [$vendorCode]);
-        } else {
-            $vendorFilters = [];
-            foreach (['vendor_code', 'customer_code'] as $column) {
-                if (contractorReportColumnExists($conn, 'sap_pwo_master', $column)) {
-                    $vendorFilters[] = "p.`$column` = ?";
-                }
-            }
-
-            if ($vendorFilters) {
-                $where = implode(' OR ', $vendorFilters);
-                $types = str_repeat('s', count($vendorFilters));
-                $params = array_fill(0, count($vendorFilters), $vendorCode);
-                $rows = db_fetch_all($conn, "
-                    SELECT p.pwo_number AS work_order_no,
-                           COALESCE($pwoProjectExpr, $pwoVesselExpr, $pwoDescExpr, '') AS project_name,
-                           '' AS department,
-                           COALESCE($pwoStatusExpr, 'active') AS wo_status
-                    FROM sap_pwo_master p
-                    WHERE $where
-                    ORDER BY $pwoOrderExpr
-                    LIMIT 100
-                ", $types, $params);
-            }
-        }
+        $rows = db_fetch_all($conn, "
+            SELECT p.pwo_number AS work_order_no,
+                   COALESCE($pwoProjectExpr, $pwoVesselExpr, $pwoDescExpr, '') AS project_name,
+                   '' AS department,
+                   COALESCE($pwoStatusExpr, 'active') AS wo_status
+            FROM sap_pwo_master p
+            WHERE p.vendor_code = ?
+            ORDER BY $pwoOrderExpr
+            LIMIT 100
+        ", 's', [$vendorCode]);
 
         foreach ($rows as $row) {
             $no = trim((string)($row['work_order_no'] ?? ''));

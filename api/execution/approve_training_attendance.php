@@ -15,9 +15,9 @@ function executionTrainingJson($payload, $status = 200) {
 
 function executionTrainingColumnExists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $result && clms_db_num_rows($result) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function executionTrainingEnsureColumn($conn, $table, $column, $definition) {
@@ -26,11 +26,11 @@ function executionTrainingEnsureColumn($conn, $table, $column, $definition) {
     }
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function executionTrainingEnsureFlowSchema($conn) {
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,
@@ -63,20 +63,52 @@ function executionTrainingEnsureFlowSchema($conn) {
     ] as $column => $definition) {
         executionTrainingEnsureColumn($conn, 'training_requests', $column, $definition);
     }
-    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
     foreach ([
         'training_status' => "VARCHAR(50) DEFAULT 'pending'",
         'safety_training_status' => "VARCHAR(50) DEFAULT 'PENDING_TRAINING'",
         'executing_officer_code' => 'VARCHAR(50) NULL',
         'executing_officer_id' => 'BIGINT NULL',
+        'work_order_source' => 'VARCHAR(20) NULL',
         'updated_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
     ] as $column => $definition) {
         executionTrainingEnsureColumn($conn, 'workmen', $column, $definition);
     }
-    @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
-    @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
-    @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+    @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
+}
+
+function executionTrainingEnsureNotificationsSchema($conn) {
+    // Create table if it doesn't exist
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NULL DEFAULT 0,
+        role_target VARCHAR(50) NULL,
+        title VARCHAR(255) NULL,
+        message TEXT NULL,
+        type VARCHAR(50) DEFAULT 'info',
+        notification_type VARCHAR(50) DEFAULT 'info',
+        related_id VARCHAR(100) NULL,
+        is_read TINYINT(1) DEFAULT 0,
+        is_deleted TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Ensure required columns exist
+    foreach ([
+        'role_target'       => "VARCHAR(50) NULL",
+        'title'             => "VARCHAR(255) NULL",
+        'notification_type' => "VARCHAR(50) DEFAULT 'info'",
+        'related_id'        => "VARCHAR(100) NULL",
+        'is_deleted'        => "TINYINT(1) DEFAULT 0",
+    ] as $column => $definition) {
+        if (!executionTrainingColumnExists($conn, 'notifications', $column)) {
+            $safeColumn = str_replace('`', '``', $column);
+            @mysqli_query($conn, "ALTER TABLE `notifications` ADD COLUMN `$safeColumn` $definition");
+        }
+    }
 }
 
 try {
@@ -119,7 +151,7 @@ try {
 
     $worker = db_single(
         $conn,
-        "SELECT w.id, w.name, w.contractor_id, w.training_approval_doc, w.training_status
+        "SELECT w.id, w.name, w.contractor_id, w.training_approval_doc, w.training_status, w.work_order_source
          FROM workmen w
          WHERE w.id = ?
            AND (
@@ -136,7 +168,8 @@ try {
         executionTrainingJson(['status' => false, 'message' => 'Worker is not assigned to this officer.'], 403);
     }
 
-    $paidPayment = db_single(
+    $requiresPayment = strtoupper(trim((string)($worker['work_order_source'] ?? ''))) === 'PWO';
+    $paidPayment = $requiresPayment ? db_single(
         $conn,
         "SELECT pr.id
          FROM training_payment_request_workers pw
@@ -146,9 +179,24 @@ try {
          LIMIT 1",
         'i',
         [$workmanId]
-    );
-    if (!$paidPayment) {
+    ) : ['id' => 0];
+    if ($requiresPayment && !$paidPayment) {
         executionTrainingJson(['status' => false, 'message' => 'Payment is not verified by Welfare yet.'], 400);
+    }
+
+    $submittedTraining = db_single(
+        $conn,
+        "SELECT id, status
+         FROM training_requests
+         WHERE workman_id = ?
+           AND status IN ('pending_eo','pending_safety','welfare_pending','pending','scheduled','contractor_confirmed','passed')
+         ORDER BY id DESC
+         LIMIT 1",
+        'i',
+        [$workmanId]
+    );
+    if (!$submittedTraining) {
+        executionTrainingJson(['status' => false, 'message' => 'Safety seat booking / enrolment submission is not completed yet.'], 400);
     }
 
     $conn->begin_transaction();
@@ -174,7 +222,70 @@ try {
     );
 
     if ($decision === 'approved') {
-        clms_training_ensure_request($conn, $workmanId, (int)$worker['contractor_id'], (int)($_SESSION['user_id'] ?? 0), 'execution', 'Auto-created after Executing Officer online approval. Waiting for Welfare check.');
+        clms_training_ensure_request($conn, $workmanId, (int)$worker['contractor_id'], (int)($_SESSION['user_id'] ?? 0), 'execution', 'Forwarded after Executing Officer approval. Waiting for Safety Department approval.');
+
+        // ── Send notification to Safety Officer's inbox ──
+        try {
+            // Ensure notifications table has required columns
+            executionTrainingEnsureNotificationsSchema($conn);
+
+            $workerName = htmlspecialchars($worker['name'] ?? 'Worker', ENT_QUOTES);
+            $notifTitle = 'New Training Enrollment Approval Pending';
+            $notifMessage = "Executing Officer approved training attendance for {$workerName} (ID: {$workmanId}). Please review and approve the enrollment in Safety Department Enrollment Inbox.";
+
+            // Notify all safety_user role users
+            @db_execute(
+                $conn,
+                "INSERT INTO notifications (user_id, role_target, title, message, notification_type, related_id, is_read, is_deleted, created_at)
+                 VALUES (0, 'safety_user', ?, ?, 'info', ?, 0, 0, NOW())",
+                'sss',
+                [$notifTitle, $notifMessage, (string)$workmanId]
+            );
+        } catch (Throwable $notifErr) {
+            error_log('[EO_TRAINING_APPROVE_NOTIF] ' . $notifErr->getMessage());
+        }
+    } else {
+        db_execute(
+            $conn,
+            "UPDATE training_requests
+             SET status = 'correction_required',
+                 remarks = ?,
+                 updated_at = NOW()
+             WHERE workman_id = ?
+               AND status IN ('pending_eo','pending_safety','welfare_pending','pending','safety_rejected')
+             ORDER BY id DESC
+             LIMIT 1",
+            'si',
+            [$remarks ?: 'Returned by Executing Officer for contractor correction/resubmission.', $workmanId]
+        );
+
+        // ── Notify contractor about rejection ──
+        try {
+            executionTrainingEnsureNotificationsSchema($conn);
+
+            $contractorUser = db_single(
+                $conn,
+                "SELECT user_id FROM contractors WHERE id = ? LIMIT 1",
+                'i',
+                [(int)$worker['contractor_id']]
+            );
+            $contractorUserId = (int)($contractorUser['user_id'] ?? 0);
+            if ($contractorUserId > 0) {
+                $workerName = htmlspecialchars($worker['name'] ?? 'Worker', ENT_QUOTES);
+                $rejectTitle = 'Training Attendance Rejected by EO';
+                $rejectMessage = "Executing Officer rejected training attendance for {$workerName} (ID: {$workmanId}). Remarks: " . ($remarks ?: 'Please correct and resubmit.');
+
+                @db_execute(
+                    $conn,
+                    "INSERT INTO notifications (user_id, role_target, title, message, notification_type, related_id, is_read, is_deleted, created_at)
+                     VALUES (?, 'contractor', ?, ?, 'warning', ?, 0, 0, NOW())",
+                    'isss',
+                    [$contractorUserId, $rejectTitle, $rejectMessage, (string)$workmanId]
+                );
+            }
+        } catch (Throwable $notifErr) {
+            error_log('[EO_TRAINING_REJECT_NOTIF] ' . $notifErr->getMessage());
+        }
     }
 
     $conn->commit();
@@ -182,8 +293,8 @@ try {
     executionTrainingJson([
         'status' => true,
         'message' => $decision === 'approved'
-            ? 'Executing Officer approval completed. Request forwarded to Welfare for safety training check.'
-            : 'Executing Officer rejected the enrolment approval request.',
+            ? 'Executing Officer approval completed. Request forwarded to Safety Department Approval.'
+            : 'Executing Officer rejected the enrolment approval request. Returned to Contractor for Correction / Resubmission.',
     ]);
 } catch (Throwable $e) {
     if (isset($conn) && method_exists($conn, 'rollback')) {

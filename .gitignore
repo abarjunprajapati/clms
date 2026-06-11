@@ -3,4 +3,3 @@ logs/
 uploads/
 *.log
 .env
-include/config_credentials.php

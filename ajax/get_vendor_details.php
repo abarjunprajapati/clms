@@ -43,10 +43,12 @@ if ($data) {
         'data' => [
             'vendor_code'   => $data['customer_code'],
             'vendor_name'   => $data['customer_name'],
-            'vendor_mob1'   => $data['mobile'],
-            'mobile_no'     => $data['mobile'],
-            'email_address' => $data['email'],
-            'address'       => $data['address'] ?? '',
+            'vendor_mob1'   => $data['Customer_MOB1'] ?? '',
+            'mobile_no'     => $data['Customer_MOB1'] ?? '',
+            'vendor_mob2'   => $data['customer_MOB2'] ?? '',
+            'email_address' => $data['EMAIL_ADDRESS'] ?? '',
+            'address'       => $data['Address'] ?? '',
+            'pin'           => $data['PIN'] ?? '',
             'active_ind'    => 'A',
             'is_customer'   => true
         ]

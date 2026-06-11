@@ -5,6 +5,7 @@ ob_start();
 require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['safety_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/training_flow.php';
 require_once __DIR__ . '/../../include/training_venue_master.php';
 require_once __DIR__ . '/../../include/training_type_master.php';
 header('Content-Type: application/json; charset=utf-8');
@@ -38,6 +39,7 @@ register_shutdown_function(function() {
 });
 
 safety_schedule_ensure_schema($conn);
+clms_training_ensure_schema($conn);
 
 $data = json_decode(file_get_contents('php://input'), true);
 if (!is_array($data)) {
@@ -77,12 +79,29 @@ $safety_user_id = $_SESSION['user_id'] ?? 0;
 
 $conn->begin_transaction();
 try {
+    $approval = db_single(
+        $conn,
+        "SELECT tr.id
+         FROM training_requests tr
+         JOIN workmen w ON w.id = tr.workman_id
+         WHERE tr.id = ?
+           AND LOWER(COALESCE(tr.status, '')) = 'pending'
+           AND LOWER(COALESCE(w.execution_training_status, '')) = 'approved'
+           AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
+         LIMIT 1",
+        'i',
+        [$req_id]
+    );
+    if (!$approval) {
+        throw new Exception('Safety Department enrollment approval is required before scheduling.');
+    }
+
     // 1. Update training request
     db_execute($conn,
         "UPDATE training_requests SET
             training_type=?, scheduled_date=?, scheduled_shift=?, scheduled_venue=?, scheduled_time=?,
             safety_remarks=?, batch_number=?, instructor=?, scheduled_by=?, status='scheduled', updated_at=NOW()
-        WHERE id=?",
+        WHERE id=? AND status='pending'",
         'ssssssssii',
         [$training_type, $scheduled_date, $scheduled_shift, $scheduled_venue, $scheduled_time, $safety_remarks, $batch_number, $instructor, $safety_user_id, $req_id]
     );
@@ -113,7 +132,7 @@ try {
     );
 
     if (!$session) {
-        // Create new session - Using clms_db_query to ensure we can get insert_id easily
+        // Create new session - Using mysqli_query to ensure we can get insert_id easily
         $session_id = safety_schedule_insert_row($conn, 'training_schedule', [
             'session_date' => $scheduled_date,
             'session_time' => $final_time,
@@ -177,36 +196,36 @@ try {
 }
 
 function safety_schedule_table_exists($conn, $table) {
-    $table = clms_db_real_escape_string($conn, $table);
-    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && clms_db_num_rows($res) > 0;
+    $table = mysqli_real_escape_string($conn, $table);
+    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function safety_schedule_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && clms_db_num_rows($res) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function safety_schedule_column_meta($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return ($res && clms_db_num_rows($res) > 0) ? clms_db_fetch_assoc($res) : null;
+    $column = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return ($res && mysqli_num_rows($res) > 0) ? mysqli_fetch_assoc($res) : null;
 }
 
 function safety_schedule_ensure_column($conn, $table, $column, $definition) {
     if (!safety_schedule_table_exists($conn, $table) || safety_schedule_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    if (!clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
-        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . clms_db_error($conn));
+    if (!mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
+        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . mysqli_error($conn));
     }
 }
 
 function safety_schedule_ensure_schema($conn) {
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_schedule (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_schedule (
         id INT NOT NULL AUTO_INCREMENT,
         session_date DATE NULL,
         session_time TIME NULL,
@@ -221,7 +240,7 @@ function safety_schedule_ensure_schema($conn) {
         PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_session_workers (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_session_workers (
         id INT NOT NULL AUTO_INCREMENT,
         session_id INT NOT NULL,
         workman_id INT NOT NULL,
@@ -279,7 +298,7 @@ function safety_schedule_ensure_schema($conn) {
     foreach (['training_schedule', 'training_session_workers'] as $table) {
         $meta = safety_schedule_column_meta($conn, $table, 'id');
         if ($meta && stripos($meta['Extra'] ?? '', 'auto_increment') === false) {
-            @clms_db_query($conn, "ALTER TABLE `$table` MODIFY id INT NOT NULL AUTO_INCREMENT");
+            @mysqli_query($conn, "ALTER TABLE `$table` MODIFY id INT NOT NULL AUTO_INCREMENT");
         }
     }
 
@@ -288,22 +307,22 @@ function safety_schedule_ensure_schema($conn) {
         safety_schedule_ensure_column($conn, 'workmen', 'training_status', "VARCHAR(50) DEFAULT 'pending'");
     }
 
-    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
-    @clms_db_query($conn, "ALTER TABLE training_schedule MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
+    @mysqli_query($conn, "ALTER TABLE training_schedule MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
 }
 
 function safety_schedule_filter_row($conn, $table, $row) {
     $safeTable = str_replace('`', '``', $table);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable`");
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable`");
     $cols = [];
-    if ($res) while ($c = clms_db_fetch_assoc($res)) $cols[$c['Field']] = true;
+    if ($res) while ($c = mysqli_fetch_assoc($res)) $cols[$c['Field']] = true;
     return array_intersect_key($row, $cols);
 }
 
 function safety_schedule_next_id($conn, $table) {
     $safeTable = str_replace('`', '``', $table);
-    $res = clms_db_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 next_id FROM `$safeTable`");
-    $row = $res ? clms_db_fetch_assoc($res) : null;
+    $res = mysqli_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 next_id FROM `$safeTable`");
+    $row = $res ? mysqli_fetch_assoc($res) : null;
     return (int)($row['next_id'] ?? 1);
 }
 

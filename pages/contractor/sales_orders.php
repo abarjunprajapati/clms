@@ -14,10 +14,13 @@ function renderContent() {
     $contractor = db_single($conn, "SELECT id, vendor_code FROM contractors WHERE user_id = ?", 'i', [$user_id]);
     $vendor_code = $contractor['vendor_code'] ?? '';
 
-    // Fetch Sales Orders for this vendor
+    // Fetch Sales Orders by the SAP sale order master schema.
     $sos = db_fetch_all($conn, "
-        SELECT * FROM sap_sales_order_master 
-        WHERE vendor_code = ?
+        SELECT sale_order_no, customer_code, customer_name, amount, currency,
+               doc_date, sales_organization, description, status
+        FROM sap_sale_order_master
+        WHERE customer_code = ?
+        ORDER BY doc_date DESC
     ", 's', [$vendor_code]);
 
     ?>
@@ -47,12 +50,12 @@ function renderContent() {
           <tbody>
             <?php foreach ($sos as $s): ?>
             <tr>
-              <td><b class="text-primary"><?= htmlspecialchars($s['sales_order_number']) ?></b></td>
+              <td><b class="text-primary"><?= htmlspecialchars($s['sale_order_no']) ?></b></td>
               <td><?= !empty($s['doc_date']) ? date('d M Y', strtotime($s['doc_date'])) : 'N/A' ?></td>
               <td style="font-weight:700;"><?= number_format($s['amount'], 2) ?></td>
               <td><?= htmlspecialchars($s['currency']) ?></td>
               <td><?= htmlspecialchars($s['description']) ?></td>
-              <td><span class="badge badge-success">Released</span></td>
+              <td><span class="badge badge-success"><?= htmlspecialchars($s['status'] ?? 'active') ?></span></td>
             </tr>
             <?php endforeach; ?>
             <?php if (empty($sos)): ?>

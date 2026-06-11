@@ -68,9 +68,9 @@ if (isset($_GET['dataset']) && $_GET['dataset'] !== '') {
 }
 
 function dataExportTableExists($conn, $table) {
-    $table = clms_db_real_escape_string($conn, $table);
-    $result = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
-    return $result && clms_db_num_rows($result) > 0;
+    $table = mysqli_real_escape_string($conn, $table);
+    $result = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function dataExportCount($conn, $dataset, $table) {
@@ -83,12 +83,12 @@ function dataExportCount($conn, $dataset, $table) {
         $sql = "SELECT COUNT(*) AS c FROM workmen WHERE status='blocked'";
     }
 
-    $result = clms_db_query($conn, $sql);
+    $result = mysqli_query($conn, $sql);
     if (!$result) {
         return 0;
     }
 
-    $row = clms_db_fetch_assoc($result);
+    $row = mysqli_fetch_assoc($result);
     return (int)($row['c'] ?? 0);
 }
 
@@ -98,8 +98,8 @@ function dataExportLastUpdated($conn, $table) {
     }
 
     $columns = [];
-    $colResult = clms_db_query($conn, "SHOW COLUMNS FROM `$table`");
-    while ($colResult && ($col = clms_db_fetch_assoc($colResult))) {
+    $colResult = mysqli_query($conn, "SHOW COLUMNS FROM `$table`");
+    while ($colResult && ($col = mysqli_fetch_assoc($colResult))) {
         $columns[] = $col['Field'];
     }
 
@@ -108,8 +108,8 @@ function dataExportLastUpdated($conn, $table) {
         return 'Available';
     }
 
-    $result = clms_db_query($conn, "SELECT MAX(`$dateCol`) AS last_at FROM `$table`");
-    $row = $result ? clms_db_fetch_assoc($result) : null;
+    $result = mysqli_query($conn, "SELECT MAX(`$dateCol`) AS last_at FROM `$table`");
+    $row = $result ? mysqli_fetch_assoc($result) : null;
     if (empty($row['last_at'])) {
         return 'No records';
     }

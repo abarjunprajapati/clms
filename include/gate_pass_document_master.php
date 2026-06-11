@@ -13,13 +13,13 @@ function clms_default_gate_pass_documents() {
 }
 
 function clms_gate_pass_doc_column_exists($conn, $column) {
-    $column = clms_db_real_escape_string($conn, $column);
-    $result = clms_db_query($conn, "SHOW COLUMNS FROM `gate_pass_document_masters` LIKE '$column'");
-    return $result && clms_db_num_rows($result) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `gate_pass_document_masters` LIKE '$column'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function clms_ensure_gate_pass_document_masters($conn) {
-    $created = clms_db_query($conn, "CREATE TABLE IF NOT EXISTS gate_pass_document_masters (
+    $created = mysqli_query($conn, "CREATE TABLE IF NOT EXISTS gate_pass_document_masters (
         id INT NOT NULL AUTO_INCREMENT,
         upload_key VARCHAR(80) NOT NULL UNIQUE,
         category VARCHAR(40) NOT NULL,
@@ -30,6 +30,7 @@ function clms_ensure_gate_pass_document_masters($conn) {
         color VARCHAR(20) NULL,
         sort_order INT NOT NULL DEFAULT 0,
         status VARCHAR(20) NOT NULL DEFAULT 'active',
+        format_file_path VARCHAR(255) NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL,
         PRIMARY KEY (id),
@@ -47,12 +48,13 @@ function clms_ensure_gate_pass_document_masters($conn) {
         'color' => "ALTER TABLE `gate_pass_document_masters` ADD COLUMN `color` VARCHAR(20) NULL AFTER `icon`",
         'sort_order' => "ALTER TABLE `gate_pass_document_masters` ADD COLUMN `sort_order` INT NOT NULL DEFAULT 0 AFTER `color`",
         'status' => "ALTER TABLE `gate_pass_document_masters` ADD COLUMN `status` VARCHAR(20) NOT NULL DEFAULT 'active' AFTER `sort_order`",
-        'created_at' => "ALTER TABLE `gate_pass_document_masters` ADD COLUMN `created_at` DATETIME NULL AFTER `status`",
+        'format_file_path' => "ALTER TABLE `gate_pass_document_masters` ADD COLUMN `format_file_path` VARCHAR(255) NULL AFTER `status`",
+        'created_at' => "ALTER TABLE `gate_pass_document_masters` ADD COLUMN `created_at` DATETIME NULL AFTER `format_file_path`",
         'updated_at' => "ALTER TABLE `gate_pass_document_masters` ADD COLUMN `updated_at` DATETIME NULL AFTER `created_at`",
     ];
     foreach ($columns as $column => $sql) {
         if (!clms_gate_pass_doc_column_exists($conn, $column)) {
-            clms_db_query($conn, $sql);
+            mysqli_query($conn, $sql);
         }
     }
 
@@ -83,7 +85,7 @@ function clms_get_gate_pass_document_master_rows($conn, $activeOnly = true) {
     $where = $activeOnly ? "WHERE LOWER(status) = 'active'" : '';
     return db_fetch_all(
         $conn,
-        "SELECT id, upload_key, category, document_type, hint, is_mandatory, icon, color, sort_order, status
+        "SELECT id, upload_key, category, document_type, hint, is_mandatory, icon, color, sort_order, status, format_file_path
          FROM gate_pass_document_masters
          $where
          ORDER BY sort_order ASC, id ASC"
@@ -102,6 +104,7 @@ function clms_get_gate_pass_documents_for_form($conn) {
             'hint' => $row['hint'] ?: '',
             'required' => (int)$row['is_mandatory'] === 1,
             'category' => $row['category'],
+            'format_file_path' => $row['format_file_path'] ?: '',
         ];
     }, $rows);
 }
@@ -226,25 +229,36 @@ function clms_upsert_gate_pass_document_master($conn, array $data) {
         throw new InvalidArgumentException('Upload key, category and document type are required.');
     }
 
+    $formatFilePath = $data['format_file_path'] ?? null;
+
     if ($id > 0) {
-        db_execute(
-            $conn,
-            "UPDATE gate_pass_document_masters
-             SET upload_key = ?, category = ?, document_type = ?, hint = ?, is_mandatory = ?, sort_order = ?, status = ?, updated_at = NOW()
-             WHERE id = ?",
-            'ssssiisi',
-            [$uploadKey, $category, $documentType, $hint, $mandatory, $sortOrder, $status, $id]
-        );
+        $updateSql = "UPDATE gate_pass_document_masters
+             SET upload_key = ?, category = ?, document_type = ?, hint = ?, is_mandatory = ?, sort_order = ?, status = ?, updated_at = NOW()";
+        $params = [$uploadKey, $category, $documentType, $hint, $mandatory, $sortOrder, $status];
+        $types = 'ssssiis';
+        
+        if ($formatFilePath !== null) {
+            $updateSql .= ", format_file_path = ?";
+            $params[] = $formatFilePath;
+            $types .= 's';
+        }
+        
+        $updateSql .= " WHERE id = ?";
+        $params[] = $id;
+        $types .= 'i';
+
+        db_execute($conn, $updateSql, $types, $params);
         return $id;
     }
 
+    $formatFilePathStr = $formatFilePath ?? '';
     db_execute(
         $conn,
         "INSERT INTO gate_pass_document_masters
-            (upload_key, category, document_type, hint, is_mandatory, icon, color, sort_order, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'fa-file', '#64748b', ?, ?, NOW(), NOW())",
-        'ssssiis',
-        [$uploadKey, $category, $documentType, $hint, $mandatory, $sortOrder, $status]
+            (upload_key, category, document_type, hint, is_mandatory, icon, color, sort_order, status, format_file_path, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'fa-file', '#64748b', ?, ?, ?, NOW(), NOW())",
+        'ssssiiss',
+        [$uploadKey, $category, $documentType, $hint, $mandatory, $sortOrder, $status, $formatFilePathStr]
     );
     return (int)$conn->insert_id;
 }

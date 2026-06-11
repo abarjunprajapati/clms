@@ -1,26 +1,12 @@
 <?php
-// Clean output buffer first
-if (ob_get_level() > 0) ob_end_clean();
-ob_start();
-
-// Load config first (includes session.php), then helpers.php
 require_once __DIR__ . '/../include/config.php';
 require_once 'api_helper.php';
+require_once __DIR__ . '/../include/session.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-// CSRF validation with graceful fallback - allow if session hasn't been properly initialized
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $sessionToken = $_SESSION['csrf_token'] ?? null;
-    $providedToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf_token'] ?? null;
-    
-    // Only enforce CSRF if session token exists (page was properly rendered)
-    if ($sessionToken && !$providedToken) {
-        apiError('Security check failed (CSRF). Please refresh the page.', 403);
-    } elseif ($sessionToken && $providedToken && !hash_equals($sessionToken, $providedToken)) {
-        apiError('Invalid security token. Please refresh and try again.', 403);
-    }
-    // Allow if no session token set yet (first request) or tokens match
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !validate_csrf()) {
+    apiError('Security check failed (CSRF). Please refresh the page.', 403);
 }
 
 try {
@@ -39,12 +25,10 @@ try {
     if (empty($password)) apiError('Password is required', 400);
     if (empty($captcha)) apiError('Verification code is required', 400);
 
-    // 2. Captcha Verification
     if (session_status() !== PHP_SESSION_ACTIVE) {
         apiError('Session failed to start. Please check your PHP session configuration.', 500);
     }
-    
-    if ($captcha !== '1234' && (!isset($_SESSION['captcha']) || strcasecmp($captcha, $_SESSION['captcha']) !== 0)) {
+    if ($captcha !== '1234' && (!isset($_SESSION['captcha']) || strcmp($captcha, $_SESSION['captcha']) !== 0)) {
         $debug = [
             'received' => $captcha,
             'expected' => $_SESSION['captcha'] ?? 'NOT_SET',
@@ -104,26 +88,7 @@ try {
         // --- CHECK SAP CUSTOMER MASTER (5 or 7 digits) ---
         $sap_cust = db_single($conn, "SELECT * FROM sap_customer_master WHERE customer_code = ?", 's', [$username]);
         if ($sap_cust) {
-            if (empty($sap_cust['is_password_created'])) {
-                apiError('Account not activated. Please use the "Activate Account" option first.', 401);
-            }
-            
-            // If they HAVE created a password in SAP table but aren't in users table yet
-            if (password_verify($password, $sap_cust['login_password'])) {
-                 $user_data = [
-                    'id' => $sap_cust['id'],
-                    'customer_code' => $sap_cust['customer_code'],
-                    'customer_name' => $sap_cust['customer_name'],
-                    'name' => $sap_cust['customer_name'],
-                    'role' => 'customer',
-                    'email' => $sap_cust['EMAIL_ADDRESS'] ?: ($sap_cust['email'] ?? ''),
-                    'mobile' => $sap_cust['Customer_MOB1'] ?? $sap_cust['mobile'] ?? '',
-                    'contractor_id' => null
-                ];
-                $auth_source = 'sap_customer';
-            } else {
-                apiError('Invalid credentials', 401);
-            }
+            apiError('Account not activated. Please use the "Activate Account" option first.', 401);
         } else {
             // --- CHECK SAP VENDOR MASTER ---
             $sap_vendor = db_single($conn, "SELECT * FROM sap_vendor_master WHERE vendor_code = ?", 's', [$username]);

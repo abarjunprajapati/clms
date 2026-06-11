@@ -63,6 +63,11 @@ function renderContent() {
         <div><label class="form-label">Sort Order</label><input class="form-control" type="number" name="sort_order" id="docSort" min="0" value="100"></div>
         <div><label class="form-label">Status</label><select class="form-control" name="status" id="docStatus"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
       </div>
+      <div>
+        <label class="form-label">Format Upload (Image/PDF)</label>
+        <input class="form-control" type="file" name="format_file" id="docFormatFile" accept=".pdf,.jpg,.jpeg,.png">
+        <small style="color:var(--text-muted);font-size:11px;">Upload a custom format file for this document. If provided, users can download this format.</small>
+      </div>
       <label class="check-row"><input type="checkbox" name="is_mandatory" id="docMandatory" value="1"> Mandatory</label>
       <div class="doc-modal-foot">
         <button class="btn btn-outline" type="button" onclick="closeDocForm()">Cancel</button>
@@ -101,6 +106,7 @@ function openDocForm(row) {
   document.getElementById('docSort').value = row.sort_order || 100;
   document.getElementById('docStatus').value = row.status || 'active';
   document.getElementById('docMandatory').checked = String(row.is_mandatory || '0') === '1';
+  document.getElementById('docFormatFile').value = ''; // Reset file input
   document.getElementById('docModal').classList.add('is-open');
   document.getElementById('docModal').setAttribute('aria-hidden', 'false');
 }
@@ -110,13 +116,13 @@ function closeDocForm() {
 }
 document.getElementById('docMasterForm').onsubmit = async (e) => {
   e.preventDefault();
-  const data = Object.fromEntries(new FormData(e.target).entries());
-  data.is_mandatory = document.getElementById('docMandatory').checked ? '1' : '0';
+  const formData = new FormData(e.target);
+  formData.set('is_mandatory', document.getElementById('docMandatory').checked ? '1' : '0');
   try {
     const res = await fetch('../../api/welfare/update_gate_pass_document_master.php', {
       method: 'POST',
-      headers: {'Content-Type':'application/json','X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''},
-      body: JSON.stringify(data)
+      headers: {'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''},
+      body: formData
     });
     const result = await res.json();
     showToast(result.message || (result.success ? 'Saved.' : 'Failed.'), result.success ? 'success' : 'error');

@@ -5,23 +5,24 @@ include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/training_flow.php';
 require_once __DIR__ . '/../../include/training_venue_master.php';
 require_once __DIR__ . '/../../include/training_type_master.php';
+require_once __DIR__ . '/../../include/safety_training_control.php';
 include __DIR__ . '/../../include/layout.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Safety Officer';
 
 function safetyDashTableExists($conn, $table) {
-    $table = clms_db_real_escape_string($conn, $table);
-    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && clms_db_num_rows($res) > 0;
+    $table = mysqli_real_escape_string($conn, $table);
+    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function safetyDashColumnExists($conn, $table, $column) {
     if (!safetyDashTableExists($conn, $table)) return false;
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && clms_db_num_rows($res) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function safetyDashCol($conn, $table, $alias, $column, $fallback = 'NULL') {
@@ -35,10 +36,11 @@ function safetyDashEnsureColumn($conn, $table, $column, $definition) {
 
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function safetyDashEnsureControlSchema($conn) {
+    clms_safety_ensure_control_schema($conn);
     clms_ensure_training_venue_masters($conn);
     clms_ensure_training_type_master($conn);
 
@@ -49,7 +51,7 @@ function safetyDashEnsureControlSchema($conn) {
         safetyDashEnsureColumn($conn, 'training_venue_masters', $column, $definition);
     }
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS safety_instructor_masters (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS safety_instructor_masters (
         id INT NOT NULL AUTO_INCREMENT,
         instructor_code VARCHAR(30) NULL,
         instructor_name VARCHAR(150) NOT NULL,
@@ -61,7 +63,7 @@ function safetyDashEnsureControlSchema($conn) {
         UNIQUE KEY uq_instructor_name (instructor_name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_language_masters (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_language_masters (
         id INT NOT NULL AUTO_INCREMENT,
         language_name VARCHAR(80) NOT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -73,7 +75,7 @@ function safetyDashEnsureControlSchema($conn) {
         UNIQUE KEY uq_training_language (language_name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_fee_masters (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_fee_masters (
         id INT NOT NULL AUTO_INCREMENT,
         fee_source VARCHAR(20) NOT NULL,
         amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -85,7 +87,7 @@ function safetyDashEnsureControlSchema($conn) {
         UNIQUE KEY uq_training_fee_source (fee_source)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_class_batches (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_class_batches (
         id INT NOT NULL AUTO_INCREMENT,
         batch_token VARCHAR(6) NOT NULL,
         batch_number VARCHAR(50) NOT NULL,
@@ -110,7 +112,7 @@ function safetyDashEnsureControlSchema($conn) {
         UNIQUE KEY uq_training_batch_token (batch_token)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_batch_workers (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_batch_workers (
         id INT NOT NULL AUTO_INCREMENT,
         batch_id INT NOT NULL,
         training_request_id INT NOT NULL,
@@ -249,11 +251,15 @@ function safetyDashHandlePost($conn) {
             if (!$trainingDate || !$venueId || !$languageId || !$typeId) {
                 throw new RuntimeException('Training date, location, language and type are required.');
             }
+            if ($trainingDate < date('Y-m-d')) {
+                throw new RuntimeException('Previous training date is not allowed. Select today or a future date.');
+            }
 
-            $venue = db_single($conn, "SELECT id, venue_name, COALESCE(seats, 35) seats FROM training_venue_masters WHERE id = ? LIMIT 1", 'i', [$venueId]);
-            $language = db_single($conn, "SELECT id, language_name FROM training_language_masters WHERE id = ? LIMIT 1", 'i', [$languageId]);
-            $type = db_single($conn, "SELECT id, type_name FROM master_training_types WHERE id = ? LIMIT 1", 'i', [$typeId]);
-            $instructor = $instructorId ? db_single($conn, "SELECT id, instructor_name FROM safety_instructor_masters WHERE id = ? LIMIT 1", 'i', [$instructorId]) : null;
+            $today = date('Y-m-d');
+            $venue = db_single($conn, "SELECT id, venue_name, COALESCE(seats, 35) seats FROM training_venue_masters WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', [$venueId, $today, $today]);
+            $language = db_single($conn, "SELECT id, language_name FROM training_language_masters WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', [$languageId, $today, $today]);
+            $type = db_single($conn, "SELECT id, type_name FROM master_training_types WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', [$typeId, $today, $today]);
+            $instructor = $instructorId ? db_single($conn, "SELECT id, instructor_name FROM safety_instructor_masters WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', [$instructorId, $today, $today]) : null;
             if (!$venue || !$language || !$type) throw new RuntimeException('Invalid master selection.');
 
             $capacity = max(1, (int)$venue['seats']);
@@ -280,7 +286,7 @@ function safetyDashHandlePost($conn) {
                     $saveMode === 'draft' ? 'draft' : 'open',
                 ]
             );
-            $sessionId = (int)clms_db_insert_id($conn);
+            $sessionId = (int)mysqli_insert_id($conn);
 
             db_execute(
                 $conn,
@@ -308,7 +314,7 @@ function safetyDashHandlePost($conn) {
                     $userId,
                 ]
             );
-            $batchId = (int)clms_db_insert_id($conn);
+            $batchId = (int)mysqli_insert_id($conn);
 
             $candidates = [];
             if ($saveMode === 'scheduled') {
@@ -323,7 +329,8 @@ function safetyDashHandlePost($conn) {
                            ) + 1 AS attempt_no
                     FROM training_requests tr
                     JOIN workmen w ON w.id = tr.workman_id
-                    WHERE tr.status IN ('pending', 'welfare_pending', 'failed')
+                    WHERE tr.status IN ('pending', 'failed')
+                      AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
                       AND LOWER(TRIM(COALESCE(w.safety_language, ''))) = LOWER(TRIM(?))
                     ORDER BY COALESCE(tr.preferred_date, tr.requested_date, DATE(tr.created_at)) ASC, tr.id ASC
                     LIMIT $capacity
@@ -477,7 +484,7 @@ function safetyDashRepairConfirmedSessions($conn) {
                         (string)($row['batch_number'] ?? '')
                     ]
                 );
-                $session = ['id' => clms_db_insert_id($conn), 'session_status' => 'open'];
+                $session = ['id' => mysqli_insert_id($conn), 'session_status' => 'open'];
             }
 
             $sessionId = (int)($session['id'] ?? 0);
@@ -540,8 +547,44 @@ function renderContent() {
     $hasSessionWorkers = safetyDashTableExists($conn, 'training_session_workers');
     $hasWorkmen = safetyDashTableExists($conn, 'workmen');
 
+    $safetyApprovalRequests = [];
+    if ($hasRequests && $hasWorkmen) {
+        $approvalContractorNameParts = [];
+        foreach (['contractor_name', 'vendor_name', 'name'] as $column) {
+            if (safetyDashColumnExists($conn, 'contractors', $column)) {
+                $approvalContractorNameParts[] = "c.`$column`";
+            }
+        }
+        $approvalContractorNameParts[] = "CONCAT('Contractor #', w.contractor_id)";
+        $approvalContractorNameExpr = "COALESCE(" . implode(', ', $approvalContractorNameParts) . ")";
+        $safetyApprovalRequests = db_fetch_all($conn, "
+            SELECT tr.id AS request_id, tr.status AS request_status, tr.source, tr.remarks AS request_remarks,
+                   w.id AS workman_id, w.name AS worker_name, w.aadhaar, w.temp_id,
+                   w.department, w.nature_of_work, w.safety_language,
+                   w.executing_officer_code, w.executing_officer_name,
+                   w.execution_training_remarks, w.training_approval_doc,
+                   COALESCE(w.safety_enrollment_status, 'pending') AS safety_enrollment_status,
+                   $approvalContractorNameExpr AS contractor_name
+            FROM training_requests tr
+            JOIN workmen w ON w.id = tr.workman_id
+            LEFT JOIN contractors c ON c.id = w.contractor_id
+            WHERE LOWER(COALESCE(tr.status, '')) IN ('pending_safety', 'welfare_pending')
+              AND LOWER(COALESCE(w.execution_training_status, '')) = 'approved'
+              AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) <> 'approved'
+              AND tr.id = (
+                  SELECT tr2.id
+                  FROM training_requests tr2
+                  WHERE tr2.workman_id = tr.workman_id
+                  ORDER BY tr2.id DESC
+                  LIMIT 1
+              )
+            ORDER BY COALESCE(tr.updated_at, tr.created_at) ASC, tr.id ASC
+        ");
+    }
+    $safetyApprovalPending = count($safetyApprovalRequests);
+
     $requestPending = $hasRequests
-        ? safetyDashCount($conn, "SELECT COUNT(*) c FROM training_requests WHERE LOWER(COALESCE(status, 'pending')) IN ('pending', 'welfare_pending', 'failed')")
+        ? safetyDashCount($conn, "SELECT COUNT(*) c FROM training_requests tr JOIN workmen w ON w.id = tr.workman_id WHERE LOWER(COALESCE(tr.status, 'pending')) IN ('pending', 'failed') AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'")
         : 0;
     $activeSessions = $hasSchedule
         ? safetyDashCount($conn, "SELECT COUNT(*) c FROM training_schedule WHERE LOWER(COALESCE(session_status, 'open')) IN ('open', 'scheduled')")
@@ -566,34 +609,14 @@ function renderContent() {
         : 0;
     $gatePassEligible = $passedWorkers;
 
-    $venues = db_fetch_all($conn, "SELECT id, venue_code, venue_name, COALESCE(seats, 35) seats, status FROM training_venue_masters ORDER BY status ASC, venue_name ASC");
-    $activeVenues = [];
-    foreach ($venues as $row) {
-        if (strtolower((string)($row['status'] ?? '')) === 'active') {
-            $activeVenues[] = $row;
-        }
-    }
-    $instructors = db_fetch_all($conn, "SELECT id, instructor_code, instructor_name, status FROM safety_instructor_masters ORDER BY status ASC, instructor_name ASC");
-    $activeInstructors = [];
-    foreach ($instructors as $row) {
-        if (strtolower((string)($row['status'] ?? '')) === 'active') {
-            $activeInstructors[] = $row;
-        }
-    }
-    $languages = db_fetch_all($conn, "SELECT id, language_name, status FROM training_language_masters ORDER BY sort_order ASC, language_name ASC");
-    $activeLanguages = [];
-    foreach ($languages as $row) {
-        if (strtolower((string)($row['status'] ?? '')) === 'active') {
-            $activeLanguages[] = $row;
-        }
-    }
+    $venues = db_fetch_all($conn, "SELECT id, venue_code, venue_name, COALESCE(seats, 35) seats, from_date, to_date, status FROM training_venue_masters ORDER BY status ASC, venue_name ASC");
+    $activeVenues = clms_safety_active_rows($venues);
+    $instructors = db_fetch_all($conn, "SELECT id, instructor_code, instructor_name, from_date, to_date, status FROM safety_instructor_masters ORDER BY status ASC, instructor_name ASC");
+    $activeInstructors = clms_safety_active_rows($instructors);
+    $languages = db_fetch_all($conn, "SELECT id, language_name, from_date, to_date, status FROM training_language_masters ORDER BY sort_order ASC, language_name ASC");
+    $activeLanguages = clms_safety_active_rows($languages);
     $trainingTypes = clms_get_training_type_rows($conn, false);
-    $activeTrainingTypes = [];
-    foreach ($trainingTypes as $row) {
-        if (strtolower((string)($row['status'] ?? '')) === 'active') {
-            $activeTrainingTypes[] = $row;
-        }
-    }
+    $activeTrainingTypes = clms_safety_active_rows($trainingTypes);
     $feeRows = db_fetch_all($conn, "SELECT fee_source, amount, status FROM training_fee_masters ORDER BY FIELD(fee_source, 'PWO', 'PO', 'SO'), fee_source");
     $recentBatches = db_fetch_all($conn, "
         SELECT b.*,
@@ -736,7 +759,8 @@ function renderContent() {
             FROM training_requests tr
             JOIN workmen w ON w.id = tr.workman_id
             LEFT JOIN contractors c ON c.id = tr.contractor_id
-            WHERE LOWER(COALESCE(tr.status, 'pending')) IN ('pending', 'welfare_pending', 'failed')
+            WHERE LOWER(COALESCE(tr.status, 'pending')) IN ('pending', 'failed')
+              AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
             ORDER BY $createdExpr DESC
             LIMIT 6
         ");
@@ -748,13 +772,18 @@ function renderContent() {
         <p class="page-subtitle">Safety Induction control desk for request scheduling, session changes, attendance, marks, pass/fail results and eligibility.</p>
       </div>
       <div class="safety-actions">
-        <a href="safety_control_desk.php" class="btn btn-outline"><i class="fas fa-sliders"></i> Control Desk</a>
+        <a href="training_class_master.php" class="btn btn-outline"><i class="fas fa-calendar-plus"></i> Create Batch</a>
         <a href="training_requests.php" class="btn btn-primary"><i class="fas fa-list-check"></i> Requests</a>
         <a href="conduct_results.php" class="btn btn-outline"><i class="fas fa-clipboard-check"></i> Conduct</a>
       </div>
     </div>
 
     <div class="stats-grid">
+      <div class="stat-card glass">
+        <div class="stat-icon" style="background:rgba(234,88,12,0.1);color:#c2410c"><i class="fas fa-user-shield"></i></div>
+        <div class="stat-value"><?= $safetyApprovalPending ?></div>
+        <div class="stat-label">Enrollment Approvals</div>
+      </div>
       <div class="stat-card glass">
         <div class="stat-icon" style="background:rgba(245,158,11,0.1);color:#d97706"><i class="fas fa-inbox"></i></div>
         <div class="stat-value"><?= $requestPending ?></div>
@@ -875,7 +904,6 @@ function renderContent() {
               <?php foreach ($recentRequests as $request):
                 $requestStatus = strtolower((string)($request['status'] ?? 'pending'));
                 $statusLabelMap = [
-                    'welfare_pending' => 'Ready for Scheduling',
                     'pending' => 'Ready for Scheduling',
                     'failed' => 'Retraining Required',
                 ];
@@ -900,7 +928,7 @@ function renderContent() {
     </div>
 
     <div class="quick-grid">
-      <a href="safety_control_desk.php" class="quick-link"><i class="fas fa-sliders"></i><strong>Safety Control Desk</strong><span>Open masters and batch creation on a separate page.</span></a>
+      <a href="enrollment_approval.php" class="quick-link"><i class="fas fa-user-check"></i><strong>Enrollment Approval Inbox</strong><span>Review and approve workmen enrollment applications.</span></a>
       <a href="training_class_master.php" class="quick-link"><i class="fas fa-calendar-plus"></i><strong>Training Class Master</strong><span>Create date, venue, language, session, trainer and batch token.</span></a>
       <a href="training_location_master.php" class="quick-link"><i class="fas fa-location-dot"></i><strong>Location Master</strong><span>Maintain training hall code, name, seats and status.</span></a>
       <a href="instructor_master.php" class="quick-link"><i class="fas fa-person-chalkboard"></i><strong>Instructor Master</strong><span>Maintain safety trainer code, name and active status.</span></a>
@@ -915,10 +943,62 @@ function renderContent() {
       <a href="training_batch_report.php" class="quick-link"><i class="fas fa-file-lines"></i><strong>Batch Report</strong><span>Download attendee list in XL or PDF with signature space.</span></a>
     </div>
 
+    <script>
+      async function reviewSafetyEnrollment(workmanId, decision) {
+        const rejecting = decision === 'rejected';
+        const prompt = await Swal.fire({
+          icon: rejecting ? 'warning' : 'question',
+          title: rejecting ? 'Reject enrollment?' : 'Approve enrollment?',
+          text: rejecting
+            ? 'The enrollment will return to the contractor for correction and resubmission.'
+            : 'The worker will be released for Safety training scheduling.',
+          input: 'textarea',
+          inputLabel: rejecting ? 'Correction / rejection remarks' : 'Approval remarks (optional)',
+          inputPlaceholder: rejecting ? 'Clearly mention what the contractor must correct.' : 'Enter remarks if required',
+          showCancelButton: true,
+          confirmButtonText: rejecting ? 'Reject & Return' : 'Approve Enrollment',
+          confirmButtonColor: rejecting ? '#dc2626' : '#16a34a',
+          inputValidator: value => rejecting && !String(value || '').trim()
+            ? 'Rejection remarks are required.'
+            : undefined
+        });
+        if (!prompt.isConfirmed) return;
+
+        try {
+          const response = await fetch('../../api/safety/review_enrollment.php', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+            },
+            body: JSON.stringify({
+              workman_id: workmanId,
+              decision,
+              remarks: String(prompt.value || '').trim()
+            })
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            throw new Error(result.message || 'Unable to update enrollment approval.');
+          }
+          await Swal.fire('Updated', result.message, 'success');
+          location.reload();
+        } catch (error) {
+          Swal.fire('Action Failed', error.message || 'Server response could not be processed.', 'error');
+        }
+      }
+    </script>
+
     <style>
       .safety-header{display:flex;justify-content:space-between;align-items:flex-end;gap:14px}
       .safety-header .page-title{display:flex;align-items:center;gap:10px}
       .safety-actions{display:flex;gap:8px;flex-wrap:wrap}
+      .safety-approval-card{margin-top:20px;border-color:#fed7aa}
+      .safety-approval-card .card-header{background:#fff7ed}
+      .approval-subtitle{font-size:12px;color:#64748b;margin-top:4px}
+      .approval-meta{font-size:11px;color:#64748b;margin-top:4px}
+      .approval-actions{display:flex;gap:6px;flex-wrap:wrap}
+      .approval-doc-link{margin-top:7px}
       .activity-flow{margin-top:20px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;overflow:hidden}
       .activity-flow-head{padding:16px 18px;border-bottom:1px solid #e5e7eb;background:#f8fafc}
       .activity-flow-head h3{margin:0;display:flex;align-items:center;gap:8px;font-size:16px;color:#111827}

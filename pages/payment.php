@@ -30,44 +30,26 @@ function payment_sync_missing_worker_requests($conn, $contractorId, $userId = 0)
 }
 
 $token = trim($_GET['token'] ?? '');
+$autoPay = (int)($_GET['auto_pay'] ?? 0) === 1;
+$selectedWorkerId = (int)($_GET['selected_worker_id'] ?? $_GET['worker_id'] ?? 0);
 $request = $token !== '' ? clms_get_training_payment_request($conn, $token) : null;
 $paymentRequests = [];
-if (!$request && !empty($_SESSION['user_id'])) {
-    $contractor = db_single($conn, "SELECT id FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [(int)$_SESSION['user_id']]);
+$contractor = null;
+$pendingWorkers = [];
+$pendingTotal = 0;
+$feePerWorker = clms_training_fee_per_worker($conn);
+if (!empty($_SESSION['user_id'])) {
+    $contractor = clms_get_current_contractor_for_payment(
+        $conn,
+        (int)$_SESSION['user_id'],
+        $_SESSION['contractor_id'] ?? ($_SESSION['vendor_code'] ?? '')
+    );
     if ($contractor) {
         payment_sync_missing_worker_requests($conn, (int)$contractor['id'], (int)$_SESSION['user_id']);
-        $paymentRequests = db_fetch_all(
-            $conn,
-            "SELECT *
-             FROM training_payment_requests
-             WHERE contractor_id = ?
-             ORDER BY
-                FIELD(status, 'submitted', 'link_sent', 'gateway_created', 'pending', 'paid') ASC,
-                COALESCE(updated_at, created_at) DESC,
-                id DESC",
-            'i',
-            [(int)$contractor['id']]
-        );
-        $request = db_single(
-            $conn,
-            "SELECT *
-             FROM training_payment_requests
-             WHERE contractor_id = ?
-             ORDER BY
-                CASE WHEN status IN ('paid', 'verified') THEN 1 ELSE 0 END ASC,
-                FIELD(status, 'submitted', 'link_sent', 'gateway_created', 'pending', 'paid') ASC,
-                COALESCE(updated_at, created_at) DESC,
-                id DESC
-             LIMIT 1",
-            'i',
-            [(int)$contractor['id']]
-        );
-        $token = $request['payment_token'] ?? '';
-    }
-} elseif (!empty($_SESSION['user_id'])) {
-    $contractor = db_single($conn, "SELECT id FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [(int)$_SESSION['user_id']]);
-    if ($contractor) {
-        payment_sync_missing_worker_requests($conn, (int)$contractor['id'], (int)$_SESSION['user_id']);
+        $pendingWorkers = clms_pending_safety_fee_workers($conn, (int)$contractor['id']);
+        foreach ($pendingWorkers as $pendingWorker) {
+            $pendingTotal += (float)$pendingWorker['safety_fee'];
+        }
         $paymentRequests = db_fetch_all(
             $conn,
             "SELECT *
@@ -85,6 +67,8 @@ if (!$request && !empty($_SESSION['user_id'])) {
 
 $gatewayReady = clms_payment_gateway_configured($conn);
 $workers = $request ? clms_training_payment_workers($conn, (int)$request['id']) : [];
+$bookingWorkerId = count($workers) === 1 ? (int)($workers[0]['id'] ?? 0) : 0;
+$bookingUrl = 'contractor/book_safety_training.php' . ($bookingWorkerId > 0 ? '?worker_id=' . urlencode((string)$bookingWorkerId) : '');
 $isExpired = $request && !empty($request['link_expires_at']) && strtotime($request['link_expires_at']) < time() && !in_array($request['status'], ['paid', 'verified'], true);
 $demoDetails = clms_demo_payment_details($conn, $request);
 ?>
@@ -122,6 +106,22 @@ $demoDetails = clms_demo_payment_details($conn, $request);
     .request-meta { font-size:12px; color:#64748b; margin-top:3px; }
     .request-amount { font-weight:900; color:#0f766e; text-align:right; }
     .btn-full { width:100%; justify-content:center; }
+    .pending-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+    .summary-tile { border:1px solid #dbe4ef; border-radius:8px; padding:14px; background:#f8fafc; }
+    .summary-tile span { display:block; font-size:12px; color:#64748b; font-weight:800; text-transform:uppercase; }
+    .summary-tile strong { display:block; margin-top:5px; color:#111827; font-size:20px; }
+    .pending-tools { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
+    .pending-tools input { width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:10px 11px; font-size:13px; box-sizing:border-box; }
+    .pending-table-wrap { overflow:auto; border:1px solid #dbe4ef; border-radius:8px; }
+    .pending-table { width:100%; border-collapse:collapse; min-width:780px; }
+    .pending-table th, .pending-table td { padding:11px 12px; border-bottom:1px solid #edf2f7; text-align:left; font-size:13px; vertical-align:middle; }
+    .pending-table th { background:#f8fafc; color:#475569; font-weight:900; font-size:12px; text-transform:uppercase; }
+    .pending-table tr:last-child td { border-bottom:0; }
+    .pending-table input[type="checkbox"] { width:17px; height:17px; cursor:pointer; }
+    .worker-code { font-weight:900; color:#1d4ed8; }
+    .live-total { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-top:14px; padding:14px; border:1px solid #bfdbfe; background:#eff6ff; border-radius:8px; }
+    .live-total strong { color:#0f172a; }
+    .live-total .total-amount { font-size:22px; color:#0f766e; font-weight:900; }
     .pay-modal { display:none; position:fixed; inset:0; z-index:3000; background:rgba(15,23,42,.58); padding:18px; overflow:auto; }
     .pay-modal.is-open { display:flex; align-items:flex-start; justify-content:center; }
     .pay-modal-dialog { width:min(520px,100%); background:#fff; border-radius:10px; border:1px solid #dbe4ef; margin-top:28px; box-shadow:0 24px 60px rgba(15,23,42,.25); overflow:hidden; }
@@ -134,23 +134,325 @@ $demoDetails = clms_demo_payment_details($conn, $request);
     .modal-form { display:grid; gap:10px; padding:18px; }
     .modal-form label { font-size:13px; font-weight:700; color:#334155; }
     .modal-form input, .modal-form textarea { width:100%; padding:10px 12px; border:1.5px solid #cbd5e1; border-radius:8px; font-size:14px; box-sizing:border-box; }
-    @media (max-width: 860px) { .payment-grid { grid-template-columns:1fr; } }
+    .payment-page {
+      max-width: 1180px;
+      padding: 30px 18px 42px;
+    }
+    .payment-hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 20px;
+      padding: 18px;
+      border: 1px solid #dbe4ef;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, .06);
+    }
+    .payment-title-block {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+    .payment-title-icon {
+      width: 46px;
+      height: 46px;
+      flex: 0 0 46px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: #ffffff;
+      background: #1e293b;
+      box-shadow: 0 10px 24px rgba(30, 41, 59, .18);
+    }
+    .payment-title {
+      margin: 0;
+      color: #0f172a;
+      font-size: 23px;
+      line-height: 1.2;
+      font-weight: 800;
+    }
+    .payment-subtitle {
+      color: #64748b;
+      font-size: 13px;
+      margin-top: 5px;
+      font-weight: 600;
+    }
+    .payment-card {
+      border-color: #e2e8f0;
+      box-shadow: 0 14px 35px rgba(15, 23, 42, .07);
+    }
+    .payment-head {
+      background: #ffffff;
+      padding: 17px 20px;
+    }
+    .payment-head h1 {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 17px;
+      color: #0f172a;
+      font-weight: 800;
+    }
+    .payment-body { padding: 20px; }
+    .summary-tile {
+      position: relative;
+      min-height: 92px;
+      background: #ffffff;
+      border-color: #e2e8f0;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, .04);
+    }
+    .summary-tile::after {
+      content: '';
+      position: absolute;
+      right: 14px;
+      top: 14px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #3b82f6;
+      box-shadow: 0 0 0 5px #dbeafe;
+    }
+    .summary-tile:nth-child(2)::after {
+      background: #0f766e;
+      box-shadow: 0 0 0 5px #ccfbf1;
+    }
+    .summary-tile:nth-child(3)::after {
+      background: #f59e0b;
+      box-shadow: 0 0 0 5px #fef3c7;
+    }
+    .summary-tile strong { font-size: 22px; letter-spacing: 0; }
+    .pending-tools {
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      padding: 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+    .pending-tools input {
+      background: #ffffff;
+      border-color: #dbe4ef;
+      font-weight: 600;
+      color: #334155;
+    }
+    .pending-tools input:focus {
+      outline: none;
+      border-color: #1e293b;
+      box-shadow: 0 0 0 3px rgba(30, 41, 59, .10);
+    }
+    .pending-table-wrap {
+      border-color: #e2e8f0;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .65);
+    }
+    .pending-table th {
+      background: #f8fafc;
+      color: #475569;
+      white-space: nowrap;
+      letter-spacing: .04em;
+    }
+    .pending-table td { color: #334155; }
+    .pending-table tbody tr:hover td { background: #f8fafc; }
+    .worker-code {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .badge-pay {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      letter-spacing: .03em;
+      border: 1px solid transparent;
+    }
+    .badge-pending { border-color: #fde68a; }
+    .badge-paid { border-color: #a7f3d0; }
+    .badge-expired { border-color: #fecaca; }
+    .live-total {
+      position: sticky;
+      bottom: 12px;
+      border-color: #c7d2fe;
+      background: #ffffff;
+      box-shadow: 0 16px 38px rgba(15, 23, 42, .13);
+    }
+    .request-item {
+      border-color: #e2e8f0;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, .04);
+    }
+    .request-item:hover {
+      transform: translateY(-1px);
+      border-color: #93c5fd;
+      background: #f8fbff;
+    }
+    .request-item.active {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px #dbeafe;
+    }
+    .amount { color: #0f766e; letter-spacing: 0; }
+    .kv:last-child { border-bottom: 0; }
+    .worker-row {
+      align-items: center;
+      border-bottom-color: #eef2f7;
+    }
+    .worker-row code {
+      border-radius: 6px;
+      background: #f1f5f9;
+      color: #334155;
+      padding: 4px 7px;
+      font-weight: 800;
+    }
+    .pay-modal { backdrop-filter: blur(3px); }
+    .pay-modal-dialog { border-radius: 8px; }
+    .qr-box { border-color: #cbd5e1; box-shadow: 0 10px 24px rgba(15, 23, 42, .08); }
+    body.payment-screen {
+      background:
+        linear-gradient(180deg, #eef4fb 0, #f8fafc 235px),
+        #f8fafc;
+    }
+    @media (max-width: 860px) {
+      .payment-grid { grid-template-columns:1fr; }
+      .pending-summary, .pending-tools { grid-template-columns:1fr; }
+      .payment-hero { align-items: stretch; flex-direction: column; }
+      .payment-hero .btn { width: 100%; justify-content: center; }
+      .live-total { position: static; }
+    }
+    @media (max-width: 560px) {
+      .payment-page { padding: 16px 12px 28px; }
+      .payment-title-block { align-items: flex-start; }
+      .payment-title-icon { width: 40px; height: 40px; flex-basis: 40px; }
+      .payment-title { font-size: 19px; }
+      .payment-card, .payment-hero { border-radius: 8px; }
+      .payment-head, .payment-body { padding: 15px; }
+      .live-total .btn { width: 100%; justify-content: center; }
+    }
   </style>
 </head>
-<body style="background:#f8fafc;">
+<body class="payment-screen">
 <div class="payment-page">
-  <div style="margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:12px;">
-    <div>
-      <h1 style="margin:0;font-size:24px;color:#111827;">Safety Induction Fee Payment</h1>
-      <div style="font-size:13px;color:#64748b;margin-top:4px;">Temporary ID training fee and GST invoice</div>
+  <div class="payment-hero">
+    <div class="payment-title-block">
+      <div class="payment-title-icon"><i class="fas fa-shield-halved"></i></div>
+      <div>
+        <h1 class="payment-title">Safety Induction Fee Payment</h1>
+        <div class="payment-subtitle">Review pending PWO workers, select fees, and complete payment securely.</div>
+      </div>
     </div>
     <a href="contractor/dashboard.php" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Dashboard</a>
   </div>
 
   <?php if (!$request): ?>
-    <div class="payment-card"><div class="payment-body">
-      <div class="pay-alert"><i class="fas fa-circle-info"></i><span>No payment request found. Please use the payment link sent after enrolment/training request.</span></div>
-    </div></div>
+    <section class="payment-card">
+      <div class="payment-head">
+        <h1>Pending Safety Fee Payment</h1>
+        <span style="font-size:12px;color:#64748b;font-weight:800;">PWO workers only</span>
+      </div>
+      <div class="payment-body">
+        <div class="pending-summary">
+          <div class="summary-tile"><span>Total Pending Workers</span><strong><?= count($pendingWorkers) ?></strong></div>
+          <div class="summary-tile"><span>Total Pending Amount</span><strong>Rs. <?= number_format((float)$pendingTotal, 2) ?></strong></div>
+          <div class="summary-tile"><span>Fee Per Worker</span><strong>Rs. <?= number_format((float)$feePerWorker, 2) ?></strong></div>
+        </div>
+
+        <div class="pending-tools">
+          <input type="text" id="filterProject" placeholder="Filter Project">
+          <input type="text" id="filterContractor" placeholder="Filter Contractor">
+          <input type="text" id="filterWorkOrder" placeholder="Filter Work Order">
+          <input type="text" id="filterEnrollment" placeholder="Filter Enrollment No / Date">
+        </div>
+
+        <?php if (!$pendingWorkers): ?>
+          <div class="pay-alert"><i class="fas fa-circle-info"></i><span>No pending safety fee payment found.</span></div>
+        <?php else: ?>
+          <div class="pending-table-wrap">
+            <table class="pending-table" id="pendingWorkersTable">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="selectAllWorkers" aria-label="Select all workers"></th>
+                  <th>Workmen ID</th>
+                  <th>Name</th>
+                  <th>Work Order</th>
+                  <th>Enrollment No</th>
+                  <th>Date</th>
+                  <th>Safety Fee</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php foreach ($pendingWorkers as $worker): ?>
+                  <?php
+                    $isPreselected = $selectedWorkerId > 0 && $selectedWorkerId === (int)$worker['id'];
+                    $dateText = !empty($worker['enrollment_date']) ? date('d M Y', strtotime($worker['enrollment_date'])) : '';
+                  ?>
+                  <tr
+                    data-project="<?= htmlspecialchars(strtolower($worker['project_name'] ?? '')) ?>"
+                    data-contractor="<?= htmlspecialchars(strtolower(($contractor['contractor_name'] ?? '') . ' ' . ($contractor['vendor_name'] ?? '') . ' ' . ($contractor['vendor_code'] ?? ''))) ?>"
+                    data-work-order="<?= htmlspecialchars(strtolower($worker['work_order_no'] ?? '')) ?>"
+                    data-enrollment="<?= htmlspecialchars(strtolower(($worker['application_no'] ?? '') . ' ' . $dateText)) ?>"
+                  >
+                    <td><input type="checkbox" class="worker-pay-check" value="<?= (int)$worker['id'] ?>" data-fee="<?= htmlspecialchars((string)$worker['safety_fee']) ?>" <?= $isPreselected ? 'checked' : '' ?>></td>
+                    <td><span class="worker-code"><?= htmlspecialchars($worker['worker_code'] ?? ('W' . $worker['id'])) ?></span></td>
+                    <td><strong><?= htmlspecialchars($worker['name'] ?? 'Worker') ?></strong></td>
+                    <td><?= htmlspecialchars($worker['work_order_no'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($worker['application_no'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($dateText) ?></td>
+                    <td>Rs. <?= number_format((float)$worker['safety_fee'], 2) ?></td>
+                    <td><span class="badge-pay badge-pending">Pending</span></td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="live-total">
+            <div>
+              <strong>Selected Workers : <span id="selectedWorkerCount">0</span></strong>
+              <div style="font-size:12px;color:#1d4ed8;margin-top:3px;">Individual payment ke liye ek worker select karein, bulk payment ke liye multiple workers tick karein.</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:#64748b;font-weight:800;text-transform:uppercase;">Total Amount</div>
+              <div class="total-amount">Rs. <span id="selectedTotalAmount">0.00</span></div>
+            </div>
+            <button class="btn btn-primary" type="button" id="paySelectedWorkersBtn" disabled>
+              <i class="fas fa-credit-card"></i> Pay Selected
+            </button>
+          </div>
+        <?php endif; ?>
+      </div>
+    </section>
+
+    <?php if ($paymentRequests): ?>
+      <section class="payment-card" style="margin-top:18px;">
+        <div class="payment-head">
+          <h1>Recent Payment Requests</h1>
+          <span style="font-size:12px;color:#64748b;font-weight:700;"><?= count($paymentRequests) ?> request(s)</span>
+        </div>
+        <div class="payment-body">
+          <div class="request-list">
+            <?php foreach ($paymentRequests as $pr): ?>
+              <?php
+                $prStatus = strtolower((string)$pr['status']);
+                $prExpired = !empty($pr['link_expires_at']) && strtotime($pr['link_expires_at']) < time() && !in_array($prStatus, ['paid', 'verified'], true);
+                $prBadgeClass = $prExpired ? 'badge-expired' : (in_array($prStatus, ['paid', 'verified'], true) ? 'badge-paid' : 'badge-pending');
+                $prBadgeText = $prExpired ? 'Expired' : (in_array($prStatus, ['pending', 'link_sent', 'gateway_created', 'submitted'], true) ? 'Pending' : ucfirst($prStatus));
+              ?>
+              <a class="request-item" href="payment.php?token=<?= urlencode($pr['payment_token']) ?>">
+                <div>
+                  <strong><?= htmlspecialchars($pr['payment_ref']) ?></strong>
+                  <span class="badge-pay <?= $prBadgeClass ?>" style="margin-left:8px;"><?= htmlspecialchars($prBadgeText) ?></span>
+                  <div class="request-meta"><?= (int)$pr['worker_count'] ?> worker(s)</div>
+                </div>
+                <div class="request-amount">Rs. <?= number_format((float)$pr['total_amount'], 2) ?></div>
+              </a>
+            <?php endforeach; ?>
+          </div>
+        </div>
+      </section>
+    <?php endif; ?>
   <?php else: ?>
     <?php if (count($paymentRequests) > 1): ?>
       <section class="payment-card" style="margin-bottom:18px;">
@@ -170,7 +472,7 @@ $demoDetails = clms_demo_payment_details($conn, $request);
                 $isCurrent = (int)($request['id'] ?? 0) === (int)$pr['id'];
                 $prExpired = !empty($pr['link_expires_at']) && strtotime($pr['link_expires_at']) < time() && !in_array($prStatus, ['paid', 'verified'], true);
                 $prBadgeClass = $prExpired ? 'badge-expired' : ($prStatus === 'paid' ? 'badge-paid' : 'badge-pending');
-                $prBadgeText = $prExpired ? 'Expired' : ucfirst($prStatus);
+                $prBadgeText = $prExpired ? 'Expired' : (in_array($prStatus, ['pending', 'link_sent', 'gateway_created', 'submitted'], true) ? 'Pending' : ucfirst($prStatus));
               ?>
               <a class="request-item <?= $isCurrent ? 'active' : '' ?>" href="payment.php?token=<?= urlencode($pr['payment_token']) ?>">
                 <div>
@@ -193,17 +495,15 @@ $demoDetails = clms_demo_payment_details($conn, $request);
           <?php
             $status = strtolower((string)$request['status']);
             $badgeClass = $isExpired ? 'badge-expired' : ($status === 'paid' ? 'badge-paid' : 'badge-pending');
-            $badgeText = $isExpired ? 'Expired' : ucfirst($status);
+            $badgeText = $isExpired ? 'Expired' : (in_array($status, ['pending', 'link_sent', 'gateway_created', 'submitted'], true) ? 'Pending' : ucfirst($status));
           ?>
           <span class="badge-pay <?= $badgeClass ?>"><?= htmlspecialchars($badgeText) ?></span>
         </div>
         <div class="payment-body">
           <?php if (!$gatewayReady && !$isExpired && $status !== 'paid'): ?>
             <div class="pay-alert"><i class="fas fa-key"></i><span>Payment gateway keys are not configured yet. Demo QR payment is available when provider is set to demo_qr.</span></div>
-          <?php elseif ($status === 'submitted'): ?>
-            <div class="pay-alert"><i class="fas fa-hourglass-half"></i><span>Payment reference submitted. Welfare verification is pending.</span></div>
           <?php elseif ($isExpired): ?>
-            <div class="pay-alert"><i class="fas fa-clock"></i><span>This payment link has expired. Please ask Welfare/Admin to regenerate the link.</span></div>
+            <div class="pay-alert"><i class="fas fa-clock"></i><span>This payment link has expired. Please generate a fresh safety fee payment request.</span></div>
           <?php endif; ?>
 
           <div style="color:#64748b;font-size:12px;font-weight:800;text-transform:uppercase;">Amount Payable</div>
@@ -219,7 +519,12 @@ $demoDetails = clms_demo_payment_details($conn, $request);
           </div>
 
           <div class="pay-actions">
-            <button class="btn btn-primary btn-full" id="payBtn" <?= (!$gatewayReady || $isExpired || in_array($status, ['paid', 'submitted'], true)) ? 'disabled' : '' ?>>
+            <?php if ($status === 'paid'): ?>
+              <a class="btn btn-primary btn-full" href="<?= htmlspecialchars($bookingUrl) ?>">
+                <i class="fas fa-calendar-check"></i> Safety Training & Seat Booking
+              </a>
+            <?php endif; ?>
+            <button class="btn btn-primary btn-full" id="payBtn" <?= (!$gatewayReady || $isExpired || in_array($status, ['paid'], true)) ? 'disabled' : '' ?>>
               <i class="fas fa-credit-card"></i> Pay Online
             </button>
             <a class="btn btn-outline btn-full" href="payments/download_training_invoice.php?token=<?= urlencode($token) ?>">
@@ -262,7 +567,7 @@ $demoDetails = clms_demo_payment_details($conn, $request);
           <?php if (!empty($demoDetails['qr_url'])): ?>
             <img src="<?= htmlspecialchars($demoDetails['qr_url']) ?>" alt="Payment QR">
           <?php else: ?>
-            <div class="qr-placeholder" title="Upload QR from Welfare Payment Gateway page"></div>
+            <div class="qr-placeholder" title="Payment QR"></div>
           <?php endif; ?>
         </div>
         <strong id="demoMerchant"><?= htmlspecialchars($demoDetails['merchant_name']) ?></strong>
@@ -272,18 +577,112 @@ $demoDetails = clms_demo_payment_details($conn, $request);
       <label>Payment Reference / UTR</label>
       <input type="text" id="payerReference" placeholder="Example: DEMO123456 / UTR number" required>
       <label>Note</label>
-      <textarea id="payerNote" rows="2" placeholder="Optional note for Welfare verification"></textarea>
+      <textarea id="payerNote" rows="2" placeholder="Optional payment note"></textarea>
       <button class="btn btn-primary btn-full" id="submitDemoPaymentBtn" type="button" onclick="submitDemoPayment()">
-        <i class="fas fa-paper-plane"></i> Submit For Welfare Verification
+        <i class="fas fa-check"></i> Confirm Safety Fee Payment
       </button>
-      <div style="font-size:12px;color:#64748b;text-align:center;">Demo flow: scan/pay offline, enter reference, Welfare verifies from payment desk.</div>
+      <div style="font-size:12px;color:#64748b;text-align:center;">After payment success, continue with Safety Training & Seat Booking.</div>
     </div>
   </div>
 </div>
 <?php endif; ?>
 
 <script>
+const workerChecks = Array.from(document.querySelectorAll('.worker-pay-check'));
+const selectedWorkerCount = document.getElementById('selectedWorkerCount');
+const selectedTotalAmount = document.getElementById('selectedTotalAmount');
+const selectAllWorkers = document.getElementById('selectAllWorkers');
+const paySelectedWorkersBtn = document.getElementById('paySelectedWorkersBtn');
+const pendingRows = Array.from(document.querySelectorAll('#pendingWorkersTable tbody tr'));
+
+function visiblePendingRows() {
+  return pendingRows.filter(row => row.style.display !== 'none');
+}
+
+function updateSelectedTotal() {
+  const selected = workerChecks.filter(input => input.checked && input.closest('tr')?.style.display !== 'none');
+  const total = selected.reduce((sum, input) => sum + Number(input.dataset.fee || 0), 0);
+  if (selectedWorkerCount) selectedWorkerCount.textContent = selected.length;
+  if (selectedTotalAmount) selectedTotalAmount.textContent = total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (paySelectedWorkersBtn) paySelectedWorkersBtn.disabled = selected.length === 0;
+  if (selectAllWorkers) {
+    const visible = visiblePendingRows();
+    const visibleChecks = visible.map(row => row.querySelector('.worker-pay-check')).filter(Boolean);
+    selectAllWorkers.checked = visibleChecks.length > 0 && visibleChecks.every(input => input.checked);
+    selectAllWorkers.indeterminate = visibleChecks.some(input => input.checked) && !selectAllWorkers.checked;
+  }
+}
+
+function applyPendingFilters() {
+  const project = (document.getElementById('filterProject')?.value || '').trim().toLowerCase();
+  const contractor = (document.getElementById('filterContractor')?.value || '').trim().toLowerCase();
+  const workOrder = (document.getElementById('filterWorkOrder')?.value || '').trim().toLowerCase();
+  const enrollment = (document.getElementById('filterEnrollment')?.value || '').trim().toLowerCase();
+  pendingRows.forEach(row => {
+    const show = (!project || row.dataset.project.includes(project))
+      && (!contractor || row.dataset.contractor.includes(contractor))
+      && (!workOrder || row.dataset.workOrder.includes(workOrder))
+      && (!enrollment || row.dataset.enrollment.includes(enrollment));
+    row.style.display = show ? '' : 'none';
+    if (!show) {
+      const check = row.querySelector('.worker-pay-check');
+      if (check) check.checked = false;
+    }
+  });
+  updateSelectedTotal();
+}
+
+workerChecks.forEach(input => input.addEventListener('change', updateSelectedTotal));
+if (selectAllWorkers) {
+  selectAllWorkers.addEventListener('change', () => {
+    visiblePendingRows().forEach(row => {
+      const check = row.querySelector('.worker-pay-check');
+      if (check) check.checked = selectAllWorkers.checked;
+    });
+    updateSelectedTotal();
+  });
+}
+['filterProject', 'filterContractor', 'filterWorkOrder', 'filterEnrollment'].forEach(id => {
+  document.getElementById(id)?.addEventListener('input', applyPendingFilters);
+});
+if (paySelectedWorkersBtn) {
+  paySelectedWorkersBtn.addEventListener('click', async () => {
+    const workerIds = workerChecks
+      .filter(input => input.checked && input.closest('tr')?.style.display !== 'none')
+      .map(input => Number(input.value))
+      .filter(Boolean);
+    if (!workerIds.length) {
+      alert('Please select at least one pending worker.');
+      return;
+    }
+    paySelectedWorkersBtn.disabled = true;
+    paySelectedWorkersBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating Payment';
+    try {
+      const res = await fetch('../api/payments/create_selected_training_payment.php', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ worker_ids: workerIds })
+      });
+      const result = await res.json();
+      if (!result.success || !result.payment || !result.payment.payment_link) {
+        alert(result.message || 'Payment request generate nahi ho pa raha.');
+        paySelectedWorkersBtn.disabled = false;
+        paySelectedWorkersBtn.innerHTML = '<i class="fas fa-credit-card"></i> Pay Selected';
+        return;
+      }
+      const joiner = result.payment.payment_link.indexOf('?') >= 0 ? '&' : '?';
+      window.location.href = result.payment.payment_link + joiner + 'auto_pay=1';
+    } catch (err) {
+      alert('Unable to generate payment request.');
+      paySelectedWorkersBtn.disabled = false;
+      paySelectedWorkersBtn.innerHTML = '<i class="fas fa-credit-card"></i> Pay Selected';
+    }
+  });
+}
+updateSelectedTotal();
+
 const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
 if (payBtn) {
   payBtn.addEventListener('click', async () => {
     payBtn.disabled = true;
@@ -312,6 +711,9 @@ if (payBtn) {
       payBtn.innerHTML = '<i class="fas fa-credit-card"></i> Pay Online';
     }
   });
+}
+if (autoPay && payBtn && !payBtn.disabled) {
+  window.setTimeout(() => payBtn.click(), 250);
 }
 
 function openDemoPay(details) {
@@ -353,13 +755,13 @@ async function submitDemoPayment() {
       })
     });
     const result = await res.json();
-    alert(result.message || (result.success ? 'Submitted.' : 'Submission failed.'));
-    if (result.success) location.reload();
+    alert(result.message || (result.success ? 'Payment successful.' : 'Payment failed.'));
+    if (result.success) window.location.href = <?= json_encode($bookingUrl) ?>;
   } catch (err) {
     alert('Unable to submit payment details.');
   }
   btn.disabled = false;
-  btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit For Welfare Verification';
+  btn.innerHTML = '<i class="fas fa-check"></i> Confirm Safety Fee Payment';
 }
 </script>
 </body>

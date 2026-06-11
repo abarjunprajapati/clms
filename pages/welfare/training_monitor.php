@@ -10,27 +10,27 @@ $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Welfare Admin';
 
 function welfareTrainingTableExists($conn, $table) {
-    $table = clms_db_real_escape_string($conn, $table);
-    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && clms_db_num_rows($res) > 0;
+    $table = mysqli_real_escape_string($conn, $table);
+    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function welfareTrainingColumnExists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && clms_db_num_rows($res) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function welfareTrainingEnsureColumn($conn, $table, $column, $definition) {
     if (!welfareTrainingTableExists($conn, $table) || welfareTrainingColumnExists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function welfareTrainingEnsureSchema($conn) {
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,
@@ -63,7 +63,7 @@ function welfareTrainingEnsureSchema($conn) {
     ] as $column => $definition) {
         welfareTrainingEnsureColumn($conn, 'training_requests', $column, $definition);
     }
-    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
     if (welfareTrainingTableExists($conn, 'workmen')) {
         foreach ([
@@ -77,9 +77,9 @@ function welfareTrainingEnsureSchema($conn) {
         ] as $column => $definition) {
             welfareTrainingEnsureColumn($conn, 'workmen', $column, $definition);
         }
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
     }
 }
 
@@ -100,7 +100,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
         return;
     }
 
-    @clms_db_query($conn, "
+    @mysqli_query($conn, "
         INSERT INTO training_requests
             (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
         SELECT
@@ -110,7 +110,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
             CURDATE(),
             CURDATE(),
             'morning',
-            'Auto-created for Welfare check after Executing Officer approval.',
+            'Auto-created for Safety Department approval after Executing Officer approval.',
             'welfare_seed',
             COALESCE(w.execution_training_reviewed_by, 0),
             'welfare_pending',
@@ -144,7 +144,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
           )
     ");
 
-    @clms_db_query($conn, "
+    @mysqli_query($conn, "
         UPDATE training_requests tr
         JOIN workmen w ON w.id = tr.workman_id
         SET tr.status = 'welfare_pending',
@@ -177,7 +177,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
           )
     ");
 
-    @clms_db_query($conn, "
+    @mysqli_query($conn, "
         UPDATE training_requests tr
         JOIN training_requests rejected
           ON rejected.workman_id = tr.workman_id
@@ -217,7 +217,7 @@ function renderContent() {
         JOIN workmen w ON w.id = tr.workman_id
         LEFT JOIN contractors c ON c.id = tr.contractor_id
         LEFT JOIN users u ON u.id = tr.welfare_reviewed_by
-        WHERE tr.status IN ('pending','welfare_rejected','scheduled','contractor_confirmed','passed','failed')
+        WHERE tr.status IN ('pending','welfare_rejected','scheduled','contractor_confirmed','passed','failed','enrollment_approved')
           AND tr.welfare_reviewed_at IS NOT NULL
         ORDER BY tr.welfare_reviewed_at DESC
         LIMIT 25
@@ -263,8 +263,8 @@ function renderContent() {
 
     <div class="card glass">
       <div class="card-header">
-        <div class="card-title"><i class="fas fa-user-check"></i> Safety Training Approval Queue</div>
-        <span class="badge badge-warning"><?= count($queue) ?> Pending Welfare Check</span>
+        <div class="card-title"><i class="fas fa-user-check"></i> Safety Department Approval</div>
+        <span class="badge badge-warning"><?= count($queue) ?> Pending Safety Department Approval</span>
       </div>
       <div class="card-body" style="padding:0;">
         <table class="data-table">
@@ -280,7 +280,7 @@ function renderContent() {
           </thead>
           <tbody>
             <?php if (empty($queue)): ?>
-              <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No training requests pending Welfare check.</td></tr>
+              <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No enrollment requests pending Safety Department approval.</td></tr>
             <?php endif; ?>
             <?php foreach ($queue as $r): ?>
             <tr>
@@ -310,7 +310,7 @@ function renderContent() {
                   <?php if ($docUrl): ?>
                     <a class="btn btn-sm btn-outline" href="<?= htmlspecialchars($docUrl) ?>" target="_blank"><i class="fas fa-eye"></i> View</a>
                   <?php else: ?>
-                    <span class="badge badge-gray">EO Approved</span>
+                    <span style="font-size:12px;color:var(--text-muted);">None</span>
                   <?php endif; ?>
                 </div>
               </td>
@@ -323,7 +323,7 @@ function renderContent() {
 
     <div class="card glass" style="margin-top:20px;">
       <div class="card-header">
-        <div class="card-title"><i class="fas fa-history"></i> Recent Welfare Training Decisions</div>
+        <div class="card-title"><i class="fas fa-history"></i> Recent Safety Department Decisions</div>
       </div>
       <div class="card-body" style="padding:0;">
         <table class="data-table">
@@ -338,7 +338,7 @@ function renderContent() {
           </thead>
           <tbody>
             <?php if (empty($recent)): ?>
-              <tr><td colspan="5" style="text-align:center;padding:28px;color:var(--text-muted);">No Welfare decisions recorded yet.</td></tr>
+              <tr><td colspan="5" style="text-align:center;padding:28px;color:var(--text-muted);">No Safety Department decisions recorded yet.</td></tr>
             <?php endif; ?>
             <?php foreach ($recent as $r): ?>
             <tr>
@@ -393,7 +393,7 @@ function renderContent() {
 
     <script>
     async function reviewTraining(requestId, decision) {
-      const remarks = prompt(decision === 'approve' ? 'Welfare approval remarks:' : 'Reject reason:');
+      const remarks = prompt(decision === 'approve' ? 'Safety Department approval remarks:' : 'Reject reason:');
       if (remarks === null) return;
       if (decision === 'reject' && !remarks.trim()) {
         alert('Reject reason required.');

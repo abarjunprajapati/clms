@@ -17,3 +17,6 @@ REQUEST: /api/welfare/get_contractor_selections.php?id=1
 REQUEST: /api/welfare/get_contractor_selections.php?id=1
 [CATCH] 2026-05-21T12:21:03+05:30 - Prepare failed: Unknown column 'd.application_id' in 'on clause' | Query: SELECT d.document_type as doc_type, d.file_path, '' as original_name FROM documents d JOIN annexure2a a ON d.application_id = a.application_id WHERE a.contractor_id = ? in /home/sachin/csl_web/clms/config.live.php:85
 REQUEST: /api/welfare/get_contractor_selections.php?id=1
+[COMPLETE_BIOMETRIC] 2026-06-06T15:42:52+05:30 - Optional permanent_gate_passes save failed for worker_id=29, acc=ACC-2026-000029. Worker status was still activated.
+[COMPLETE_BIOMETRIC] 2026-06-08T13:42:17+05:30 - Optional permanent_gate_passes save failed for worker_id=2, acc=00000002. Worker status was still activated.
+[COMPLETE_BIOMETRIC] 2026-06-08T13:42:24+05:30 - Optional permanent_gate_passes save failed for worker_id=1, acc=00000001. Worker status was still activated.

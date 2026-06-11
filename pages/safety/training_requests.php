@@ -9,27 +9,27 @@ $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Safety Officer';
 
 function safety_training_page_table_exists($conn, $table) {
-    $table = clms_db_real_escape_string($conn, $table);
-    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && clms_db_num_rows($res) > 0;
+    $table = mysqli_real_escape_string($conn, $table);
+    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function safety_training_page_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && clms_db_num_rows($res) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function safety_training_page_ensure_column($conn, $table, $column, $definition) {
     if (!safety_training_page_table_exists($conn, $table) || safety_training_page_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function safety_training_page_ensure_schema($conn) {
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,
@@ -62,20 +62,20 @@ function safety_training_page_ensure_schema($conn) {
     ] as $column => $definition) {
         safety_training_page_ensure_column($conn, 'training_requests', $column, $definition);
     }
-    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
-    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN training_type VARCHAR(100) DEFAULT 'Safety Induction'");
 
     if (safety_training_page_table_exists($conn, 'workmen')) {
         safety_training_page_ensure_column($conn, 'workmen', 'safety_training_status', "VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
         safety_training_page_ensure_column($conn, 'workmen', 'training_status', "VARCHAR(50) DEFAULT 'pending'");
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
     }
     if (safety_training_page_table_exists($conn, 'contractors')) {
         safety_training_page_ensure_column($conn, 'contractors', 'work_order_no', 'VARCHAR(100) NULL');
     }
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_schedule (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_schedule (
         id INT NOT NULL AUTO_INCREMENT,
         session_date DATE NULL,
         session_time TIME NULL,
@@ -90,7 +90,7 @@ function safety_training_page_ensure_schema($conn) {
         PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_session_workers (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_session_workers (
         id INT NOT NULL AUTO_INCREMENT,
         session_id INT NOT NULL,
         workman_id INT NOT NULL,
@@ -123,6 +123,12 @@ function safety_training_page_seed_pending_requests($conn) {
     if (safety_training_page_column_exists($conn, 'workmen', 'temp_id')) {
         $where[] = "COALESCE(w.temp_id, '') <> ''";
     }
+    if (safety_training_page_column_exists($conn, 'workmen', 'execution_training_status')) {
+        $where[] = "LOWER(COALESCE(w.execution_training_status, '')) = 'approved'";
+    }
+    if (safety_training_page_column_exists($conn, 'workmen', 'safety_enrollment_status')) {
+        $where[] = "LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'";
+    }
 
     $sql = "
         INSERT INTO training_requests (workman_id, contractor_id, requested_date, preferred_date, preferred_shift, status, created_at, updated_at)
@@ -130,7 +136,7 @@ function safety_training_page_seed_pending_requests($conn) {
         FROM workmen w
         WHERE " . implode(' AND ', $where);
 
-    @clms_db_query($conn, $sql);
+    @mysqli_query($conn, $sql);
 }
 
 function safety_training_page_sync_request_statuses($conn) {
@@ -138,7 +144,7 @@ function safety_training_page_sync_request_statuses($conn) {
         return;
     }
 
-    @clms_db_query($conn, "
+    @mysqli_query($conn, "
         UPDATE training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         SET tr.status = 'passed', tr.updated_at = NOW()
@@ -149,7 +155,7 @@ function safety_training_page_sync_request_statuses($conn) {
           )
     ");
 
-    @clms_db_query($conn, "
+    @mysqli_query($conn, "
         UPDATE training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         SET tr.status = 'failed', tr.updated_at = NOW()
@@ -160,11 +166,12 @@ function safety_training_page_sync_request_statuses($conn) {
           )
     ");
 
-    @clms_db_query($conn, "
+    @mysqli_query($conn, "
         UPDATE training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         SET tr.status = 'scheduled', tr.updated_at = NOW()
-        WHERE tr.status IN ('pending', 'welfare_pending')
+        WHERE tr.status = 'pending'
+          AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
           AND tr.scheduled_date IS NOT NULL
           AND (
               UPPER(TRIM(COALESCE(w.training_status, ''))) IN ('SCHEDULED', 'TRAINING_SCHEDULED')
@@ -242,7 +249,7 @@ function safety_training_page_repair_sessions($conn) {
                         (string)($row['batch_number'] ?? '')
                     ]
                 );
-                $session = ['id' => clms_db_insert_id($conn), 'session_status' => 'open'];
+                $session = ['id' => mysqli_insert_id($conn), 'session_status' => 'open'];
             }
 
             $sessionId = (int)($session['id'] ?? 0);
@@ -320,7 +327,7 @@ function renderContent() {
     )";
 
     $stats = [
-        'pending'    => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status IN ('pending','welfare_pending') AND $latestRequestWhere AND $contractorRequestWhere")['c'],
+        'pending'    => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr JOIN workmen sw ON sw.id = tr.workman_id WHERE tr.status = 'pending' AND LOWER(COALESCE(sw.safety_enrollment_status, 'pending')) = 'approved' AND $latestRequestWhere AND $contractorRequestWhere")['c'],
         'upcoming'   => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status IN ('scheduled','contractor_confirmed') AND tr.scheduled_date >= CURDATE() AND $contractorRequestWhere")['c'],
         'total_pass' => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'passed' AND $contractorRequestWhere")['c'],
         'total_fail' => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'failed' AND $contractorRequestWhere")['c']
@@ -328,12 +335,13 @@ function renderContent() {
 
     // 1. Pending Requests (Needs Scheduling)
     $pending = db_fetch_all($conn, "
-        SELECT tr.id as request_id, tr.*, w.name as worker_name, w.temp_id as worker_code, w.trade, w.aadhaar, w.training_approval_doc,
+        SELECT tr.id as request_id, tr.*, w.name as worker_name, w.temp_id as worker_code, w.trade, w.aadhaar, w.training_approval_doc, w.safety_language,
                $contractorNameExpr AS contractor_name, $workOrderExpr AS work_order_no
         FROM training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         LEFT JOIN contractors c ON tr.contractor_id = c.id
-        WHERE tr.status IN ('pending', 'welfare_pending')
+        WHERE tr.status = 'pending'
+          AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
           AND $latestRequestWhere
           AND $contractorRequestWhere
         ORDER BY tr.updated_at DESC, tr.id DESC
@@ -500,7 +508,7 @@ function renderContent() {
                    <tr>
                      <td>
                        <a href="worker_history.php?id=<?= $r['workman_id'] ?>" style="font-weight:700; color:var(--primary); text-decoration:none;"><?= htmlspecialchars($r['worker_name']) ?></a>
-                       <div style="font-size:11px; color:var(--text-muted);"><?= htmlspecialchars($r['trade']) ?> | <?= htmlspecialchars($r['aadhaar']) ?></div>
+                       <div style="font-size:11px; color:var(--text-muted);"><?= htmlspecialchars($r['trade']) ?> | <?= htmlspecialchars($r['aadhaar']) ?> | Lang: <strong style="color:var(--primary);"><?= htmlspecialchars($r['safety_language'] ?: 'Not Set') ?></strong></div>
                      </td>
                      <td>
                        <div style="font-weight:600;"><?= htmlspecialchars($r['contractor_name']) ?></div>
@@ -517,9 +525,10 @@ function renderContent() {
                        <span class="badge badge-gray"><?= htmlspecialchars($r['preferred_display'] ?? 'Flexible') ?></span>
                        <div style="font-size:11px; margin-top:2px; color:var(--text-muted);"><?= htmlspecialchars($r['preferred_detail'] ?? 'No preferred date selected') ?></div>
                      </td>
-                     <td>
-                       <a class="btn btn-sm btn-primary" href="training_class_master.php?request_id=<?= (int)($r['request_id'] ?? $r['id']) ?>">Assign Batch</a>
-                     </td>
+                      <td style="display:flex; gap:5px; flex-wrap:wrap;">
+                        <a class="btn btn-sm btn-primary" href="training_class_master.php?request_id=<?= (int)($r['request_id'] ?? $r['id']) ?>">Assign Batch</a>
+                        <button class="btn btn-sm btn-danger" onclick="cancelTrainingRequest(<?= (int)($r['request_id'] ?? $r['id']) ?>)">Cancel</button>
+                      </td>
                    </tr>
                    <?php endforeach; ?>
                  </tbody>
@@ -758,6 +767,41 @@ function renderContent() {
         }
     }
 
+    async function cancelTrainingRequest(requestId) {
+        const { value: reason, isConfirmed } = await Swal.fire({
+            title: 'Cancel Training Request?',
+            text: 'Provide a reason for cancellation. This will notify the workman via email.',
+            input: 'text',
+            inputPlaceholder: 'Enter cancellation reason...',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Cancel',
+            confirmButtonColor: '#dc2626',
+            inputValidator: (value) => {
+                if (!value) return 'Reason is required!';
+            }
+        });
+
+        if (isConfirmed) {
+            try {
+                const fd = new FormData();
+                fd.append('request_id', requestId);
+                fd.append('reason', reason);
+
+                const res = await fetch('../../api/safety/cancel_training_request.php', { method: 'POST', body: fd });
+                const data = await res.json();
+                
+                if (data.success) {
+                    await Swal.fire('Cancelled!', data.message, 'success');
+                    location.reload();
+                } else {
+                    Swal.fire('Error', data.error || 'Failed to cancel', 'error');
+                }
+            } catch (e) {
+                Swal.fire('Error', 'Network error. Please try again.', 'error');
+            }
+        }
+    }
 
     function scheduleEscape(value) {
         return String(value ?? '').replace(/[&<>"']/g, ch => ({

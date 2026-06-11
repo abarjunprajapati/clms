@@ -7,12 +7,6 @@
 if (defined('HELPERS_LOADED')) return;
 define('HELPERS_LOADED', true);
 
-// Clean any previous output to ensure JSON only
-if (php_sapi_name() !== 'cli' && ob_get_length() > 0) {
-    ob_end_clean();
-}
-ob_start();
-
 // Capture all error output
 $jsonErrorBuffer = '';
 
@@ -20,10 +14,9 @@ $jsonErrorBuffer = '';
 if (php_sapi_name() !== 'cli') {
     ini_set('display_errors', 0); // Disable HTML error output
     error_reporting(E_ALL);
-    // DEFER header sending until sendResponse() to allow session.php to configure headers first
-    // if (!headers_sent()) {
-    //     header('Content-Type: application/json; charset=utf-8');
-    // }
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+    }
 }
 
 /**
@@ -71,13 +64,6 @@ register_shutdown_function(function () {
 function sendResponse($success, $data = [], $message = "Success", $debug = null, $redirect = "") {
     global $jsonErrorBuffer;
     
-    // Clear any buffered output to ensure pure JSON
-    if (php_sapi_name() !== 'cli') {
-        while (ob_get_level() > 0) {
-            ob_end_clean();
-        }
-    }
-    
     // Standard structure
     $response = [
         "success" => (bool)$success,
@@ -96,7 +82,6 @@ function sendResponse($success, $data = [], $message = "Success", $debug = null,
 
     if (!headers_sent()) {
         header('Content-Type: application/json; charset=utf-8');
-        http_response_code($success ? 200 : 400);
     }
     
     echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -158,9 +143,9 @@ function notificationTableExists($conn, $table) {
     if (!$conn || !preg_match('/^[A-Za-z0-9_]+$/', $table)) {
         return false;
     }
-    $safe = clms_db_real_escape_string($conn, $table);
-    $result = @clms_db_query($conn, "SHOW TABLES LIKE '$safe'");
-    return $result && clms_db_num_rows($result) > 0;
+    $safe = mysqli_real_escape_string($conn, $table);
+    $result = @mysqli_query($conn, "SHOW TABLES LIKE '$safe'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function notificationSetting($conn, $key, $fallback = '') {
@@ -181,7 +166,7 @@ function notificationLog($conn, $recipient, $channel, $type, $subject, $message,
     if (!$conn) {
         return;
     }
-    @clms_db_query($conn, "CREATE TABLE IF NOT EXISTS notification_logs (
+    @mysqli_query($conn, "CREATE TABLE IF NOT EXISTS notification_logs (
         id INT AUTO_INCREMENT PRIMARY KEY,
         recipient VARCHAR(100),
         recipient_name VARCHAR(100),
@@ -494,6 +479,18 @@ function sendEmailNotification($to, $subject, $message, $type = 'general', $reci
 
     if ($mailer === 'smtp') {
         $result = sendEmailViaSmtp($to, $subject, $message, $from, $fromName);
+        if (!$result['success']) {
+            // Resilient fallback to PHP mail()
+            $headers = [
+                'MIME-Version: 1.0',
+                'Content-Type: text/plain; charset=UTF-8',
+                'From: ' . sprintf('%s <%s>', $fromName, $from)
+            ];
+            $ok = @mail($to, $subject, $message, implode("\r\n", $headers));
+            if ($ok) {
+                $result = [ 'success' => true, 'message' => 'Email sent via fallback mail()' ];
+            }
+        }
         notificationLog($conn ?? null, $to, 'email', $type, $subject, $message, !empty($result['success']) ? 'sent' : 'failed', !empty($result['success']) ? '' : ($result['message'] ?? 'SMTP failed'), $recipientName);
         return $result;
     }

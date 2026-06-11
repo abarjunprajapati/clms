@@ -15,8 +15,8 @@ try {
     }
 
     $hasNationality = false;
-    $colRes = clms_db_query($conn, "SHOW COLUMNS FROM workmen LIKE 'nationality'");
-    if ($colRes && clms_db_num_rows($colRes) > 0) {
+    $colRes = mysqli_query($conn, "SHOW COLUMNS FROM workmen LIKE 'nationality'");
+    if ($colRes && mysqli_num_rows($colRes) > 0) {
         $hasNationality = true;
     }
     $nationalitySelect = $hasNationality ? "wm.nationality" : "'Indian'";
@@ -39,28 +39,28 @@ try {
         WHERE w.worker_id = $worker_id
     ";
     
-    $masterRes = clms_db_query($conn, $masterQuery);
-    if (!$masterRes || clms_db_num_rows($masterRes) === 0) {
+    $masterRes = mysqli_query($conn, $masterQuery);
+    if (!$masterRes || mysqli_num_rows($masterRes) === 0) {
         throw new Exception("Worker master record not found.");
     }
-    $workerData = clms_db_fetch_assoc($masterRes);
+    $workerData = mysqli_fetch_assoc($masterRes);
 
     // 2. Fetch Qualifications
     $qualQuery = "SELECT * FROM worker_qualifications WHERE worker_id = $worker_id";
-    $qualRes = clms_db_query($conn, $qualQuery);
+    $qualRes = mysqli_query($conn, $qualQuery);
     $qualifications = [];
     if ($qualRes) {
-        while ($q = clms_db_fetch_assoc($qualRes)) {
+        while ($q = mysqli_fetch_assoc($qualRes)) {
             $qualifications[] = $q;
         }
     }
 
     // 3. Fetch Documents
     $docQuery = "SELECT * FROM worker_documents WHERE worker_id = $worker_id ORDER BY created_at DESC";
-    $docRes = clms_db_query($conn, $docQuery);
+    $docRes = mysqli_query($conn, $docQuery);
     $documents = [];
     if ($docRes) {
-        while ($d = clms_db_fetch_assoc($docRes)) {
+        while ($d = mysqli_fetch_assoc($docRes)) {
             $documents[] = $d;
         }
     }
@@ -73,10 +73,10 @@ try {
         WHERE wal.worker_id = $worker_id 
         ORDER BY wal.created_at DESC
     ";
-    $auditRes = clms_db_query($conn, $auditQuery);
+    $auditRes = mysqli_query($conn, $auditQuery);
     $auditLogs = [];
     if ($auditRes) {
-        while ($a = clms_db_fetch_assoc($auditRes)) {
+        while ($a = mysqli_fetch_assoc($auditRes)) {
             $auditLogs[] = $a;
         }
     }
@@ -90,10 +90,10 @@ try {
         WHERE wbh.worker_id = $worker_id 
         ORDER BY wbh.blocked_at DESC
     ";
-    $blockRes = clms_db_query($conn, $blockQuery);
+    $blockRes = mysqli_query($conn, $blockQuery);
     $blockHistory = [];
     if ($blockRes) {
-        while ($b = clms_db_fetch_assoc($blockRes)) {
+        while ($b = mysqli_fetch_assoc($blockRes)) {
             $blockHistory[] = $b;
         }
     }

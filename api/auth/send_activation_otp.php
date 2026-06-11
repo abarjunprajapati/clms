@@ -24,18 +24,15 @@ try {
         throw new Exception('Activation Denied: SAP status is not active (ACTIVE_IND != A).');
     }
 
-    if (($sap['status'] ?? '') !== 'ACTIVE') {
-        throw new Exception('Activation Denied: Account status is ' . ($sap['status'] ?: 'INACTIVE'));
-    }
-
-    // 2. Check if already activated (using password created flag)
-    if (!empty($sap['is_password_created'])) {
+    // 2. Check if already activated. Customer credentials are stored in users, not SAP master.
+    $existingUser = db_single($conn, "SELECT id FROM users WHERE contractor_id = ? AND status = 'active' LIMIT 1", 's', [$code]);
+    if ($existingUser) {
         throw new Exception('This account is already activated. Please login.');
     }
 
     // 3. Prioritized OTP Routing Logic
-    $mobile = $sap['Customer_MOB1'] ?: $sap['mobile'] ?: '';
-    $email = $sap['EMAIL_ADDRESS'] ?: $sap['email'] ?: '';
+    $mobile = $sap['Customer_MOB1'] ?? '';
+    $email = $sap['EMAIL_ADDRESS'] ?? '';
     
     $otp_target = '';
     $otp_method = '';
@@ -77,8 +74,7 @@ try {
         'activation_otp_demo'
     );
 
-    // 5. Audit Log & Database Update
-    db_execute($conn, "UPDATE sap_customer_master SET last_otp_sent_at = NOW() WHERE customer_code = ?", 's', [$code]);
+    // 5. Audit Log
     db_execute($conn, "INSERT INTO sap_logs (activity, status) VALUES (?, ?)", 'ss', 
         ["OTP $otp generated for contractor $code activation. SMS: " . ($smsResult['message'] ?? '') . "; Email: " . ($emailResult['message'] ?? '') . "; Demo email: " . ($demoEmailResult['message'] ?? ''), "SUCCESS"]
     );

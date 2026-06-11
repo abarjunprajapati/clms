@@ -29,7 +29,7 @@ try {
         INDEX idx_created (created_at)
     )";
     
-    if (clms_db_query($conn, $create_audit)) {
+    if (mysqli_query($conn, $create_audit)) {
         echo "✅ Audit log table ready\n";
     }
 
@@ -53,22 +53,22 @@ try {
 
     foreach ($contractors as $c) {
         // Check if exists
-        $check = clms_db_query($conn, "SELECT id FROM contractors WHERE id = " . $c['id']);
-        if (clms_db_num_rows($check) > 0) {
+        $check = mysqli_query($conn, "SELECT id FROM contractors WHERE id = " . $c['id']);
+        if (mysqli_num_rows($check) > 0) {
             echo "  ⚠️  Contractor ID {$c['id']} already exists\n";
             continue;
         }
 
         $sql = "INSERT INTO contractors (id, firm_id, name, email) VALUES (?, ?, ?, ?)";
-        $stmt = clms_db_prepare($conn, $sql);
-        clms_db_stmt_bind_param($stmt, 'isss', $c['id'], $c['firm_id'], $c['name'], $c['email']);
+        $stmt = mysqli_prepare($conn, $sql);
+        mysqli_stmt_bind_param($stmt, 'isss', $c['id'], $c['firm_id'], $c['name'], $c['email']);
         
-        if (clms_db_stmt_execute($stmt)) {
+        if (mysqli_stmt_execute($stmt)) {
             echo "  ✅ Added: {$c['name']} (ID: {$c['id']})\n";
         } else {
-            echo "  ❌ Failed to add {$c['name']}: " . clms_db_stmt_error($stmt) . "\n";
+            echo "  ❌ Failed to add {$c['name']}: " . mysqli_stmt_error($stmt) . "\n";
         }
-        clms_db_stmt_close($stmt);
+        mysqli_stmt_close($stmt);
     }
 
     // ========== INSERT TEST WORKMEN ==========
@@ -86,15 +86,15 @@ try {
 
     $inserted = 0;
     $sql = "INSERT INTO workmen (contractor_id, name, aadhar, phone, status) VALUES (?, ?, ?, ?, 'active')";
-    $stmt = clms_db_prepare($conn, $sql);
+    $stmt = mysqli_prepare($conn, $sql);
     
     foreach ($workmen_data as $w) {
-        clms_db_stmt_bind_param($stmt, 'isss', $w['contractor_id'], $w['name'], $w['aadhar'], $w['phone']);
-        if (clms_db_stmt_execute($stmt)) {
+        mysqli_stmt_bind_param($stmt, 'isss', $w['contractor_id'], $w['name'], $w['aadhar'], $w['phone']);
+        if (mysqli_stmt_execute($stmt)) {
             $inserted++;
         }
     }
-    clms_db_stmt_close($stmt);
+    mysqli_stmt_close($stmt);
     
     echo "  ✅ Inserted $inserted workmen\n";
 
@@ -107,38 +107,38 @@ try {
     ];
 
     foreach ($supervisors as $sup) {
-        $check = clms_db_query($conn, "SELECT id FROM workmen WHERE id = {$sup['id']}");
-        if (clms_db_num_rows($check) > 0) {
+        $check = mysqli_query($conn, "SELECT id FROM workmen WHERE id = {$sup['id']}");
+        if (mysqli_num_rows($check) > 0) {
             echo "  ⚠️  Supervisor ID {$sup['id']} already exists\n";
             continue;
         }
 
         $sql = "INSERT INTO workmen (id, contractor_id, name, aadhar, status) VALUES (?, ?, ?, ?, 'active')";
-        $stmt = clms_db_prepare($conn, $sql);
-        clms_db_stmt_bind_param($stmt, 'iiss', $sup['id'], $sup['contractor_id'], $sup['name'], $sup['aadhar']);
+        $stmt = mysqli_prepare($conn, $sql);
+        mysqli_stmt_bind_param($stmt, 'iiss', $sup['id'], $sup['contractor_id'], $sup['name'], $sup['aadhar']);
         
-        if (clms_db_stmt_execute($stmt)) {
+        if (mysqli_stmt_execute($stmt)) {
             echo "  ✅ Added: {$sup['name']}\n";
         }
-        clms_db_stmt_close($stmt);
+        mysqli_stmt_close($stmt);
     }
 
     // ========== INSERT TEST REPRESENTATIVE ==========
     echo "\n📋 Inserting test representative...\n";
 
-    $rep_check = clms_db_query($conn, "SELECT id FROM workmen WHERE contractor_id = 100 AND aadhar = '333333333333'");
-    if (clms_db_num_rows($rep_check) === 0) {
+    $rep_check = mysqli_query($conn, "SELECT id FROM workmen WHERE contractor_id = 100 AND aadhar = '333333333333'");
+    if (mysqli_num_rows($rep_check) === 0) {
         $sql = "INSERT INTO workmen (contractor_id, name, aadhar, status) VALUES (?, ?, ?, 'active')";
-        $stmt = clms_db_prepare($conn, $sql);
+        $stmt = mysqli_prepare($conn, $sql);
         $contractor_id = 100;
         $name = "John Representative";
         $aadhar = "333333333333";
         
-        clms_db_stmt_bind_param($stmt, 'iss', $contractor_id, $name, $aadhar);
-        if (clms_db_stmt_execute($stmt)) {
+        mysqli_stmt_bind_param($stmt, 'iss', $contractor_id, $name, $aadhar);
+        if (mysqli_stmt_execute($stmt)) {
             echo "  ✅ Added: John Representative\n";
         }
-        clms_db_stmt_close($stmt);
+        mysqli_stmt_close($stmt);
     }
 
     // ========== INSERT SAMPLE AUDIT LOG ENTRIES ==========
@@ -151,10 +151,10 @@ try {
 
     $inserted_logs = 0;
     $sql = "INSERT INTO audit_log (action, contractor_id, pass_type, requested_count, reason, admin_id, admin_name) VALUES (?, ?, ?, ?, ?, ?, ?)";
-    $stmt = clms_db_prepare($conn, $sql);
+    $stmt = mysqli_prepare($conn, $sql);
 
     foreach ($audit_entries as $log) {
-        clms_db_stmt_bind_param($stmt, 'sisiis', 
+        mysqli_stmt_bind_param($stmt, 'sisiis', 
             $log['action'],
             $log['contractor_id'],
             $log['pass_type'],
@@ -163,27 +163,27 @@ try {
             $log['admin_id'],
             $log['admin_name']
         );
-        if (clms_db_stmt_execute($stmt)) {
+        if (mysqli_stmt_execute($stmt)) {
             $inserted_logs++;
         }
     }
-    clms_db_stmt_close($stmt);
+    mysqli_stmt_close($stmt);
     
     echo "  ✅ Inserted $inserted_logs audit log entries\n";
 
     // ========== VERIFICATION ==========
     echo "\n\n════ VERIFICATION ════\n\n";
 
-    $result = clms_db_query($conn, "SELECT COUNT(*) as cnt FROM contractors WHERE id IN (100, 101)");
-    $row = clms_db_fetch_assoc($result);
+    $result = mysqli_query($conn, "SELECT COUNT(*) as cnt FROM contractors WHERE id IN (100, 101)");
+    $row = mysqli_fetch_assoc($result);
     echo "✅ Contractors: {$row['cnt']}/2\n";
 
-    $result = clms_db_query($conn, "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = 100 AND status = 'active'");
-    $row = clms_db_fetch_assoc($result);
+    $result = mysqli_query($conn, "SELECT COUNT(*) as cnt FROM workmen WHERE contractor_id = 100 AND status = 'active'");
+    $row = mysqli_fetch_assoc($result);
     echo "✅ Workmen (Contractor 100): {$row['cnt']}/35\n";
 
-    $result = clms_db_query($conn, "SELECT COUNT(*) as cnt FROM audit_log");
-    $row = clms_db_fetch_assoc($result);
+    $result = mysqli_query($conn, "SELECT COUNT(*) as cnt FROM audit_log");
+    $row = mysqli_fetch_assoc($result);
     echo "✅ Audit Logs: {$row['cnt']}\n";
 
     echo "\n✅ Test data setup complete!\n";

@@ -8,3 +8,28 @@
 2026-05-11 11:27:54 - Input: {"workman_id":2}
 2026-05-11 11:53:05 - Input: {"workman_id":3}
 2026-05-12 12:59:01 - Input: {"workman_id":4}
+2026-06-02 12:08:41 - Input: {"workman_id":6}
+2026-06-02 12:08:45 - Input: {"workman_id":6}
+2026-06-02 12:08:49 - Input: {"workman_id":6}
+2026-06-02 12:09:04 - Input: {"workman_id":6}
+2026-06-02 12:09:24 - Input: {"workman_id":6}
+2026-06-02 12:14:07 - Input: {"workman_id":6}
+2026-06-02 12:15:06 - Input: {"workman_id":6}
+2026-06-02 12:15:11 - Input: {"workman_id":1}
+2026-06-02 12:15:19 - Input: {"workman_id":6}
+2026-06-02 12:19:44 - Input: {"workman_id":6}
+2026-06-02 12:23:46 - Input: {"workman_id":6}
+2026-06-02 12:24:04 - Input: {"workman_id":6}
+2026-06-02 12:28:41 - Input: {"workman_id":6}
+2026-06-02 12:28:51 - Input: {"workman_id":6}
+2026-06-02 12:30:44 - Input: {"workman_id":1}
+2026-06-02 12:30:51 - Input: {"workman_id":1}
+2026-06-02 16:23:12 - Capture Input: {"worker_id":20}
+2026-06-02 16:23:19 - Capture Input: {"worker_id":20}
+2026-06-02 16:23:31 - Input: {"workman_id":20}
+2026-06-02 16:23:35 - Input: {"workman_id":20}
+2026-06-02 17:27:18 - Input: {"workman_id":21}
+2026-06-02 17:27:23 - Input: {"workman_id":21}
+2026-06-06 15:42:52 - Input: {"workman_id":29}
+2026-06-08 13:42:17 - Input: {"workman_id":2}
+2026-06-08 13:42:24 - Input: {"workman_id":1}

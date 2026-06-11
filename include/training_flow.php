@@ -1,27 +1,27 @@
 <?php
 
 function clms_training_table_exists($conn, $table) {
-    $table = clms_db_real_escape_string($conn, $table);
-    $res = clms_db_query($conn, "SHOW TABLES LIKE '$table'");
-    return $res && clms_db_num_rows($res) > 0;
+    $table = mysqli_real_escape_string($conn, $table);
+    $res = mysqli_query($conn, "SHOW TABLES LIKE '$table'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function clms_training_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $res = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
-    return $res && clms_db_num_rows($res) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '$column'");
+    return $res && mysqli_num_rows($res) > 0;
 }
 
 function clms_training_ensure_column($conn, $table, $column, $definition) {
     if (!clms_training_table_exists($conn, $table) || clms_training_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    @clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
 function clms_training_ensure_schema($conn) {
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,
@@ -50,11 +50,12 @@ function clms_training_ensure_schema($conn) {
         'welfare_remarks' => 'TEXT NULL',
         'welfare_reviewed_by' => 'INT NULL',
         'welfare_reviewed_at' => 'DATETIME NULL',
+        'safety_remarks' => 'TEXT NULL',
         'updated_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
     ] as $column => $definition) {
         clms_training_ensure_column($conn, 'training_requests', $column, $definition);
     }
-    @clms_db_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
     if (clms_training_table_exists($conn, 'workmen')) {
         foreach ([
@@ -68,12 +69,34 @@ function clms_training_ensure_schema($conn) {
             'execution_training_remarks' => 'TEXT NULL',
             'execution_training_reviewed_by' => 'BIGINT NULL',
             'execution_training_reviewed_at' => 'DATETIME NULL',
+            'safety_enrollment_status' => "VARCHAR(30) DEFAULT 'pending'",
+            'safety_enrollment_remarks' => 'TEXT NULL',
+            'safety_enrollment_reviewed_by' => 'BIGINT NULL',
+            'safety_enrollment_reviewed_at' => 'DATETIME NULL',
+            'work_order_source' => 'VARCHAR(20) NULL',
+            'safety_fee_payment_option' => 'VARCHAR(30) NULL',
         ] as $column => $definition) {
             clms_training_ensure_column($conn, 'workmen', $column, $definition);
         }
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
-        @clms_db_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
+        @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN execution_training_status VARCHAR(30) DEFAULT 'pending'");
+        @mysqli_query($conn, "
+            UPDATE workmen w
+            SET w.safety_enrollment_status = 'approved',
+                w.safety_enrollment_remarks = COALESCE(NULLIF(w.safety_enrollment_remarks, ''), 'Backfilled from existing Safety training progress.'),
+                w.safety_enrollment_reviewed_at = COALESCE(w.safety_enrollment_reviewed_at, NOW())
+            WHERE LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'pending'
+              AND (
+                  LOWER(COALESCE(w.training_status, '')) IN ('scheduled', 'training_scheduled', 'pass', 'passed', 'qualified', 'completed', 'training_passed', 'fail', 'failed', 'training_failed')
+                  OR EXISTS (
+                      SELECT 1
+                      FROM training_requests tr
+                      WHERE tr.workman_id = w.id
+                        AND LOWER(COALESCE(tr.status, '')) IN ('scheduled', 'contractor_confirmed', 'passed', 'failed', 'absent')
+                  )
+              )
+        ");
     }
 }
 
@@ -81,22 +104,60 @@ function clms_training_ensure_request($conn, $workmanId, $contractorId, $request
     clms_training_ensure_schema($conn);
     $existing = db_single(
         $conn,
-        "SELECT id FROM training_requests WHERE workman_id = ? AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
+        "SELECT id, status FROM training_requests WHERE workman_id = ? AND status IN ('pending_eo','pending_safety','welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
         'i',
         [(int)$workmanId]
     );
-    if ($existing) return (int)$existing['id'];
+    if ($existing) {
+        if (in_array(($existing['status'] ?? ''), ['pending_eo', 'pending_safety', 'welfare_pending', 'pending'], true)) {
+            db_execute(
+                $conn,
+                "UPDATE training_requests
+                 SET status = 'pending_safety',
+                     remarks = ?,
+                     source = ?,
+                     requested_by = ?,
+                     updated_at = NOW()
+                 WHERE id = ?",
+                'ssii',
+                [$remarks ?: 'Forwarded after Executing Officer approval. Waiting for Safety Department check.', $source, (int)$requestedBy, (int)$existing['id']]
+            );
+            db_execute(
+                $conn,
+                "UPDATE workmen
+                 SET safety_enrollment_status = 'pending',
+                     safety_enrollment_remarks = NULL,
+                     safety_enrollment_reviewed_by = NULL,
+                     safety_enrollment_reviewed_at = NULL
+                 WHERE id = ?",
+                'i',
+                [(int)$workmanId]
+            );
+        }
+        return (int)$existing['id'];
+    }
 
-    $remarks = $remarks ?: 'Auto-created after Executing Officer approval. Waiting for Welfare check.';
+    $remarks = $remarks ?: 'Auto-created after Executing Officer approval. Waiting for Safety Department approval.';
     $ok = db_execute(
         $conn,
         "INSERT INTO training_requests
          (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
-         VALUES (?, ?, 'Safety Induction', CURDATE(), NULL, 'morning', ?, ?, ?, 'welfare_pending', NOW(), NOW())",
+         VALUES (?, ?, 'Safety Induction', CURDATE(), NULL, 'morning', ?, ?, ?, 'pending_safety', NOW(), NOW())",
         'iissi',
         [(int)$workmanId, (int)$contractorId, $remarks, $source, (int)$requestedBy]
     );
-    return $ok ? (int)clms_db_insert_id($conn) : 0;
+    db_execute(
+        $conn,
+        "UPDATE workmen
+         SET safety_enrollment_status = 'pending',
+             safety_enrollment_remarks = NULL,
+             safety_enrollment_reviewed_by = NULL,
+             safety_enrollment_reviewed_at = NULL
+         WHERE id = ?",
+        'i',
+        [(int)$workmanId]
+    );
+    return $ok ? (int)mysqli_insert_id($conn) : 0;
 }
 
 function clms_training_auto_approve_attached_document($conn, $workmanId, $reviewedBy = 0, $remarks = '') {
@@ -139,7 +200,7 @@ function clms_training_seed_approved_queue($conn) {
         !clms_training_table_exists($conn, 'training_payment_request_workers')
     ) return;
 
-    @clms_db_query($conn, "
+    @mysqli_query($conn, "
         INSERT INTO training_requests
             (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
         SELECT
@@ -149,10 +210,10 @@ function clms_training_seed_approved_queue($conn) {
             CURDATE(),
             NULL,
             'morning',
-            'Auto-created for Welfare check after Executing Officer approval.',
+            'Auto-created for Safety Department approval after Executing Officer approval.',
             CASE WHEN COALESCE(w.training_approval_doc, '') <> '' THEN 'attached_doc' ELSE 'welfare_seed' END,
             COALESCE(w.execution_training_reviewed_by, 0),
-            'welfare_pending',
+            'pending_safety',
             NOW(),
             NOW()
         FROM workmen w
@@ -169,7 +230,7 @@ function clms_training_seed_approved_queue($conn) {
           AND NOT EXISTS (
               SELECT 1 FROM training_requests tr
               WHERE tr.workman_id = w.id
-                AND tr.status IN ('welfare_pending', 'pending', 'scheduled', 'contractor_confirmed', 'passed')
+                AND tr.status IN ('pending_safety', 'welfare_pending', 'pending', 'scheduled', 'contractor_confirmed', 'passed')
           )
     ");
 }

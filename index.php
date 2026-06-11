@@ -33,7 +33,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
   <title>CLMS Web Login - CLMS</title>
   
   <!-- CSS Stylesheets -->
-  <link rel="stylesheet" href="css/fontawesome-fallback.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
   <link rel="stylesheet" href="css/auth_redesign.css" />
   <link rel="stylesheet" href="css/auth_components.css" />
   <link rel="stylesheet" href="css/auth_responsive.css" />
@@ -135,7 +135,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
           <div class="form-group">
             <div class="captcha-row">
               <div style="position:relative; width:100%;">
-                <input type="text" id="login-captcha" class="form-control" placeholder="Security Code" required maxlength="6" style="padding-left:16px;">
+                <input type="text" id="login-captcha" class="form-control" placeholder="Security Code" required maxlength="6" style="padding-left:16px; text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
                 <label class="form-label" for="login-captcha" style="left:12px;">Security Code</label>
               </div>
               <div class="captcha-img-container" onclick="refreshCaptcha()" title="Click to refresh security code">

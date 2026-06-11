@@ -1,7 +1,6 @@
 <?php
 date_default_timezone_set('Asia/Kolkata');
 require_once __DIR__ . '/session.php';
-require_once __DIR__ . '/db_compat.php';
 if (!function_exists('array_key_first')) {
     function array_key_first(array $arr) {
         foreach ($arr as $key => $unused) {
@@ -15,10 +14,9 @@ if (!function_exists('array_key_first')) {
 
 // --- DATABASE CREDENTIALS ---
 $Servername  = "127.0.0.1";
-$Username  = "CLMSUSER";
-$Password  = "COtra@C#2627";
-$Dbname = "csl_clms";
-$DbDriver = $DbDriver ?? 'mysql'; // mysql or sqlsrv
+$Username  = "root";
+$Password  = "";
+$Dbname = "new_clms";
 
 // Dynamic Live Server Override
 // Create a file 'include/config_credentials.php' on the live server with your production database credentials.
@@ -27,20 +25,15 @@ $credentials_file = __DIR__ . '/config_credentials.php';
 if (file_exists($credentials_file)) {
     include $credentials_file;
 } else {
-    // Fallback to root config.live.php on non-local servers.
+    // Dynamic domain check fallback (using config.live.php in root if present)
     $live_template = dirname(__DIR__) . '/config.live.php';
-    $host = strtolower($_SERVER['HTTP_HOST'] ?? '');
-    $is_local_host = in_array($host, ['localhost', '127.0.0.1', '::1'], true)
-        || strpos($host, 'localhost:') === 0
-        || strpos($host, '127.0.0.1:') === 0
-        || stripos(__DIR__, 'xampp') !== false;
-    if (file_exists($live_template) && !$is_local_host) {
+    if (file_exists($live_template) && isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'teleconsystems.com') !== false && stripos(__DIR__, 'xampp') === false) {
         include $live_template;
     }
 }
 
-$conn = clms_db_connect($DbDriver, $Servername, $Username, $Password, $Dbname);
-if (!$conn || !empty($conn->connect_error)) {
+$conn = mysqli_connect($Servername, $Username, $Password, $Dbname);
+if (!$conn) {
     $is_api_request = isset($_SERVER['SCRIPT_NAME']) && strpos($_SERVER['SCRIPT_NAME'], '/api/') !== false;
     if ($is_api_request && php_sapi_name() !== 'cli') {
         if (!headers_sent()) {
@@ -50,11 +43,11 @@ if (!$conn || !empty($conn->connect_error)) {
         echo json_encode([
             'success' => false,
             'message' => 'Database connection failed. Please contact administrator.',
-            'error' => $conn->connect_error ?? 'Unknown database connection error'
+            'error' => mysqli_connect_error()
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         exit;
     }
-    die("Connection failed: " . ($conn->connect_error ?? 'Unknown database connection error'));
+    die("Connection failed: " . mysqli_connect_error());
 }
 
 // SMS configuration - set your provider and key here
@@ -86,28 +79,28 @@ if (php_sapi_name() !== 'cli') {
 if (!function_exists('db_count')) {
 function db_count($conn, $sql, $types = '', $params = []) {
     try {
-        $stmt = clms_db_prepare($conn, $sql);
+        $stmt = mysqli_prepare($conn, $sql);
         if ($stmt === false) return 0;
-        if ($types && !empty($params)) clms_db_stmt_bind_param($stmt, $types, ...$params);
-        if (!clms_db_stmt_execute($stmt)) { clms_db_stmt_close($stmt); return 0; }
+        if ($types && !empty($params)) mysqli_stmt_bind_param($stmt, $types, ...$params);
+        if (!mysqli_stmt_execute($stmt)) { mysqli_stmt_close($stmt); return 0; }
         
         $row = [];
-        if (true) {
-            $result = clms_db_stmt_get_result($stmt);
+        if (function_exists('mysqli_stmt_get_result')) {
+            $result = mysqli_stmt_get_result($stmt);
             if ($result) $row = $result->fetch_assoc();
         } else {
-            clms_db_stmt_store_result($stmt);
-            $meta = clms_db_stmt_result_metadata($stmt);
+            mysqli_stmt_store_result($stmt);
+            $meta = mysqli_stmt_result_metadata($stmt);
             if ($meta) {
                 $res = []; $refs = [];
-                while ($field = clms_db_fetch_field($meta)) $refs[] = &$res[$field->name];
+                while ($field = mysqli_fetch_field($meta)) $refs[] = &$res[$field->name];
                 call_user_func_array([$stmt, 'bind_result'], $refs);
-                if (clms_db_stmt_fetch($stmt)) {
+                if (mysqli_stmt_fetch($stmt)) {
                     foreach($res as $k=>$v) $row[$k] = $v;
                 }
             }
         }
-        clms_db_stmt_close($stmt);
+        mysqli_stmt_close($stmt);
         if (!$row) return 0;
         $firstKey = array_key_first($row);
         return (int)($row[$firstKey] ?? $row['c'] ?? 0);
@@ -118,32 +111,32 @@ function db_count($conn, $sql, $types = '', $params = []) {
 if (!function_exists('db_fetch_all')) {
 function db_fetch_all($conn, $sql, $types = '', $params = []) {
     try {
-        $stmt = clms_db_prepare($conn, $sql);
+        $stmt = mysqli_prepare($conn, $sql);
         if ($stmt === false) return [];
-        if ($types && !empty($params)) clms_db_stmt_bind_param($stmt, $types, ...$params);
-        if (!clms_db_stmt_execute($stmt)) { clms_db_stmt_close($stmt); return []; }
+        if ($types && !empty($params)) mysqli_stmt_bind_param($stmt, $types, ...$params);
+        if (!mysqli_stmt_execute($stmt)) { mysqli_stmt_close($stmt); return []; }
         
         $data = [];
-        if (true) {
-            $result = clms_db_stmt_get_result($stmt);
+        if (function_exists('mysqli_stmt_get_result')) {
+            $result = mysqli_stmt_get_result($stmt);
             if ($result) while ($row = $result->fetch_assoc()) $data[] = $row;
         } else {
-            clms_db_stmt_store_result($stmt);
-            $meta = clms_db_stmt_result_metadata($stmt);
+            mysqli_stmt_store_result($stmt);
+            $meta = mysqli_stmt_result_metadata($stmt);
             if ($meta) {
                 $fields = [];
-                while ($field = clms_db_fetch_field($meta)) $fields[] = $field->name;
+                while ($field = mysqli_fetch_field($meta)) $fields[] = $field->name;
                 while (true) {
                     $row = []; $refs = [];
                     foreach ($fields as $f) $refs[] = &$row[$f];
                     call_user_func_array([$stmt, 'bind_result'], $refs);
-                    if (!clms_db_stmt_fetch($stmt)) break;
+                    if (!mysqli_stmt_fetch($stmt)) break;
                     $copy = []; foreach($row as $k=>$v) $copy[$k] = $v;
                     $data[] = $copy;
                 }
             }
         }
-        clms_db_stmt_close($stmt);
+        mysqli_stmt_close($stmt);
         return $data;
     } catch (Throwable $e) { return []; }
 }
@@ -152,30 +145,30 @@ function db_fetch_all($conn, $sql, $types = '', $params = []) {
 if (!function_exists('db_single')) {
 function db_single($conn, $sql, $types = '', $params = []) {
     try {
-        $stmt = clms_db_prepare($conn, $sql);
+        $stmt = mysqli_prepare($conn, $sql);
         if ($stmt === false) return null;
-        if ($types && !empty($params)) clms_db_stmt_bind_param($stmt, $types, ...$params);
-        if (!clms_db_stmt_execute($stmt)) { clms_db_stmt_close($stmt); return null; }
+        if ($types && !empty($params)) mysqli_stmt_bind_param($stmt, $types, ...$params);
+        if (!mysqli_stmt_execute($stmt)) { mysqli_stmt_close($stmt); return null; }
         
         $row = null;
-        if (true) {
-            $result = clms_db_stmt_get_result($stmt);
+        if (function_exists('mysqli_stmt_get_result')) {
+            $result = mysqli_stmt_get_result($stmt);
             if ($result) $row = $result->fetch_assoc();
         } else {
-            clms_db_stmt_store_result($stmt);
-            $meta = clms_db_stmt_result_metadata($stmt);
+            mysqli_stmt_store_result($stmt);
+            $meta = mysqli_stmt_result_metadata($stmt);
             if ($meta) {
                 $fields = [];
-                while ($field = clms_db_fetch_field($meta)) $fields[] = $field->name;
+                while ($field = mysqli_fetch_field($meta)) $fields[] = $field->name;
                 $res = []; $refs = [];
                 foreach ($fields as $f) $refs[] = &$res[$f];
                 call_user_func_array([$stmt, 'bind_result'], $refs);
-                if (clms_db_stmt_fetch($stmt)) {
+                if (mysqli_stmt_fetch($stmt)) {
                     $row = []; foreach($res as $k=>$v) $row[$k] = $v;
                 }
             }
         }
-        clms_db_stmt_close($stmt);
+        mysqli_stmt_close($stmt);
         return $row;
     } catch (Throwable $e) { return null; }
 }
@@ -184,11 +177,11 @@ function db_single($conn, $sql, $types = '', $params = []) {
 if (!function_exists('db_execute')) {
 function db_execute($conn, $sql, $types = '', $params = []) {
     try {
-        $stmt = clms_db_prepare($conn, $sql);
+        $stmt = mysqli_prepare($conn, $sql);
         if ($stmt === false) return false;
-        if ($types && !empty($params)) clms_db_stmt_bind_param($stmt, $types, ...$params);
-        $success = clms_db_stmt_execute($stmt);
-        clms_db_stmt_close($stmt);
+        if ($types && !empty($params)) mysqli_stmt_bind_param($stmt, $types, ...$params);
+        $success = mysqli_stmt_execute($stmt);
+        mysqli_stmt_close($stmt);
         return $success;
     } catch (Throwable $e) { return false; }
 }

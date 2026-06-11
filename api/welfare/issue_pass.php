@@ -46,7 +46,7 @@ if (!$workman_id || !in_array($pass_type, ['temporary', 'permanent'])) {
         json_response(false, null, 'Safety training validity has expired. Please complete re-training before issuing pass.');
     }
 
-    clms_db_begin_transaction($conn);
+    mysqli_begin_transaction($conn);
 
     try {
         if ($pass_type === 'temporary') {
@@ -112,10 +112,10 @@ if (!$workman_id || !in_array($pass_type, ['temporary', 'permanent'])) {
             NotificationEngine::trigger($conn, $workman['contractor_user_id'], "Pass Issued", $msg, 'info');
         }
 
-    clms_db_commit($conn);
+    mysqli_commit($conn);
     json_response(true, ['acc_number' => $acc_number ?? null], $msg);
 
 } catch (Exception $e) {
-    clms_db_rollback($conn);
+    mysqli_rollback($conn);
     json_response(false, null, $e->getMessage());
 }

@@ -117,8 +117,8 @@ function table_has_auto_increment_id($conn, $table) {
 
 function next_manual_id($conn, $table) {
     $safeTable = str_replace('`', '``', $table);
-    $result = clms_db_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM `$safeTable`");
-    $row = $result ? clms_db_fetch_assoc($result) : null;
+    $result = mysqli_query($conn, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM `$safeTable`");
+    $row = $result ? mysqli_fetch_assoc($result) : null;
     return (int)($row['next_id'] ?? 1);
 }
 
@@ -196,16 +196,16 @@ function update_table_row_by_id($conn, $table, $id, $row) {
 }
 
 function worker4a_table_exists($conn, $table) {
-    $table = clms_db_real_escape_string($conn, $table);
-    $result = clms_db_query($conn, "SHOW TABLES LIKE '{$table}'");
-    return $result && clms_db_num_rows($result) > 0;
+    $table = mysqli_real_escape_string($conn, $table);
+    $result = mysqli_query($conn, "SHOW TABLES LIKE '{$table}'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function worker4a_column_exists($conn, $table, $column) {
     $safeTable = str_replace('`', '``', $table);
-    $column = clms_db_real_escape_string($conn, $column);
-    $result = clms_db_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
-    return $result && clms_db_num_rows($result) > 0;
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function worker4a_contractor_select_expr($conn) {
@@ -297,13 +297,20 @@ function worker4a_ensure_column($conn, $table, $column, $definition) {
     if (worker4a_column_exists($conn, $table, $column)) return;
     $safeTable = str_replace('`', '``', $table);
     $safeColumn = str_replace('`', '``', $column);
-    if (!clms_db_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
-        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . clms_db_error($conn));
+    if (!mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition")) {
+        throw new Exception("DB column `$table.$column` missing and auto-create failed: " . mysqli_error($conn));
     }
 }
 
+function worker4a_ensure_optional_column($conn, $table, $column, $definition) {
+    if (worker4a_column_exists($conn, $table, $column)) return;
+    $safeTable = str_replace('`', '``', $table);
+    $safeColumn = str_replace('`', '``', $column);
+    @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
+}
+
 function worker4a_ensure_schema($conn) {
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS workmen (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS workmen (
         id INT NOT NULL,
         contractor_id INT NULL,
         name VARCHAR(200) NULL,
@@ -326,6 +333,7 @@ function worker4a_ensure_schema($conn) {
         'nationality' => "VARCHAR(100) NULL DEFAULT 'Indian'",
         'aadhaar' => 'VARCHAR(20) NULL',
         'mobile' => 'VARCHAR(20) NULL',
+        'whatsapp_no' => 'VARCHAR(20) NULL',
         'emergency_contact' => 'VARCHAR(20) NULL',
         'permanent_address' => 'TEXT NULL',
         'present_address' => 'TEXT NULL',
@@ -357,6 +365,10 @@ function worker4a_ensure_schema($conn) {
         'experience' => 'VARCHAR(50) NULL',
         'certified_wage_rate' => 'VARCHAR(100) NULL',
         'safety_language' => 'VARCHAR(50) NULL',
+        'training_booking_choice' => "VARCHAR(30) DEFAULT 'not_now'",
+        'training_booking_date' => 'DATE NULL',
+        'training_booking_session' => 'VARCHAR(20) NULL',
+        'training_booking_language' => 'VARCHAR(50) NULL',
         'training_approval_doc' => 'VARCHAR(255) NULL',
         'executing_officer_code' => 'VARCHAR(50) NULL',
         'executing_officer_name' => 'VARCHAR(200) NULL',
@@ -365,6 +377,10 @@ function worker4a_ensure_schema($conn) {
         'execution_training_remarks' => 'TEXT NULL',
         'execution_training_reviewed_by' => 'BIGINT NULL',
         'execution_training_reviewed_at' => 'DATETIME NULL',
+        'safety_enrollment_status' => "VARCHAR(30) DEFAULT 'pending'",
+        'safety_enrollment_remarks' => 'TEXT NULL',
+        'safety_enrollment_reviewed_by' => 'BIGINT NULL',
+        'safety_enrollment_reviewed_at' => 'DATETIME NULL',
         'photo' => 'VARCHAR(255) NULL',
         'education_doc' => 'VARCHAR(255) NULL',
         'educational_doc' => 'VARCHAR(255) NULL',
@@ -387,8 +403,14 @@ function worker4a_ensure_schema($conn) {
     foreach ($workmenColumns as $column => $definition) {
         worker4a_ensure_column($conn, 'workmen', $column, $definition);
     }
+    foreach ([
+        'work_order_source' => 'VARCHAR(20) NULL',
+        'safety_fee_payment_option' => 'VARCHAR(30) NULL',
+    ] as $column => $definition) {
+        worker4a_ensure_optional_column($conn, 'workmen', $column, $definition);
+    }
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS documents (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS documents (
         id INT AUTO_INCREMENT PRIMARY KEY,
         workman_id INT NULL,
         document_type VARCHAR(100) NULL,
@@ -406,7 +428,7 @@ function worker4a_ensure_schema($conn) {
         worker4a_ensure_column($conn, 'documents', $column, $definition);
     }
 
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS application_workflow (
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS application_workflow (
         id INT AUTO_INCREMENT PRIMARY KEY,
         application_id VARCHAR(50) NULL,
         contractor_id INT NULL,
@@ -546,9 +568,9 @@ function worker4a_upsert_workflow($conn, $application_no, $contractor_id) {
 
     $existing = null;
     if (worker4a_column_exists($conn, 'application_workflow', 'application_id')) {
-        $safeApp = clms_db_real_escape_string($conn, $application_no);
-        $result = clms_db_query($conn, "SELECT * FROM application_workflow WHERE application_id = '$safeApp' LIMIT 1");
-        $existing = ($result && clms_db_num_rows($result) > 0) ? clms_db_fetch_assoc($result) : null;
+        $safeApp = mysqli_real_escape_string($conn, $application_no);
+        $result = mysqli_query($conn, "SELECT * FROM application_workflow WHERE application_id = '$safeApp' LIMIT 1");
+        $existing = ($result && mysqli_num_rows($result) > 0) ? mysqli_fetch_assoc($result) : null;
     }
 
     $wfRow = [
@@ -584,8 +606,8 @@ function worker4a_upsert_workflow($conn, $application_no, $contractor_id) {
     }
 }
 
-function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $requested_by = 0) {
-    clms_db_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
+function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $requested_by = 0, $data = []) {
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_requests (
         id INT NOT NULL AUTO_INCREMENT,
         workman_id INT NOT NULL,
         contractor_id INT NOT NULL,
@@ -615,29 +637,119 @@ function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $r
     ] as $column => $definition) {
         worker4a_ensure_column($conn, 'training_requests', $column, $definition);
     }
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN preferred_shift VARCHAR(20) DEFAULT 'morning'");
+
+    $preferredShift = worker4a_normalize_training_shift($data['training_booking_session'] ?? 'morning');
+
+    $initialStatus = $data['initial_training_status'] ?? 'pending_eo';
+    if (!in_array($initialStatus, ['pending_eo', 'welfare_pending'], true)) {
+        $initialStatus = 'pending_eo';
+    }
 
     $existing = db_single(
         $conn,
-        "SELECT id FROM training_requests WHERE workman_id = ? AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
+        "SELECT id, status
+         FROM training_requests
+         WHERE workman_id = ?
+           AND status IN ('pending_eo','pending_safety','welfare_pending','pending','safety_rejected','scheduled','contractor_confirmed','passed')
+         ORDER BY id DESC
+         LIMIT 1",
         'i',
         [$workman_id]
     );
-    if ($existing) return;
+    if ($existing) {
+        db_execute(
+            $conn,
+            "UPDATE training_requests
+             SET training_type = ?, preferred_date = ?, preferred_shift = ?, remarks = ?,
+                 source = 'enrolment', requested_by = ?,
+                 status = CASE
+                     WHEN status IN ('pending_eo','pending_safety','welfare_pending','pending','safety_rejected') THEN ?
+                     ELSE status
+                 END,
+                 updated_at = NOW()
+             WHERE id = ?",
+            'ssssisi',
+            [
+                $data['training_type'] ?? 'Safety Induction',
+                $data['training_booking_date'] ?? null,
+                $preferredShift,
+                !empty($data['training_booking_date'])
+                    ? 'Safety training appointment requested during entitlement booking.'
+                    : 'Auto-created after Executing Officer approval/document validation. Waiting for Safety Department approval.',
+                (int)$requested_by,
+                $initialStatus,
+                (int)$existing['id']
+            ]
+        );
+        return;
+    }
 
     insert_table_row($conn, 'training_requests', [
         'workman_id' => $workman_id,
         'contractor_id' => $contractor_id,
-        'training_type' => 'Safety Induction',
+        'training_type' => $data['training_type'] ?? 'Safety Induction',
         'requested_date' => date('Y-m-d'),
-        'preferred_date' => null,
-        'preferred_shift' => 'morning',
-        'remarks' => 'Auto-created after Executing Officer approval/document validation. Waiting for Welfare check.',
+        'preferred_date' => $data['training_booking_date'] ?? null,
+        'preferred_shift' => $preferredShift,
+        'remarks' => !empty($data['training_booking_date'])
+            ? 'Safety training appointment requested during entitlement booking.'
+            : 'Auto-created after Executing Officer approval/document validation. Waiting for Safety Department approval.',
         'source' => 'enrolment',
         'requested_by' => $requested_by,
-        'status' => 'welfare_pending',
+        'status' => $initialStatus,
         'created_at' => date('Y-m-d H:i:s'),
         'updated_at' => date('Y-m-d H:i:s'),
     ]);
+}
+
+function worker4a_detect_work_order_source($conn, $contractor_id, $work_order_no, $posted_source = '') {
+    $work_order_no = trim((string)$work_order_no);
+    $posted_source = strtoupper(trim((string)$posted_source));
+    if ($work_order_no === '') return $posted_source ?: 'WO';
+    $upperWorkOrder = strtoupper($work_order_no);
+    if ($posted_source === 'PWO' || strpos($upperWorkOrder, 'PWO') === 0 || strpos($upperWorkOrder, '-PWO') !== false) {
+        return 'PWO';
+    }
+
+    $checks = [
+        ['contractor_pwo_selection', 'pwo_number', 'PWO'],
+        ['contractor_po_selection', 'po_number', 'PO'],
+        ['contractor_so_selection', 'sale_order_no', 'SO'],
+    ];
+    foreach ($checks as $check) {
+        list($table, $column, $source) = $check;
+        if (!worker4a_table_exists($conn, $table) || !worker4a_column_exists($conn, $table, $column)) continue;
+        $hasContractor = worker4a_column_exists($conn, $table, 'contractor_id');
+        $sql = "SELECT 1 FROM `$table` WHERE `$column` = ?" . ($hasContractor ? " AND contractor_id = ?" : "") . " LIMIT 1";
+        $row = $hasContractor
+            ? db_single($conn, $sql, 'si', [$work_order_no, (int)$contractor_id])
+            : db_single($conn, $sql, 's', [$work_order_no]);
+        if ($row) return $source;
+    }
+
+    $sapChecks = [
+        ['sap_pwo_master', 'pwo_number', 'PWO'],
+        ['sap_po_master', 'po_number', 'PO'],
+        ['sap_sale_order_master', 'sale_order_no', 'SO'],
+    ];
+    foreach ($sapChecks as $check) {
+        list($table, $column, $source) = $check;
+        if (!worker4a_table_exists($conn, $table) || !worker4a_column_exists($conn, $table, $column)) continue;
+        if (db_single($conn, "SELECT 1 FROM `$table` WHERE `$column` = ? LIMIT 1", 's', [$work_order_no])) {
+            return $source;
+        }
+    }
+
+    return in_array($posted_source, ['PWO', 'PO', 'SO', 'WO'], true) ? $posted_source : 'WO';
+}
+
+function worker4a_normalize_training_shift($value) {
+    $value = strtolower(trim((string)$value));
+    if ($value === 'an' || $value === 'pm' || $value === 'afternoon' || $value === 'evening') {
+        return 'evening';
+    }
+    return 'morning';
 }
 
 worker4a_ensure_schema($conn);
@@ -684,9 +796,6 @@ worker4a_ensure_schema($conn);
 
     // ========== END ANNEXURE 5/A VALIDATION ==========
 
-    $upload_dir = '../uploads/workers/';
-    worker4a_ensure_upload_dir($upload_dir);
-
     $uploaded_files = [
         'photo' => '',
         'signature' => '',
@@ -701,6 +810,17 @@ worker4a_ensure_schema($conn);
         ,'training_approval_doc' => ''
     ];
     $new_uploaded_files = $uploaded_files;
+    $hasUpload = false;
+    foreach (array_keys($uploaded_files) as $uploadKey) {
+        if (isset($_FILES[$uploadKey]) && ($_FILES[$uploadKey]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+            $hasUpload = true;
+            break;
+        }
+    }
+    $upload_dir = '../uploads/workers/';
+    if ($hasUpload) {
+        worker4a_ensure_upload_dir($upload_dir);
+    }
 
     foreach ($uploaded_files as $key => &$path) {
         if (isset($_FILES[$key]) && $_FILES[$key]['error'] === UPLOAD_ERR_OK) {
@@ -724,6 +844,29 @@ worker4a_ensure_schema($conn);
 
     $source_val = $data['source'] ?? 'MANUAL';
     $contractor_id = (int)$contractor_row['id'];
+    $workOrderSource = worker4a_detect_work_order_source(
+        $conn,
+        $contractor_id,
+        $data['work_order_no'] ?? '',
+        $data['work_order_source'] ?? ''
+    );
+    $isPwoWorkOrder = $workOrderSource === 'PWO';
+    $safetyFeePaymentOption = strtolower(trim((string)($data['safety_fee_payment_option'] ?? 'pay_now')));
+    if (!$isPwoWorkOrder) {
+        $safetyFeePaymentOption = 'not_applicable';
+    } elseif (!in_array($safetyFeePaymentOption, ['pay_now', 'pay_later'], true)) {
+        $safetyFeePaymentOption = 'pay_now';
+    }
+    $pwoPaymentAlreadyPaid = false;
+    if ($isPwoWorkOrder && $editing_worker_id > 0) {
+        $paidWorkerIdsForBooking = clms_paid_training_worker_ids($conn, [$editing_worker_id]);
+        $pwoPaymentAlreadyPaid = in_array($editing_worker_id, $paidWorkerIdsForBooking, true);
+    }
+    if ($isPwoWorkOrder && !$pwoPaymentAlreadyPaid) {
+        $data['training_booking_choice'] = 'not_now';
+        $data['training_booking_date'] = '';
+        $data['training_booking_session'] = '';
+    }
     $trade = $data['nature_of_work'] ?? '';
     $skill = $data['skill_category'] ?? '';
     $workmen_skill_category = normalize_skill_category($skill);
@@ -752,16 +895,31 @@ worker4a_ensure_schema($conn);
         if (trim($data['safety_language'] ?? '') === '') {
             throw new Exception("Language Preferred for Safety Induction is mandatory.");
         }
+        $whatsappNo = trim((string)($data['whatsapp_no'] ?? ''));
+        if ($whatsappNo === '') {
+            throw new Exception("WhatsApp Number is mandatory.");
+        }
+        if (!preg_match('/^[0-9]{10}$/', $whatsappNo)) {
+            throw new Exception("Please enter a valid 10 digit WhatsApp Number.");
+        }
+        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && ($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
+            if (trim((string)($data['training_booking_date'] ?? '')) === '' || trim((string)($data['training_booking_session'] ?? '')) === '') {
+                throw new Exception('Please select safety training date and session before submitting enrollment.');
+            }
+        }
         if (trim($data['pwd_status'] ?? '') === '') {
             throw new Exception("PWD Status is mandatory.");
         }
     }
-    $application_row = db_single(
-        $conn,
-        "SELECT application_id FROM annexure2a WHERE contractor_id = ? ORDER BY id DESC LIMIT 1",
-        'i',
-        [$contractor_id]
-    );
+    $application_row = null;
+    if (worker4a_table_exists($conn, 'annexure2a') && worker4a_column_exists($conn, 'annexure2a', 'application_id')) {
+        $application_row = db_single(
+            $conn,
+            "SELECT application_id FROM annexure2a WHERE contractor_id = ? ORDER BY id DESC LIMIT 1",
+            'i',
+            [$contractor_id]
+        );
+    }
     $application_no = $contractor_row['application_no'] ?: ($application_row['application_id'] ?? ('APP-' . $contractor_id));
     $worker_type = 'Workmen Pass';
     if (strtolower($limit_type) === 'supervisor') $worker_type = 'Supervisor Pass';
@@ -781,6 +939,7 @@ worker4a_ensure_schema($conn);
         'nationality' => $data['nationality'] ?? 'Indian',
         'aadhaar' => $data['aadhaar'] ?? '',
         'mobile' => $data['mobile'] ?? '',
+        'whatsapp_no' => $data['whatsapp_no'] ?? '',
         'emergency_contact' => $data['emergency_contact'] ?? '',
         'permanent_address' => $data['permanent_address'] ?? '',
         'present_address' => $data['present_address'] ?? '',
@@ -812,6 +971,12 @@ worker4a_ensure_schema($conn);
         'experience' => $data['experience'] ?? '',
         'certified_wage_rate' => $data['certified_wage_rate'] ?? '',
         'safety_language' => $data['safety_language'] ?? '',
+        'training_booking_choice' => $data['training_booking_choice'] ?? 'not_now',
+        'training_booking_date' => $data['training_booking_date'] ?? null,
+        'training_booking_session' => $data['training_booking_session'] ?? '',
+        'training_booking_language' => $data['training_booking_language'] ?? ($data['safety_language'] ?? ''),
+        'work_order_source' => $workOrderSource,
+        'safety_fee_payment_option' => $safetyFeePaymentOption,
         'training_approval_doc' => $uploaded_files['training_approval_doc'],
         'executing_officer_code' => $executingOfficer['employee_code'] ?? $executingOfficerCode,
         'executing_officer_name' => $executingOfficer['name'] ?? ($data['executing_officer_name'] ?? ''),
@@ -845,12 +1010,12 @@ worker4a_ensure_schema($conn);
         if (!$existing_workman) {
             throw new Exception("Worker not found or not allowed to edit.");
         }
-    } else {
+    } elseif (trim((string)($data['aadhaar'] ?? '')) !== '') {
         $existing_workman = db_single(
             $conn,
             "SELECT * FROM workmen WHERE aadhaar = ? AND contractor_id = ? ORDER BY id DESC LIMIT 1",
             'si',
-            [$data['aadhaar'], $contractor_id]
+            [$data['aadhaar'] ?? '', $contractor_id]
         );
     }
 
@@ -870,8 +1035,17 @@ worker4a_ensure_schema($conn);
 
     if ($existing_workman) {
         $existingExecutionStatus = strtolower(trim((string)($existing_workman['execution_training_status'] ?? '')));
-        if ($action !== 'draft' && $existingExecutionStatus === 'rejected' && empty($new_uploaded_files['training_approval_doc'])) {
-            throw new Exception("Executing Officer ne request reject ki hai. Corrected Training Approval document dobara upload karein.");
+        // If EO rejected and contractor is resubmitting, reset status to pending_eo regardless of doc upload
+        // (existing doc is preserved via file_map below; contractor may have corrected details only)
+        if ($action !== 'draft' && $existingExecutionStatus === 'rejected') {
+            $workman_row['execution_training_status']  = 'pending_eo';
+            $workman_row['execution_training_remarks'] = 'Resubmitted by contractor after Executing Officer rejection. Awaiting re-review.';
+            $workman_row['execution_training_reviewed_by']  = null;
+            $workman_row['execution_training_reviewed_at']  = null;
+            $workman_row['safety_enrollment_status']        = 'pending';
+            $workman_row['safety_enrollment_remarks']       = null;
+            $workman_row['safety_enrollment_reviewed_by']   = null;
+            $workman_row['safety_enrollment_reviewed_at']   = null;
         }
 
         $file_map = [
@@ -907,11 +1081,27 @@ worker4a_ensure_schema($conn);
     $workman_row['signature_doc'] = $uploaded_files['signature'];
     $workman_row['training_approval_doc'] = $uploaded_files['training_approval_doc'];
     if ($action !== 'draft') {
-        $workman_row['execution_training_status'] = 'pending_payment';
-        $workman_row['execution_training_remarks'] = 'Waiting for Welfare payment verification.';
-    }
-    if (!empty($new_uploaded_files['training_approval_doc'])) {
-        $workman_row['execution_training_remarks'] = 'Waiting for Welfare payment verification.';
+        $hasAttachment = !empty($uploaded_files['training_approval_doc']);
+        $nonPwoBookedNow = !$isPwoWorkOrder && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
+        $pwoBookedAfterPayment = $isPwoWorkOrder && ($pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
+        $workman_row['execution_training_status'] = $isPwoWorkOrder
+            ? ($pwoBookedAfterPayment ? 'pending_eo' : 'pending_payment')
+            : ($nonPwoBookedNow ? 'pending_eo' : 'pending_booking');
+        
+        $workman_row['execution_training_remarks'] = $isPwoWorkOrder
+            ? ($pwoBookedAfterPayment 
+                ? ($hasAttachment ? 'Safety fee payment completed. Training approval attachment uploaded. Waiting for Executing Officer approval.' : 'Safety fee payment completed. Safety seat booking submitted. Waiting for Executing Officer approval.') 
+                : 'Waiting for Safety fee payment verification.')
+            : ($nonPwoBookedNow 
+                ? ($hasAttachment ? 'Training approval attachment uploaded. Waiting for Executing Officer approval.' : 'Safety seat booking submitted. Waiting for Executing Officer approval.') 
+                : 'Enrollment completed. Waiting for Safety Training & Seat Booking.');
+                
+        $workman_row['execution_training_reviewed_by'] = null;
+        $workman_row['execution_training_reviewed_at'] = null;
+        $workman_row['safety_enrollment_status'] = 'pending';
+        $workman_row['safety_enrollment_remarks'] = null;
+        $workman_row['safety_enrollment_reviewed_by'] = null;
+        $workman_row['safety_enrollment_reviewed_at'] = null;
     }
 
     if ($existing_workman) {
@@ -926,20 +1116,31 @@ worker4a_ensure_schema($conn);
     if ($action !== 'draft') {
         $temp_id = "TEMP-" . str_pad($workman_id_new, 6, "0", STR_PAD_LEFT);
         update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => $temp_id]);
-        $paymentRequest = clms_create_training_payment_request(
-            $conn,
-            $contractor_id,
-            [$workman_id_new],
-            (int)($_SESSION['user_id'] ?? 0),
-            'enrolment'
-        );
-        if (!$paymentRequest) {
-            update_table_row_by_id($conn, 'workmen', $workman_id_new, [
-                'status' => 'draft',
-                'execution_training_status' => 'draft',
-                'execution_training_remarks' => 'Payment link generation failed. Please submit enrolment again after payment settings are configured.'
-            ]);
-            throw new Exception('Payment link generate nahi ho pa raha. Welfare Payment Gateway me fee/QR settings check karein.');
+        if ($isPwoWorkOrder) {
+            $paidWorkerIds = clms_paid_training_worker_ids($conn, [$workman_id_new]);
+            $alreadyPaid = in_array($workman_id_new, $paidWorkerIds, true);
+            if (!$alreadyPaid) {
+                $paymentRequest = clms_create_training_payment_request(
+                    $conn,
+                    $contractor_id,
+                    [$workman_id_new],
+                    (int)($_SESSION['user_id'] ?? 0),
+                    $safetyFeePaymentOption === 'pay_later' ? 'enrolment_pay_later' : 'enrolment'
+                );
+            }
+            if (!$alreadyPaid && !$paymentRequest) {
+                update_table_row_by_id($conn, 'workmen', $workman_id_new, [
+                    'status' => 'draft',
+                    'execution_training_status' => 'draft',
+                    'execution_training_remarks' => 'Payment link generation failed. Please submit enrolment again after payment settings are configured.'
+                ]);
+                throw new Exception('Payment link generate nahi ho pa raha. Safety Fee Payment settings check karein.');
+            }
+        }
+        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment)) {
+            $trainingData = $data;
+            $trainingData['initial_training_status'] = 'pending_eo';
+            worker4a_ensure_training_request($conn, $workman_id_new, $contractor_id, (int)($_SESSION['user_id'] ?? 0), $trainingData);
         }
     } else {
         update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => null]);
@@ -1002,13 +1203,21 @@ worker4a_ensure_schema($conn);
             $contractorUser = db_single($conn, "SELECT name, email, mobile FROM users WHERE id = ? LIMIT 1", 'i', [(int)$_SESSION['user_id']]);
         }
         $workerName = trim((string)($data['name'] ?? 'Worker'));
-        $subject = 'CLMS Worker Enrolment Submitted';
-        $message = "Dear User,\n\n"
-            . "Worker enrolment has been submitted successfully.\n"
-            . "Worker: $workerName\n"
-            . "Application: $application_no\n"
-            . "Temporary ID: $temp_id\n\n"
-            . "This is an automated message.";
+        $subject = 'CLMS Workforce Enrolment - Confirmation of Submission';
+        $message = "Dear $workerName,\n\n"
+            . "We are pleased to inform you that your enrolment request for the Contractor Labour Management System (CLMS) has been successfully submitted.\n\n"
+            . "Enrolment Details:\n"
+            . "----------------------------------------\n"
+            . "Worker Name:    $workerName\n"
+            . "Application No: $application_no\n"
+            . "Temporary ID:   $temp_id\n"
+            . "Submission Date: " . date('d-M-Y H:i:s') . "\n"
+            . "----------------------------------------\n\n"
+            . "Next Steps:\n"
+            . "Your application is currently under review by the respective departments. You will receive updates as the workflow progresses.\n\n"
+            . "Regards,\n"
+            . "Contractor Labour Management System (CLMS)\n\n"
+            . "This is an automated system-generated email. Please do not reply directly to this address.";
 
         $workerMobile = trim((string)($data['mobile'] ?? ''));
         $workerEmail = trim((string)($data['email'] ?? ($data['contact_email'] ?? '')));
@@ -1030,18 +1239,40 @@ worker4a_ensure_schema($conn);
         );
     }
 
+    $successMessage = "Worker enrolled successfully.";
+    if ($action !== 'draft' && $isPwoWorkOrder && $pwoPaymentAlreadyPaid && ($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
+        $successMessage = "Worker enrolled successfully. Safety Training booking submitted.";
+    } elseif ($action !== 'draft' && $isPwoWorkOrder && $safetyFeePaymentOption === 'pay_later') {
+        $successMessage = "Enrollment Complete. Please do safety payment for proceeding further.";
+    } elseif ($action !== 'draft' && $isPwoWorkOrder) {
+        $successMessage = "Worker enrolled successfully. Please complete Safety Fee Payment to open Safety Training & Seat Booking.";
+    } elseif ($action !== 'draft') {
+        $successMessage = "Worker enrolled successfully. Safety Training booking submitted.";
+    }
+
+    $bookingLink = ($action !== 'draft' && !$isPwoWorkOrder && ($data['training_booking_choice'] ?? 'not_now') !== 'book_now')
+        ? 'book_safety_training.php?worker_id=' . urlencode((string)$workman_id_new)
+        : null;
+    $bookingMenuLink = ($action !== 'draft' && $isPwoWorkOrder && $safetyFeePaymentOption === 'pay_later')
+        ? 'book_safety_training.php?worker_id=' . urlencode((string)$workman_id_new)
+        : null;
+
     worker4a_json([
         "success" => true,
-        "message" => $action === 'draft' ? "Draft saved successfully." : "Worker enrolled successfully.",
+        "message" => $action === 'draft' ? "Draft saved successfully." : $successMessage,
         "worker_id" => $workman_id_new,
         "workman_id" => $workman_id_new,
         "temp_id" => $temp_id,
         "payment" => $paymentRequest ? [
             "payment_ref" => $paymentRequest['payment_ref'],
+            "payment_token" => $paymentRequest['payment_token'],
             "amount" => $paymentRequest['total_amount'],
             "payment_link" => $paymentRequest['payment_link'],
             "link_expires_at" => $paymentRequest['link_expires_at'],
+            "demo" => clms_demo_payment_details($conn, $paymentRequest),
         ] : null,
+        "booking_link" => $bookingLink,
+        "booking_menu_link" => $bookingMenuLink,
         "notification_debug" => $notificationDebug
     ]);
 

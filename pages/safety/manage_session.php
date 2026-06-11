@@ -18,9 +18,32 @@ if (!$session) {
     die("Session not found.");
 }
 
+if (!empty($session['batch_number'])) {
+    $batch = db_single($conn, "SELECT id FROM training_class_batches WHERE batch_number = ? LIMIT 1", 's', [$session['batch_number']]);
+    if ($batch) {
+        db_execute(
+            $conn,
+            "INSERT INTO training_session_workers (session_id, workman_id, training_request_id, attendance_status, result, created_at)
+             SELECT ?, tbw.workman_id, tbw.training_request_id, 'pending', 'pending', NOW()
+             FROM training_batch_workers tbw
+             JOIN training_requests tr ON tr.id = tbw.training_request_id
+             WHERE tbw.batch_id = ?
+               AND tbw.ticked = 1
+               AND tr.status IN ('scheduled', 'contractor_confirmed')
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM training_session_workers tsw
+                   WHERE tsw.training_request_id = tbw.training_request_id
+               )",
+            'ii',
+            [(int)$session_id, (int)$batch['id']]
+        );
+    }
+}
+
 function safetySessionSetting($conn, $key, $default) {
-    $table = clms_db_query($conn, "SHOW TABLES LIKE 'system_settings'");
-    if (!$table || clms_db_num_rows($table) === 0) {
+    $table = mysqli_query($conn, "SHOW TABLES LIKE 'system_settings'");
+    if (!$table || mysqli_num_rows($table) === 0) {
         return $default;
     }
 
@@ -35,13 +58,14 @@ function renderContent() {
     
     // Fetch assigned workers
     $workers = db_fetch_all($conn, "
-        SELECT sw.*, w.name, w.temp_id as worker_code, c.contractor_name, w.trade
+        SELECT sw.*, tr.status AS request_status, COALESCE(tr.contractor_confirmed, 0) AS contractor_confirmed,
+               w.name, w.temp_id as worker_code, c.contractor_name, w.trade
         FROM training_session_workers sw
         JOIN training_requests tr ON tr.id = sw.training_request_id
         JOIN workmen w ON sw.workman_id = w.id
         JOIN contractors c ON w.contractor_id = c.id
         WHERE sw.session_id = ?
-          AND tr.status = 'contractor_confirmed'
+          AND tr.status IN ('scheduled', 'contractor_confirmed')
     ", 'i', [$session_id]);
 
 $is_locked = in_array(strtolower((string)($session['session_status'] ?? 'open')), ['completed', 'cancelled'], true);
@@ -165,7 +189,9 @@ $is_locked = in_array(strtolower((string)($session['session_status'] ?? 'open'))
                         <td><?= htmlspecialchars($w['contractor_name']) ?></td>
                         <td><?= htmlspecialchars($w['trade']) ?></td>
                         <td>
-                            <?php if($w['attendance_status'] == 'present'): ?>
+                            <?php if(($w['request_status'] ?? '') === 'scheduled' && (int)($w['contractor_confirmed'] ?? 0) === 0): ?>
+                                <span class="badge badge-info">Awaiting Contractor</span>
+                            <?php elseif($w['attendance_status'] == 'present'): ?>
                                 <span class="badge badge-success">Present</span>
                             <?php elseif($w['attendance_status'] == 'absent'): ?>
                                 <span class="badge badge-danger">Absent</span>

@@ -13,8 +13,29 @@ function gateDocJson($payload, $status = 200) {
 }
 
 try {
-    $data = json_decode(file_get_contents('php://input'), true);
-    if (!is_array($data)) gateDocJson(['success' => false, 'message' => 'Invalid request payload.'], 400);
+    $data = $_POST;
+    if (empty($data)) {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+    }
+
+    if (!is_array($data) || empty($data)) {
+        gateDocJson(['success' => false, 'message' => 'Invalid request payload.'], 400);
+    }
+
+    if (isset($_FILES['format_file']) && $_FILES['format_file']['error'] === UPLOAD_ERR_OK) {
+        $uploadDir = __DIR__ . '/../../uploads/formats/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
+        
+        $ext = pathinfo($_FILES['format_file']['name'], PATHINFO_EXTENSION);
+        $filename = 'format_' . time() . '_' . uniqid() . '.' . $ext;
+        $targetPath = $uploadDir . $filename;
+        
+        if (move_uploaded_file($_FILES['format_file']['tmp_name'], $targetPath)) {
+            $data['format_file_path'] = 'uploads/formats/' . $filename;
+        }
+    }
 
     $id = clms_upsert_gate_pass_document_master($conn, $data);
     gateDocJson(['success' => true, 'message' => 'Gate pass document master saved successfully.', 'id' => $id]);
