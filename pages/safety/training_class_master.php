@@ -66,7 +66,7 @@ function renderContent() {
       <label>Training Location<select class="form-control" name="venue_id" id="venueSelect" onchange="updateSeats()" required><option value="">Select</option><?php foreach($venues as $v): ?><option value="<?= (int)$v['id'] ?>" data-seats="<?= (int)$v['seats'] ?>"><?= htmlspecialchars(($v['venue_code'] ? $v['venue_code'].' - ' : '').$v['venue_name']) ?></option><?php endforeach; ?></select></label>
       <label>Slots<input class="form-control" id="slotBox" value="" readonly></label>
       <label>Emergency Seats<input class="form-control" type="number" name="emergency_seats" id="emergencySeats" min="0" value="5" oninput="updateSeats()"></label>
-      <label>Language<select class="form-control" name="language_id" id="languageSelect" required><option value="">Select</option><?php foreach($languages as $l): ?><option value="<?= (int)$l['id'] ?>" <?= strtolower(trim($l['language_name'])) === $prefillLanguage ? 'selected' : '' ?>><?= htmlspecialchars($l['language_name']) ?></option><?php endforeach; ?></select></label>
+      <label>Language<select class="form-control" name="language_id" id="languageSelect" onchange="syncExistingBatch()" required><option value="">Select</option><?php foreach($languages as $l): ?><option value="<?= (int)$l['id'] ?>" <?= strtolower(trim($l['language_name'])) === $prefillLanguage ? 'selected' : '' ?>><?= htmlspecialchars($l['language_name']) ?></option><?php endforeach; ?></select></label>
       <label>Session<select class="form-control" name="session_name" id="sessionSelect"><option value="FN">FN</option><option value="AN">AN</option></select></label>
       <label>Time From<input class="form-control" type="time" name="time_from" id="timeFrom"></label>
       <label>Time To<input class="form-control" type="time" name="time_to" id="timeTo"></label>
@@ -85,11 +85,20 @@ function renderContent() {
   <div class="card-header"><div class="card-title">Recent Batches</div><a href="training_batch_report.php" class="btn btn-sm btn-primary">Reports</a></div>
   <div class="card-body" style="padding:0">
     <table class="data-table"><thead><tr><th>Batch No</th><th>Date</th><th>Location</th><th>Language</th><th>Workers</th><th>Status</th><th>Action</th></tr></thead><tbody>
-    <?php foreach($batches as $b): $emg = min((int)($b['emergency_seats'] ?? 0), (int)$b['capacity']); $regular = max(0, (int)$b['capacity'] - $emg); $canDelete = (int)$b['total_workers'] === 0; $assignUrl = 'training_schedule.php?batch_id=' . (int)$b['id'] . ($prefillRequestId ? '&request_id=' . (int)$prefillRequestId : ''); ?><tr><td><strong><?= htmlspecialchars($b['batch_number']) ?></strong><div style="font-size:11px;color:var(--text-muted)">Token: <?= htmlspecialchars($b['batch_token']) ?></div></td><td><?= date('d M Y', strtotime($b['training_date'])) ?></td><td><?= htmlspecialchars($b['venue_name']) ?></td><td><?= htmlspecialchars($b['language_name']) ?></td><td><?= (int)$b['total_workers'] ?> / <?= (int)$b['capacity'] ?><div style="font-size:11px;color:var(--text-muted)"><?= $regular ?> regular + <?= $emg ?> emergency</div></td><td><span class="badge badge-info"><?= htmlspecialchars(ucfirst($b['status'])) ?></span></td><td><div class="row-actions"><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars($assignUrl) ?>">Assign Workers</a><a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a><?php if ($canDelete): ?><form method="post" style="margin:0" onsubmit="return confirm('Delete empty batch <?= htmlspecialchars($b['batch_number'], ENT_QUOTES) ?>?');"><input type="hidden" name="batch_action" value="delete"><input type="hidden" name="batch_id" value="<?= (int)$b['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">Delete</button></form><?php endif; ?></div></td></tr><?php endforeach; ?>
+    <?php foreach($batches as $b):
+      $capacity = max(1, (int)$b['capacity']);
+      $emg = max(0, (int)($b['emergency_seats'] ?? 0));
+      $regular = max(0, $capacity - $emg);
+      $assigned = (int)$b['total_workers'];
+      $available = max(0, $capacity - $assigned);
+      $fillPct = min(100, max(0, round(($assigned / $capacity) * 100)));
+      $canDelete = $assigned === 0;
+      $assignUrl = 'training_schedule.php?batch_id=' . (int)$b['id'] . ($prefillRequestId ? '&request_id=' . (int)$prefillRequestId : '');
+    ?><tr><td><strong><?= htmlspecialchars($b['batch_number']) ?></strong><div style="font-size:11px;color:var(--text-muted)">Token: <?= htmlspecialchars($b['batch_token']) ?></div></td><td><?= date('d M Y', strtotime($b['training_date'])) ?></td><td><?= htmlspecialchars($b['venue_name']) ?></td><td><?= htmlspecialchars($b['language_name']) ?></td><td><div class="worker-capacity"><div class="worker-capacity-top"><strong><?= $assigned ?></strong><span>of <?= $capacity ?> assigned</span><em><?= $available ?> open</em></div><div class="worker-capacity-bar"><span style="width:<?= $fillPct ?>%"></span></div><div class="worker-capacity-split"><span><?= $regular ?> regular</span><span><?= $emg ?> emergency</span></div></div></td><td><span class="badge badge-info"><?= htmlspecialchars(ucfirst($b['status'])) ?></span></td><td><div class="row-actions"><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars($assignUrl) ?>">Assign Workers</a><a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a><?php if ($canDelete): ?><form method="post" style="margin:0" onsubmit="return confirm('Delete empty batch <?= htmlspecialchars($b['batch_number'], ENT_QUOTES) ?>?');"><input type="hidden" name="batch_action" value="delete"><input type="hidden" name="batch_id" value="<?= (int)$b['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">Delete</button></form><?php endif; ?></div></td></tr><?php endforeach; ?>
     </tbody></table>
   </div>
 </section>
-<style>.class-form{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px}.class-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:800;color:#475569}.form-control{height:38px;border:1px solid #cbd5e1;border-radius:8px;padding:0 10px}.actions{grid-column:1/-1;display:flex;gap:10px;justify-content:flex-end}.row-actions{display:flex;gap:8px;flex-wrap:wrap}.existing-batch-hint{grid-column:1/-1;border:1px solid #bfdbfe;background:#eff6ff;border-radius:8px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.existing-batch-hint strong{color:#1e40af}.existing-batch-hint span{font-size:12px;color:#475569}@media(max-width:900px){.class-form{grid-template-columns:1fr}.actions{justify-content:stretch;flex-direction:column}}</style>
+<style>.class-form{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px}.class-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:800;color:#475569}.form-control{height:38px;border:1px solid #cbd5e1;border-radius:8px;padding:0 10px}.actions{grid-column:1/-1;display:flex;gap:10px;justify-content:flex-end}.row-actions{display:flex;gap:8px;flex-wrap:wrap}.existing-batch-hint{grid-column:1/-1;border:1px solid #bfdbfe;background:#eff6ff;border-radius:8px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.existing-batch-hint strong{color:#1e40af}.existing-batch-hint span{font-size:12px;color:#475569}.worker-capacity{min-width:155px}.worker-capacity-top{display:flex;align-items:baseline;gap:5px;white-space:nowrap}.worker-capacity-top strong{font-size:16px;color:#0f172a}.worker-capacity-top span{font-size:11px;color:#475569;font-weight:700}.worker-capacity-top em{margin-left:auto;font-style:normal;font-size:10px;font-weight:800;color:#166534;background:#dcfce7;border-radius:999px;padding:2px 7px}.worker-capacity-bar{height:6px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:6px 0}.worker-capacity-bar span{display:block;height:100%;background:#2563eb;border-radius:999px}.worker-capacity-split{display:flex;gap:6px;flex-wrap:wrap}.worker-capacity-split span{font-size:10px;font-weight:800;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:2px 7px}@media(max-width:900px){.class-form{grid-template-columns:1fr}.actions{justify-content:stretch;flex-direction:column}}</style>
 <script>
 const existingBatches = <?= json_encode(array_map(function($b) {
   return [
@@ -134,8 +143,16 @@ function syncExistingBatch() {
   const typeSelect = document.getElementById('trainingTypeSelect');
   const selectedOption = typeSelect.options[typeSelect.selectedIndex];
   const typeName = selectedOption ? (selectedOption.dataset.typeName || selectedOption.textContent) : '';
+  const languageSelect = document.getElementById('languageSelect');
+  const selectedLanguageOption = languageSelect.options[languageSelect.selectedIndex];
+  const languageId = languageSelect.value;
+  const languageName = selectedLanguageOption ? selectedLanguageOption.textContent : '';
   const hint = document.getElementById('existingBatchHint');
-  const matches = existingBatches.filter(batch => norm(batch.training_type) === norm(typeName));
+  const matches = existingBatches.filter(batch => {
+    const typeMatches = norm(batch.training_type) === norm(typeName);
+    const languageMatches = !languageId || String(batch.language_id) === String(languageId) || norm(batch.language_name) === norm(languageName);
+    return typeMatches && languageMatches;
+  });
   const batch = matches.find(item => item.total_workers < item.capacity) || matches[0];
 
   if (!batch) {
@@ -157,7 +174,7 @@ function syncExistingBatch() {
   hint.innerHTML = `
     <div>
       <strong>Existing batch found: ${batch.batch_number}</strong><br>
-      <span>${batch.training_date} | ${batch.venue_name} | ${batch.language_name} | ${batch.total_workers}/${batch.capacity} workers, ${available} seats available.</span>
+      <span>${batch.training_date} | ${batch.venue_name} | ${batch.language_name} | ${batch.total_workers}/${batch.capacity} assigned, ${available} total seats available.</span>
     </div>
     <a class="btn btn-sm btn-primary" href="training_schedule.php?batch_id=${batch.id}<?= $prefillRequestId ? '&request_id=' . (int)$prefillRequestId : '' ?>">Add Workers to Existing Batch</a>
   `;

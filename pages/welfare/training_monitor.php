@@ -110,7 +110,7 @@ function welfareTrainingSeedApprovedQueue($conn) {
             CURDATE(),
             CURDATE(),
             'morning',
-            'Auto-created for Welfare check after Executing Officer approval.',
+            'Auto-created for Safety Department approval after Executing Officer approval.',
             'welfare_seed',
             COALESCE(w.execution_training_reviewed_by, 0),
             'welfare_pending',
@@ -217,7 +217,7 @@ function renderContent() {
         JOIN workmen w ON w.id = tr.workman_id
         LEFT JOIN contractors c ON c.id = tr.contractor_id
         LEFT JOIN users u ON u.id = tr.welfare_reviewed_by
-        WHERE tr.status IN ('pending','welfare_rejected','scheduled','contractor_confirmed','passed','failed')
+        WHERE tr.status IN ('pending','welfare_rejected','scheduled','contractor_confirmed','passed','failed','enrollment_approved')
           AND tr.welfare_reviewed_at IS NOT NULL
         ORDER BY tr.welfare_reviewed_at DESC
         LIMIT 25
@@ -263,8 +263,8 @@ function renderContent() {
 
     <div class="card glass">
       <div class="card-header">
-        <div class="card-title"><i class="fas fa-user-check"></i> Safety Training Approval Queue</div>
-        <span class="badge badge-warning"><?= count($queue) ?> Pending Welfare Check</span>
+        <div class="card-title"><i class="fas fa-user-check"></i> Safety Department Approval</div>
+        <span class="badge badge-warning"><?= count($queue) ?> Pending Safety Department Approval</span>
       </div>
       <div class="card-body" style="padding:0;">
         <table class="data-table">
@@ -280,7 +280,7 @@ function renderContent() {
           </thead>
           <tbody>
             <?php if (empty($queue)): ?>
-              <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No training requests pending Welfare check.</td></tr>
+              <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No enrollment requests pending Safety Department approval.</td></tr>
             <?php endif; ?>
             <?php foreach ($queue as $r): ?>
             <tr>
@@ -309,9 +309,9 @@ function renderContent() {
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <?php if ($docUrl): ?>
                     <a class="btn btn-sm btn-outline" href="<?= htmlspecialchars($docUrl) ?>" target="_blank"><i class="fas fa-eye"></i> View</a>
-                  <?php else: ?>
-                    <span class="badge badge-gray">EO Approved</span>
                   <?php endif; ?>
+                  <button class="btn btn-sm btn-success" type="button" onclick="reviewTraining(<?= (int)$r['id'] ?>, 'approve')"><i class="fas fa-check"></i> Approve</button>
+                  <button class="btn btn-sm btn-danger" type="button" onclick="reviewTraining(<?= (int)$r['id'] ?>, 'reject')"><i class="fas fa-times"></i> Reject</button>
                 </div>
               </td>
             </tr>
@@ -323,7 +323,7 @@ function renderContent() {
 
     <div class="card glass" style="margin-top:20px;">
       <div class="card-header">
-        <div class="card-title"><i class="fas fa-history"></i> Recent Welfare Training Decisions</div>
+        <div class="card-title"><i class="fas fa-history"></i> Recent Safety Department Decisions</div>
       </div>
       <div class="card-body" style="padding:0;">
         <table class="data-table">
@@ -338,7 +338,7 @@ function renderContent() {
           </thead>
           <tbody>
             <?php if (empty($recent)): ?>
-              <tr><td colspan="5" style="text-align:center;padding:28px;color:var(--text-muted);">No Welfare decisions recorded yet.</td></tr>
+              <tr><td colspan="5" style="text-align:center;padding:28px;color:var(--text-muted);">No Safety Department decisions recorded yet.</td></tr>
             <?php endif; ?>
             <?php foreach ($recent as $r): ?>
             <tr>
@@ -393,7 +393,7 @@ function renderContent() {
 
     <script>
     async function reviewTraining(requestId, decision) {
-      const remarks = prompt(decision === 'approve' ? 'Welfare approval remarks:' : 'Reject reason:');
+      const remarks = prompt(decision === 'approve' ? 'Safety Department approval remarks:' : 'Reject reason:');
       if (remarks === null) return;
       if (decision === 'reject' && !remarks.trim()) {
         alert('Reject reason required.');

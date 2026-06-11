@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['welfare_admin', 'super_admin', 'welfare_user']);
 include __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../helpers.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -57,6 +58,9 @@ function welfareTrainingReviewEnsureSchema($conn) {
     foreach ([
         'training_status' => "VARCHAR(50) DEFAULT 'pending'",
         'safety_training_status' => "VARCHAR(50) DEFAULT 'PENDING_TRAINING'",
+        'eligibility_status' => "VARCHAR(50) DEFAULT 'NOT ELIGIBLE'",
+        'execution_training_status' => "VARCHAR(30) DEFAULT 'pending'",
+        'execution_training_remarks' => 'TEXT NULL',
         'updated_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
     ] as $column => $definition) {
         welfareTrainingReviewEnsureColumn($conn, 'workmen', $column, $definition);
@@ -90,9 +94,14 @@ try {
 
     $request = db_single(
         $conn,
-        "SELECT tr.id, tr.workman_id, tr.status, w.name AS worker_name
+        "SELECT tr.id, tr.workman_id, tr.contractor_id, tr.status, w.name AS worker_name,
+                w.temp_id, w.email AS worker_email,
+                c.contractor_name, c.email AS contractor_email,
+                u.name AS contractor_user_name, u.email AS contractor_user_email
          FROM training_requests tr
          JOIN workmen w ON w.id = tr.workman_id
+         LEFT JOIN contractors c ON c.id = tr.contractor_id
+         LEFT JOIN users u ON u.id = c.user_id
          WHERE tr.id = ? LIMIT 1",
         'i',
         [$requestId]
@@ -120,15 +129,21 @@ try {
         );
         db_execute(
             $conn,
-            "UPDATE workmen SET training_status = 'training_pending', safety_training_status = 'PENDING_TRAINING', updated_at = NOW() WHERE id = ?",
-            'i',
-            [(int)$request['workman_id']]
+            "UPDATE workmen
+             SET training_status = 'correction_required',
+                 safety_training_status = 'SAFETY_REJECTED',
+                 eligibility_status = 'NOT ELIGIBLE',
+                 execution_training_remarks = ?,
+                 updated_at = NOW()
+             WHERE id = ?",
+            'si',
+            ['Safety Department rejected. Return to Contractor for Correction / Resubmission. Reason: ' . $remarks, (int)$request['workman_id']]
         );
     } else {
         db_execute(
             $conn,
             "UPDATE training_requests
-             SET status = 'pending',
+             SET status = 'enrollment_approved',
                  welfare_remarks = ?,
                  welfare_reviewed_by = ?,
                  welfare_reviewed_at = NOW(),
@@ -137,13 +152,37 @@ try {
             'sii',
             [$remarks, (int)($_SESSION['user_id'] ?? 0), $requestId]
         );
+        db_execute(
+            $conn,
+            "UPDATE workmen
+             SET status = 'active',
+                 training_status = 'approved',
+                 safety_training_status = 'ENROLLMENT_APPROVED',
+                 eligibility_status = 'ELIGIBLE',
+                 updated_at = NOW()
+             WHERE id = ?",
+            'i',
+            [(int)$request['workman_id']]
+        );
+
+        $to = trim((string)($request['contractor_user_email'] ?: ($request['contractor_email'] ?: $request['worker_email'])));
+        if ($to !== '' && function_exists('sendEmailNotification')) {
+            $workerName = trim((string)($request['worker_name'] ?? 'Worker'));
+            $tempId = trim((string)($request['temp_id'] ?? ''));
+            $message = "Dear Contractor,\n\n"
+                . "Worker enrollment has been approved by the Safety Department.\n"
+                . "Worker: {$workerName}\n"
+                . ($tempId !== '' ? "Temporary ID: {$tempId}\n" : '')
+                . "\nEnrollment Approved.\n\nThis is an automated confirmation mail.";
+            @sendEmailNotification($to, 'CLMS Enrollment Approved', $message, 'worker_enrollment_approved', $request['contractor_user_name'] ?? 'Contractor');
+        }
     }
 
     welfareTrainingReviewJson([
         'success' => true,
         'message' => $decision === 'approve'
-            ? 'Welfare approved. Request forwarded to Safety for scheduling.'
-            : 'Training request rejected by Welfare.',
+            ? 'Safety Department approved. Confirmation mail sent to contractor. Enrollment Approved.'
+            : 'Safety Department rejected. Returned to Contractor for Correction / Resubmission.',
     ]);
 } catch (Throwable $e) {
     error_log('[WELFARE_TRAINING_REVIEW] ' . $e->getMessage());

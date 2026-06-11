@@ -68,6 +68,8 @@ function clms_training_ensure_schema($conn) {
             'execution_training_remarks' => 'TEXT NULL',
             'execution_training_reviewed_by' => 'BIGINT NULL',
             'execution_training_reviewed_at' => 'DATETIME NULL',
+            'work_order_source' => 'VARCHAR(20) NULL',
+            'safety_fee_payment_option' => 'VARCHAR(30) NULL',
         ] as $column => $definition) {
             clms_training_ensure_column($conn, 'workmen', $column, $definition);
         }
@@ -81,13 +83,29 @@ function clms_training_ensure_request($conn, $workmanId, $contractorId, $request
     clms_training_ensure_schema($conn);
     $existing = db_single(
         $conn,
-        "SELECT id FROM training_requests WHERE workman_id = ? AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
+        "SELECT id, status FROM training_requests WHERE workman_id = ? AND status IN ('pending_eo','welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
         'i',
         [(int)$workmanId]
     );
-    if ($existing) return (int)$existing['id'];
+    if ($existing) {
+        if (in_array(($existing['status'] ?? ''), ['pending_eo', 'pending', 'scheduled', 'contractor_confirmed'], true)) {
+            db_execute(
+                $conn,
+                "UPDATE training_requests
+                 SET status = 'welfare_pending',
+                     remarks = ?,
+                     source = ?,
+                     requested_by = ?,
+                     updated_at = NOW()
+                 WHERE id = ?",
+                'ssii',
+                [$remarks ?: 'Forwarded after Executing Officer approval. Waiting for Safety Department check.', $source, (int)$requestedBy, (int)$existing['id']]
+            );
+        }
+        return (int)$existing['id'];
+    }
 
-    $remarks = $remarks ?: 'Auto-created after Executing Officer approval. Waiting for Welfare check.';
+    $remarks = $remarks ?: 'Auto-created after Executing Officer approval. Waiting for Safety Department approval.';
     $ok = db_execute(
         $conn,
         "INSERT INTO training_requests
@@ -149,7 +167,7 @@ function clms_training_seed_approved_queue($conn) {
             CURDATE(),
             NULL,
             'morning',
-            'Auto-created for Welfare check after Executing Officer approval.',
+            'Auto-created for Safety Department approval after Executing Officer approval.',
             CASE WHEN COALESCE(w.training_approval_doc, '') <> '' THEN 'attached_doc' ELSE 'welfare_seed' END,
             COALESCE(w.execution_training_reviewed_by, 0),
             'welfare_pending',

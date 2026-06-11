@@ -5,6 +5,7 @@ include '../../include/config.php';
 include '../../include/customer_portal_context.php';
 include '../../include/layout.php';
 require_once '../../include/safety_training_control.php';
+require_once '../../include/payment_flow.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -27,6 +28,10 @@ function contractorBookColumnExists($conn, $table, $column) {
 }
 
 function contractorBookEnsureTrainingRequestColumns($conn) {
+    clms_ensure_payment_flow($conn);
+    clms_safety_ensure_column($conn, 'workmen', 'work_order_source', 'VARCHAR(20) NULL');
+    clms_safety_ensure_column($conn, 'training_requests', 'preferred_shift', "VARCHAR(20) DEFAULT 'morning'");
+    @mysqli_query($conn, "ALTER TABLE training_requests MODIFY COLUMN preferred_shift VARCHAR(20) DEFAULT 'morning'");
     foreach ([
         'contractor_confirmed' => 'TINYINT(1) DEFAULT 0',
         'scheduled_session_id' => 'INT NULL',
@@ -41,6 +46,14 @@ function contractorBookEnsureTrainingRequestColumns($conn) {
     ] as $column => $definition) {
         clms_safety_ensure_column($conn, 'training_requests', $column, $definition);
     }
+}
+
+function contractorBookNormalizeShift($value) {
+    $value = strtolower(trim((string)$value));
+    if ($value === 'an' || $value === 'pm' || $value === 'afternoon' || $value === 'evening') {
+        return 'evening';
+    }
+    return 'morning';
 }
 
 function renderContent() {
@@ -66,9 +79,11 @@ function renderContent() {
         $batchId = (int)($_POST['batch_id'] ?? 0);
 
         $batch = db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', [$batchId]);
+        $preferredShift = $batch ? contractorBookNormalizeShift($batch['session_name'] ?? 'morning') : 'morning';
         $selectedCount = count($workerIds);
+        $capacityInfo = $batch ? clms_safety_batch_capacity_summary($conn, $batch) : ['total' => 0];
         $alreadySelected = $batch ? db_count($conn, "SELECT COUNT(*) FROM training_batch_workers WHERE batch_id = ? AND ticked = 1", 'i', [$batchId]) : 0;
-        $remainingSeats = $batch ? max(0, (int)$batch['capacity'] - (int)$alreadySelected) : 0;
+        $remainingSeats = $batch ? max(0, (int)$capacityInfo['total'] - (int)$alreadySelected) : 0;
 
         if ($messageType === 'error' && $message) {
             // keep the form visible below
@@ -80,19 +95,49 @@ function renderContent() {
             $messageType = 'error';
         } else {
             $saved = 0;
+            $skippedPayment = 0;
+            $requestIds = [];
             foreach ($workerIds as $workerId) {
                 $worker = db_single(
                     $conn,
-                    "SELECT id, name, safety_language FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
+                    "SELECT id, name, safety_language, training_status, safety_training_status, training_valid_till, work_order_source FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
                     'ii',
                     [$workerId, $contractorId]
                 );
                 if (!$worker) continue;
+                if (strtoupper(trim((string)($worker['work_order_source'] ?? ''))) === 'PWO') {
+                    $paid = db_single(
+                        $conn,
+                        "SELECT pr.id
+                         FROM training_payment_request_workers pw
+                         JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                         WHERE pw.workman_id = ?
+                           AND pr.status = 'paid'
+                         LIMIT 1",
+                        'i',
+                        [$workerId]
+                    );
+                    if (!$paid) {
+                        $skippedPayment++;
+                        continue;
+                    }
+                }
+                if (strtolower(trim((string)($worker['safety_language'] ?: $batch['language_name']))) !== strtolower(trim((string)$batch['language_name']))) {
+                    continue;
+                }
+                $workerTrainingStatus = strtolower((string)($worker['training_status'] ?? ''));
+                $workerSafetyStatus = strtolower((string)($worker['safety_training_status'] ?? ''));
+                $validTill = trim((string)($worker['training_valid_till'] ?? ''));
+                $isTrainingValid = in_array($workerTrainingStatus, ['pass','passed','training_passed','qualified','completed'], true)
+                    || in_array($workerSafetyStatus, ['training_passed','passed','pass','1'], true);
+                if ($isTrainingValid && ($validTill === '' || strtotime($validTill) >= strtotime(date('Y-m-d')))) {
+                    continue;
+                }
                 $active = db_single(
                     $conn,
-                    "SELECT id FROM training_requests
+                    "SELECT id, status FROM training_requests
                      WHERE workman_id = ?
-                       AND LOWER(COALESCE(status, 'pending')) IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed')
+                       AND LOWER(COALESCE(status, 'pending')) IN ('welfare_pending','pending','failed','fail','absent','training_failed','rejected','correction_required')
                      ORDER BY id DESC LIMIT 1",
                     'i',
                     [$workerId]
@@ -107,11 +152,12 @@ function renderContent() {
                         [
                             (string)$batch['training_type'],
                             (string)$batch['training_date'],
-                            (string)$batch['session_name'],
+                            $preferredShift,
                             'Contractor selected this scheduled safety training batch from Book Safety Training.',
                             (int)$active['id']
                         ]
                     );
+                    $requestIds[] = (int)$active['id'];
                 } else {
                     db_execute(
                         $conn,
@@ -124,31 +170,42 @@ function renderContent() {
                             $contractorId,
                             (string)$batch['training_type'],
                             (string)$batch['training_date'],
-                            (string)$batch['session_name'],
+                            $preferredShift,
                             'Contractor selected this scheduled safety training batch from Book Safety Training.',
                             $user_id
                         ]
                     );
+                    $requestIds[] = (int)mysqli_insert_id($conn);
                 }
                 db_execute(
                     $conn,
                     "UPDATE workmen
                      SET training_status = 'pending', safety_training_status = 'PENDING_TRAINING',
-                         safety_language = COALESCE(NULLIF(safety_language, ''), ?)
+                         safety_language = COALESCE(NULLIF(safety_language, ''), ?),
+                         execution_training_status = 'pending_eo',
+                         execution_training_remarks = 'Safety seat booking submitted. Waiting for Executing Officer approval.'
                      WHERE id = ?",
                     'si',
                     [(string)$batch['language_name'], $workerId]
                 );
                 $saved++;
             }
-            $message = 'Safety training booking request saved for ' . $saved . ' worker(s). Safety team can now assign them to the selected batch.';
+            if ($requestIds) {
+                $bookingResult = clms_safety_add_requests_to_batch($conn, $batchId, $requestIds, $user_id);
+                $message = 'Safety training booked for ' . $saved . ' worker(s) in batch ' . $bookingResult['batch_number'] . '.';
+            } else {
+                $message = $skippedPayment > 0
+                    ? 'Please complete Safety Fee Payment before Safety Training & Seat Booking for PWO worker(s).'
+                    : 'No eligible worker found for the selected batch language/status.';
+                $messageType = 'error';
+            }
         }
     }
 
     $batches = db_fetch_all($conn, "
         SELECT b.*,
                COALESCE(x.selected_count, 0) AS selected_count,
-               GREATEST(b.capacity - COALESCE(x.selected_count, 0), 0) AS seats_available
+               0 AS seats_available
         FROM training_class_batches b
         LEFT JOIN (
             SELECT batch_id, COUNT(*) AS selected_count
@@ -160,9 +217,29 @@ function renderContent() {
           AND LOWER(COALESCE(b.status, 'draft')) IN ('draft','open','scheduled')
         ORDER BY b.training_date ASC, b.session_name ASC, b.id ASC
     ");
+    foreach ($batches as &$batchRow) {
+        $batchCapacity = clms_safety_batch_capacity_summary($conn, $batchRow);
+        $batchRow['capacity'] = (int)$batchCapacity['total'];
+        $batchRow['regular_seats'] = (int)$batchCapacity['regular'];
+        $batchRow['emergency_seats'] = (int)$batchCapacity['emergency'];
+        $batchRow['seats_available'] = max(0, (int)$batchCapacity['total'] - (int)($batchRow['selected_count'] ?? 0));
+    }
+    unset($batchRow);
 
     $workers = $contractorId ? db_fetch_all($conn, "
-        SELECT w.id, w.name, w.aadhaar, w.temp_id, w.safety_language, w.training_status, w.safety_training_status,
+        SELECT w.id, w.name, w.aadhaar, w.temp_id, w.safety_language, w.training_status, w.safety_training_status, w.training_valid_till,
+               w.work_order_source,
+               CASE
+                 WHEN UPPER(COALESCE(w.work_order_source, '')) = 'PWO'
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM training_payment_request_workers pw
+                        JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                        WHERE pw.workman_id = w.id
+                          AND pr.status = 'paid'
+                      )
+                 THEN 1 ELSE 0
+               END AS payment_pending,
                tr.id AS active_request_id, tr.status AS request_status, tr.batch_number, tr.scheduled_date,
                tr.scheduled_shift, tr.contractor_confirmed,
                COALESCE(attempts.attempt_count, 0) AS attempt_count
@@ -187,14 +264,26 @@ function renderContent() {
           AND LOWER(COALESCE(w.status, 'pending')) NOT IN ('deleted','removed','blocked')
           AND (
               tr.id IS NULL
-              OR LOWER(COALESCE(w.training_status, 'pending')) IN ('pending','training_pending','training_failed','fail','failed')
-              OR LOWER(COALESCE(w.safety_training_status, 'pending')) IN ('pending_training','pending','failed','expired')
+              OR LOWER(COALESCE(w.training_status, 'pending')) IN ('pending','training_pending','training_failed','fail','failed','absent','expired','training_expired')
+              OR LOWER(COALESCE(w.safety_training_status, 'pending')) IN ('pending_training','pending','failed','expired','absent')
+              OR (w.training_valid_till IS NOT NULL AND w.training_valid_till < CURDATE())
+          )
+          AND NOT (
+              LOWER(COALESCE(w.training_status, '')) IN ('pass','passed','training_passed','qualified','completed')
+              AND (w.training_valid_till IS NULL OR w.training_valid_till >= CURDATE())
+          )
+          AND NOT (
+              LOWER(COALESCE(tr.status, '')) IN ('scheduled','contractor_confirmed','passed')
+              AND LOWER(COALESCE(w.training_status, 'pending')) NOT IN ('training_failed','fail','failed','absent')
           )
         ORDER BY COALESCE(tr.requested_date, DATE(w.created_at), CURDATE()) ASC, w.id ASC
     ", 'ii', [$contractorId, $contractorId]) : [];
 
     $pendingBookings = count(array_filter($workers, function($worker) {
         return in_array(strtolower((string)($worker['request_status'] ?? $worker['training_status'] ?? 'pending')), ['pending','welfare_pending','training_pending'], true);
+    }));
+    $paymentPendingWorkers = count(array_filter($workers, function($worker) {
+        return (int)($worker['payment_pending'] ?? 0) === 1;
     }));
     $retestWorkers = count(array_filter($workers, function($worker) {
         $status = strtolower((string)($worker['request_status'] ?? $worker['training_status'] ?? ''));
@@ -226,6 +315,8 @@ function renderContent() {
       .worker-picker-table th{background:#f8fafc;color:#334155;font-weight:800}
       .worker-picker-table input[type="checkbox"]{width:17px;height:17px}
       .selection-note{font-size:12px;color:#92400e;line-height:1.45;margin-top:10px}
+      .payment-required-note{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid #fbbf24;background:#fffbeb;color:#92400e;border-radius:8px;padding:12px 14px;margin:0 0 14px;font-size:13px;font-weight:800;flex-wrap:wrap}
+      .worker-payment-lock{display:inline-flex;align-items:center;gap:6px;color:#92400e;font-weight:800;font-size:12px}
       .seat-chip{display:inline-flex;align-items:center;justify-content:center;min-width:38px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:6px;padding:8px 10px;font-weight:800}
       @media(max-width:1100px){.booking-top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.search-grid{grid-template-columns:1fr}}
       @media(max-width:680px){.booking-top-grid{grid-template-columns:1fr}}
@@ -277,6 +368,12 @@ function renderContent() {
 
     <?php if ($message): ?>
       <div class="alert alert-<?= $messageType === 'error' ? 'danger' : 'success' ?>"><?= htmlspecialchars($message) ?></div>
+    <?php endif; ?>
+    <?php if ($paymentPendingWorkers > 0): ?>
+      <div class="payment-required-note">
+        <span><i class="fas fa-credit-card"></i> Pay Safety Fee first. Safety Training & Seat Booking will open after payment.</span>
+        <a class="btn btn-sm btn-warning" href="../payment.php"><i class="fas fa-credit-card"></i> Safety Fee Payment</a>
+      </div>
     <?php endif; ?>
 
     <div class="safety-book-page">
@@ -368,8 +465,10 @@ function renderContent() {
                   $checked = $preselectWorkerId && (int)$worker['id'] === $preselectWorkerId;
                   $safeLanguage = $worker['safety_language'] ?: 'Malayalam';
                   $entitlement = $worker['temp_id'] ?: ('W-' . $worker['id']);
+                  $paymentPending = (int)($worker['payment_pending'] ?? 0) === 1;
                 ?>
                   <tr data-worker-row
+                      data-payment-pending="<?= $paymentPending ? '1' : '0' ?>"
                       data-language="<?= htmlspecialchars(strtolower($safeLanguage), ENT_QUOTES, 'UTF-8') ?>"
                       data-name="<?= htmlspecialchars(strtolower($worker['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                       data-aadhaar="<?= htmlspecialchars(strtolower($worker['aadhaar'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
@@ -379,13 +478,17 @@ function renderContent() {
                     <td><?= htmlspecialchars($worker['name'] ?? '') ?></td>
                     <td><code><?= htmlspecialchars($entitlement) ?></code></td>
                     <td>
-                      <input type="checkbox"
-                             class="worker-check"
-                             name="worker_ids[]"
-                             value="<?= (int)$worker['id'] ?>"
-                             data-worker-name="<?= htmlspecialchars($worker['name'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
-                             data-worker-aadhaar="<?= htmlspecialchars($worker['aadhaar'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
-                             <?= $checked ? 'checked' : '' ?>>
+                      <?php if ($paymentPending): ?>
+                        <span class="worker-payment-lock"><i class="fas fa-lock"></i> Pay Safety Fee first</span>
+                      <?php else: ?>
+                        <input type="checkbox"
+                               class="worker-check"
+                               name="worker_ids[]"
+                               value="<?= (int)$worker['id'] ?>"
+                               data-worker-name="<?= htmlspecialchars($worker['name'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                               data-worker-aadhaar="<?= htmlspecialchars($worker['aadhaar'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                               <?= $checked ? 'checked' : '' ?>>
+                      <?php endif; ?>
                     </td>
                   </tr>
                 <?php endforeach; ?>

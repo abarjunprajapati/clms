@@ -217,8 +217,10 @@ function renderContent() {
     $token_no = trim((string)($_GET['token_no'] ?? ''));
     $aadhaar = trim((string)($_GET['aadhaar'] ?? ''));
     $vendor = trim((string)($_GET['vendor'] ?? ''));
+    $global_search = trim((string)($_GET['q'] ?? ''));
     $status_filter = strtolower(trim((string)($_GET['status'] ?? '')));
     $contractor_id = isset($_GET['contractor_id']) ? (int)$_GET['contractor_id'] : 0;
+    $all_trainings = (int)($_GET['all'] ?? 0) === 1;
     $fromDateTime = $from_date . ' 00:00:00';
     $toDateTime = $to_date . ' 23:59:59';
 
@@ -264,9 +266,9 @@ function renderContent() {
             $attendanceExpr = safetyReportsColumnSql($conn, 'training_session_workers', 'sw', 'attendance_status', 'NULL');
         }
 
-        $where = "$dateExpr BETWEEN ? AND ?";
-        $params = [$fromDateTime, $toDateTime];
-        $types = 'ss';
+        $where = $all_trainings ? '1=1' : "$dateExpr BETWEEN ? AND ?";
+        $params = $all_trainings ? [] : [$fromDateTime, $toDateTime];
+        $types = $all_trainings ? '' : 'ss';
         if ($training_date && safetyReportsColumnExists($conn, 'training_requests', 'scheduled_date')) {
             $where .= ' AND tr.scheduled_date = ?';
             $params[] = $training_date;
@@ -306,6 +308,32 @@ function renderContent() {
             $where .= ' AND EXISTS (SELECT 1 FROM training_batch_workers tbw_filter WHERE tbw_filter.training_request_id = tr.id AND tbw_filter.token_number LIKE ?)';
             $params[] = '%' . $token_no . '%';
             $types .= 's';
+        }
+
+        if ($global_search) {
+            $like = '%' . $global_search . '%';
+            $searchParts = [
+                "$workerName LIKE ?",
+                "$workerCode LIKE ?",
+                "$workerAadhaar LIKE ?",
+                "$contractorName LIKE ?",
+                "$typeExpr LIKE ?",
+                "$statusExpr LIKE ?"
+            ];
+            $searchParams = [$like, $like, $like, $like, $like, $like];
+            if (safetyReportsColumnExists($conn, 'training_requests', 'batch_number')) {
+                $searchParts[] = 'tr.batch_number LIKE ?';
+                $searchParams[] = $like;
+            }
+            if (safetyReportsTableExists($conn, 'training_batch_workers') && safetyReportsColumnExists($conn, 'training_batch_workers', 'token_number')) {
+                $searchParts[] = 'EXISTS (SELECT 1 FROM training_batch_workers tbw_search WHERE tbw_search.training_request_id = tr.id AND tbw_search.token_number LIKE ?)';
+                $searchParams[] = $like;
+            }
+            $where .= ' AND (' . implode(' OR ', $searchParts) . ')';
+            foreach ($searchParams as $searchParam) {
+                $params[] = $searchParam;
+                $types .= 's';
+            }
         }
 
         $batchSelect = safetyReportsColumnExists($conn, 'training_requests', 'batch_number') ? 'tr.batch_number' : 'NULL';
@@ -360,9 +388,9 @@ function renderContent() {
         $safetyStatus = safetyReportsColumnSql($conn, 'workmen', 'w', 'safety_training_status', 'NULL');
         $contractorName = safetyReportsColumnSql($conn, 'contractors', 'c', 'contractor_name', "'N/A'");
 
-        $where = "$workerDateExpr BETWEEN ? AND ?";
-        $params = [$fromDateTime, $toDateTime];
-        $types = 'ss';
+        $where = $all_trainings ? '1=1' : "$workerDateExpr BETWEEN ? AND ?";
+        $params = $all_trainings ? [] : [$fromDateTime, $toDateTime];
+        $types = $all_trainings ? '' : 'ss';
         if ($status_filter) {
             $where .= " AND LOWER(COALESCE($trainingStatus, $safetyStatus, 'pending')) = ?";
             $params[] = $status_filter;
@@ -387,6 +415,14 @@ function renderContent() {
             $where .= " AND $contractorName LIKE ?";
             $params[] = '%' . $vendor . '%';
             $types .= 's';
+        }
+        if ($global_search) {
+            $like = '%' . $global_search . '%';
+            $where .= " AND ($workerName LIKE ? OR $workerCode LIKE ? OR $workerAadhaar LIKE ? OR $contractorName LIKE ? OR $trainingStatus LIKE ? OR $safetyStatus LIKE ?)";
+            foreach ([$like, $like, $like, $like, $like, $like] as $searchParam) {
+                $params[] = $searchParam;
+                $types .= 's';
+            }
         }
 
         $requestSuppressSql = '';
@@ -457,6 +493,7 @@ function renderContent() {
       </div>
       <div class="sr-actions">
         <a href="training_requests.php" class="btn btn-outline"><i class="fas fa-envelope-open-text"></i> Requests</a>
+        <a href="reports.php?all=1" class="btn btn-outline"><i class="fas fa-list"></i> All Trainings</a>
         <button type="button" class="btn btn-outline" onclick="exportTrainingReportCsv()"><i class="fas fa-file-excel"></i> XL</button>
         <button type="button" class="btn btn-primary" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
       </div>
@@ -473,6 +510,11 @@ function renderContent() {
     <div class="card glass sr-filter-card">
       <div class="card-body">
         <form method="GET" class="sr-filter-grid">
+          <?php if ($all_trainings): ?><input type="hidden" name="all" value="1"><?php endif; ?>
+          <div class="form-group sr-wide-field">
+            <label class="form-label">Search All Fields</label>
+            <input type="text" name="q" class="form-control" value="<?= htmlspecialchars($global_search) ?>" placeholder="Application date, training date, vendor, status, Aadhaar, token">
+          </div>
           <div class="form-group">
             <label class="form-label">From Date</label>
             <input type="date" name="from_date" class="form-control" value="<?= htmlspecialchars($from_date) ?>">
@@ -601,6 +643,7 @@ function renderContent() {
       .sr-stat span{font-size:11px;color:#64748b;font-weight:800;text-transform:uppercase}
       .sr-filter-card{margin-bottom:18px}
       .sr-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr)) auto;gap:12px;align-items:end}
+      .sr-wide-field{grid-column:span 2}
       .sr-filter-actions{display:flex;gap:8px}
       .training-view-modal{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;align-items:center;justify-content:center;padding:20px}
       .training-view-dialog{background:#fff;border-radius:8px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(15,23,42,.25);overflow:hidden}

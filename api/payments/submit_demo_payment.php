@@ -18,7 +18,7 @@ try {
     $token = trim((string)($input['token'] ?? ''));
     $request = $token !== '' ? clms_get_training_payment_request($conn, $token) : null;
     if (!$request) demoPaymentJson(['success' => false, 'message' => 'Payment request not found.'], 404);
-    if (strtolower((string)$request['status']) === 'paid') demoPaymentJson(['success' => false, 'message' => 'Payment already verified.'], 400);
+    if (strtolower((string)$request['status']) === 'paid') demoPaymentJson(['success' => false, 'message' => 'Payment already completed.'], 400);
     if (!empty($request['link_expires_at']) && strtotime($request['link_expires_at']) < time()) {
         demoPaymentJson(['success' => false, 'message' => 'Payment link has expired.'], 400);
     }
@@ -32,7 +32,7 @@ try {
 
     demoPaymentJson([
         'success' => true,
-        'message' => 'Payment details submitted. Welfare will verify and confirm payment.',
+        'message' => 'Safety fee payment successful. Please proceed to Safety Training & Seat Booking.',
     ]);
 } catch (InvalidArgumentException $e) {
     demoPaymentJson(['success' => false, 'message' => $e->getMessage()], 400);

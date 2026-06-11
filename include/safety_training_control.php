@@ -155,9 +155,9 @@ function clms_safety_ensure_control_schema($conn) {
     @mysqli_query($conn, "
         UPDATE training_class_batches b
         JOIN training_venue_masters v ON v.id = b.venue_id
-        SET b.capacity = v.seats
+        SET b.capacity = v.seats + b.emergency_seats
         WHERE b.emergency_seats > 0
-          AND b.capacity = v.seats + b.emergency_seats
+          AND b.capacity = v.seats
     ");
 
     mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_schedule (
@@ -317,12 +317,14 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
 
     $contractorName = clms_safety_contractors_name_sql($conn, 'c');
     $contractorCode = clms_safety_contractors_code_sql($conn, 'c');
+    $workerCreatedExpr = clms_safety_column_exists($conn, 'workmen', 'created_at') ? 'w.created_at' : 'tr.created_at';
 
     return db_fetch_all($conn, "
         SELECT
             tr.id AS training_request_id,
             tr.requested_date,
             tr.created_at AS request_created_at,
+            $workerCreatedExpr AS enrolment_date,
             tr.status AS request_status,
             w.id AS workman_id,
             w.name,
@@ -349,7 +351,10 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
         LEFT JOIN contractors c ON c.id = COALESCE(tr.contractor_id, w.contractor_id)
         LEFT JOIN training_batch_workers tbw ON tbw.batch_id = ? AND tbw.training_request_id = tr.id
         WHERE (
-              tr.id = ?
+              (
+                  tr.id = ?
+                  AND LOWER(TRIM(COALESCE(w.safety_language, ?))) = LOWER(TRIM(?))
+              )
               OR (
                   (
                       tbw.id IS NOT NULL
@@ -369,8 +374,8 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
                 AND used.ticked = 1
                 AND LOWER(COALESCE(used.status, 'scheduled')) IN ('scheduled', 'completed')
           )
-        ORDER BY COALESCE(tr.requested_date, DATE(tr.created_at)) ASC, tr.id ASC
-    ", 'siissi', array($batch['training_date'], $batchId, (int)$forceRequestId, $batch['language_name'], $batch['language_name'], $batchId));
+        ORDER BY COALESCE(DATE($workerCreatedExpr), tr.requested_date, DATE(tr.created_at)) ASC, tr.id ASC
+    ", 'siissssi', array($batch['training_date'], $batchId, (int)$forceRequestId, $batch['language_name'], $batch['language_name'], $batch['language_name'], $batch['language_name'], $batchId));
 }
 
 function clms_safety_active_rows($rows) {
@@ -440,8 +445,8 @@ function clms_safety_create_batch($conn, $data, $userId) {
     $instructor = $instructorId ? db_single($conn, "SELECT id, instructor_name FROM safety_instructor_masters WHERE id = ? LIMIT 1", 'i', array($instructorId)) : null;
     if (!$venue || !$language || !$type) throw new RuntimeException('Invalid master selection.');
 
-    $capacity = max(1, (int)$venue['seats']);
-    $emergencySeats = min($emergencySeats, $capacity);
+    $regularSeats = max(1, (int)$venue['seats']);
+    $capacity = $regularSeats + $emergencySeats;
     $token = clms_safety_generate_batch_token($conn);
     $batchNumber = clms_safety_generate_batch_number($conn, $trainingDate);
 
@@ -462,12 +467,314 @@ function clms_safety_create_batch($conn, $data, $userId) {
     }
 }
 
+function clms_safety_batch_capacity_summary($conn, array $batch) {
+    $storedCapacity = max(1, (int)($batch['capacity'] ?? 0));
+    $emergencySeats = max(0, (int)($batch['emergency_seats'] ?? 0));
+    $venueSeats = 0;
+
+    if (!empty($batch['venue_id'])) {
+        $venue = db_single($conn, "SELECT COALESCE(seats, 0) AS seats FROM training_venue_masters WHERE id = ? LIMIT 1", 'i', array((int)$batch['venue_id']));
+        $venueSeats = max(0, (int)($venue['seats'] ?? 0));
+    }
+
+    if ($venueSeats > 0 && $storedCapacity <= $venueSeats) {
+        $regularSeats = $storedCapacity;
+        $totalCapacity = $regularSeats + $emergencySeats;
+    } else {
+        $totalCapacity = $storedCapacity;
+        $regularSeats = max(0, $totalCapacity - $emergencySeats);
+    }
+
+    return array(
+        'total' => $totalCapacity,
+        'regular' => $regularSeats,
+        'emergency' => $emergencySeats,
+    );
+}
+
+function clms_safety_reschedule_batch($conn, $batchId, array $data, $userId = 0) {
+    clms_safety_ensure_control_schema($conn);
+    $batch = db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', array((int)$batchId));
+    if (!$batch) throw new RuntimeException('Invalid batch selection.');
+
+    $startedCount = db_count(
+        $conn,
+        "SELECT COUNT(*)
+         FROM training_batch_workers tbw
+         JOIN training_session_workers tsw ON tsw.training_request_id = tbw.training_request_id
+         WHERE tbw.batch_id = ?
+           AND tbw.ticked = 1
+           AND (
+               LOWER(COALESCE(tsw.attendance_status, 'pending')) NOT IN ('pending', '')
+               OR LOWER(COALESCE(tsw.result, 'pending')) NOT IN ('pending', '')
+           )",
+        'i',
+        array((int)$batchId)
+    );
+    if ($startedCount > 0) {
+        throw new RuntimeException('Training attendance/result has already started for this batch. It cannot be rescheduled.');
+    }
+
+    $trainingDate = trim((string)($data['reschedule_date'] ?? $batch['training_date']));
+    $venueId = (int)($data['reschedule_venue_id'] ?? ($batch['venue_id'] ?? 0));
+    $sessionName = strtoupper(trim((string)($data['reschedule_session_name'] ?? $batch['session_name'] ?? 'FN')));
+    $timeFrom = trim((string)($data['reschedule_time_from'] ?? ''));
+    $timeTo = trim((string)($data['reschedule_time_to'] ?? ''));
+    $instructorId = (int)($data['reschedule_instructor_id'] ?? ($batch['instructor_id'] ?? 0));
+
+    if (!$trainingDate || !$venueId || !in_array($sessionName, array('FN', 'AN'), true)) {
+        throw new RuntimeException('New date, location and session are required.');
+    }
+
+    $venue = db_single($conn, "SELECT id, venue_name, COALESCE(seats, 35) seats FROM training_venue_masters WHERE id = ? LIMIT 1", 'i', array($venueId));
+    if (!$venue) throw new RuntimeException('Invalid training location.');
+    $instructor = $instructorId ? db_single($conn, "SELECT id, instructor_name FROM safety_instructor_masters WHERE id = ? LIMIT 1", 'i', array($instructorId)) : null;
+
+    $emergencySeats = max(0, (int)($batch['emergency_seats'] ?? 0));
+    $newCapacity = max(1, (int)$venue['seats']) + $emergencySeats;
+    $assignedCount = db_count($conn, "SELECT COUNT(*) FROM training_batch_workers WHERE batch_id = ? AND ticked = 1", 'i', array((int)$batchId));
+    if ($assignedCount > $newCapacity) {
+        throw new RuntimeException('Assigned workers exceed the new location capacity. Remove workers or select a larger location.');
+    }
+
+    $finalTime = $timeFrom !== '' ? $timeFrom : ($sessionName === 'AN' ? '14:00:00' : '09:00:00');
+    if (strlen($finalTime) === 5) $finalTime .= ':00';
+    $shift = $sessionName === 'AN' ? 'evening' : 'morning';
+    $instructorName = $instructor['instructor_name'] ?? '';
+
+    $conn->begin_transaction();
+    try {
+        db_execute(
+            $conn,
+            "UPDATE training_class_batches
+             SET training_date = ?, venue_id = ?, venue_name = ?, capacity = ?, session_name = ?,
+                 time_from = ?, time_to = ?, instructor_id = ?, instructor_name = ?, status = 'scheduled', updated_at = NOW()
+             WHERE id = ?",
+            'sisisssisi',
+            array($trainingDate, $venueId, $venue['venue_name'], $newCapacity, $sessionName, $finalTime, $timeTo ?: null, $instructorId ?: null, $instructorName, (int)$batchId)
+        );
+
+        $session = db_single($conn, "SELECT id FROM training_schedule WHERE batch_number = ? LIMIT 1", 's', array($batch['batch_number']));
+        if ($session) {
+            $sessionId = (int)$session['id'];
+            db_execute(
+                $conn,
+                "UPDATE training_schedule
+                 SET session_date = ?, session_time = ?, location = ?, capacity = ?, trainer_name = ?, training_type = ?, session_status = 'open'
+                 WHERE id = ?",
+                'sssissi',
+                array($trainingDate, $finalTime, $venue['venue_name'], $newCapacity, $instructorName, $batch['training_type'], $sessionId)
+            );
+        } else {
+            db_execute(
+                $conn,
+                "INSERT INTO training_schedule (session_date, session_time, location, capacity, trainer_name, batch_number, training_type, session_status, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'open', NOW())",
+                'sssisss',
+                array($trainingDate, $finalTime, $venue['venue_name'], $newCapacity, $instructorName, $batch['batch_number'], $batch['training_type'])
+            );
+            $sessionId = (int)mysqli_insert_id($conn);
+        }
+
+        db_execute(
+            $conn,
+            "UPDATE training_session_workers tsw
+             JOIN training_batch_workers tbw ON tbw.training_request_id = tsw.training_request_id
+             SET tsw.session_id = ?
+             WHERE tbw.batch_id = ? AND tbw.ticked = 1",
+            'ii',
+            array($sessionId, (int)$batchId)
+        );
+
+        db_execute(
+            $conn,
+            "UPDATE training_requests tr
+             JOIN training_batch_workers tbw ON tbw.training_request_id = tr.id
+             SET tr.training_type = ?, tr.scheduled_date = ?, tr.scheduled_shift = ?, tr.scheduled_venue = ?,
+                 tr.scheduled_time = ?, tr.batch_number = ?, tr.instructor = ?, tr.scheduled_by = ?,
+                 tr.scheduled_session_id = ?, tr.updated_at = NOW()
+             WHERE tbw.batch_id = ? AND tbw.ticked = 1",
+            'sssssssiii',
+            array($batch['training_type'], $trainingDate, $shift, $venue['venue_name'], $finalTime, $batch['batch_number'], $instructorName, (int)$userId, $sessionId, (int)$batchId)
+        );
+
+        db_execute(
+            $conn,
+            "UPDATE training_batch_workers SET status = 'scheduled', scheduled_at = NOW() WHERE batch_id = ? AND ticked = 1",
+            'i',
+            array((int)$batchId)
+        );
+
+        $conn->commit();
+        return array('batch_number' => $batch['batch_number'], 'training_date' => $trainingDate, 'session_name' => $sessionName);
+    } catch (Throwable $e) {
+        $conn->rollback();
+        throw $e;
+    }
+}
+
+function clms_safety_add_requests_to_batch($conn, $batchId, array $requestIds, $userId = 0) {
+    clms_safety_ensure_control_schema($conn);
+    $batch = db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', array((int)$batchId));
+    if (!$batch) throw new RuntimeException('Invalid batch selection.');
+
+    $requestIds = array_values(array_unique(array_filter(array_map('intval', $requestIds), function($id) { return $id > 0; })));
+    if (!$requestIds) return array('added' => 0, 'batch_number' => $batch['batch_number']);
+
+    $capacityInfo = clms_safety_batch_capacity_summary($conn, $batch);
+    $capacity = (int)$capacityInfo['total'];
+    $existingSelected = db_count($conn, "SELECT COUNT(*) FROM training_batch_workers WHERE batch_id = ? AND ticked = 1", 'i', array((int)$batchId));
+
+    $alreadyInBatchRows = db_fetch_all($conn, "SELECT training_request_id FROM training_batch_workers WHERE batch_id = ? AND ticked = 1", 'i', array((int)$batchId));
+    $alreadyInBatch = array();
+    foreach ($alreadyInBatchRows as $row) $alreadyInBatch[(int)$row['training_request_id']] = true;
+
+    $newCount = 0;
+    foreach ($requestIds as $requestId) {
+        if (!isset($alreadyInBatch[$requestId])) $newCount++;
+    }
+    if (($existingSelected + $newCount) > $capacity) {
+        throw new RuntimeException('Maximum seat limit exceeded. Only ' . max(0, $capacity - $existingSelected) . ' seat(s) are available in this batch.');
+    }
+
+    $finalTime = $batch['time_from'] ?: ($batch['session_name'] === 'AN' ? '14:00:00' : '09:00:00');
+    $shift = $batch['session_name'] === 'AN' ? 'evening' : 'morning';
+
+    $conn->begin_transaction();
+    try {
+        $session = db_single($conn, "SELECT id FROM training_schedule WHERE batch_number = ? LIMIT 1", 's', array($batch['batch_number']));
+        if (!$session) {
+            db_execute(
+                $conn,
+                "INSERT INTO training_schedule (session_date, session_time, location, capacity, trainer_name, batch_number, training_type, session_status, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'open', NOW())",
+                'sssisss',
+                array($batch['training_date'], $finalTime, $batch['venue_name'], $capacity, $batch['instructor_name'] ?? '', $batch['batch_number'], $batch['training_type'])
+            );
+            $sessionId = (int)mysqli_insert_id($conn);
+        } else {
+            $sessionId = (int)$session['id'];
+            db_execute(
+                $conn,
+                "UPDATE training_schedule
+                 SET session_date = ?, session_time = ?, location = ?, capacity = ?, trainer_name = ?, training_type = ?, session_status = 'open'
+                 WHERE id = ?",
+                'sssissi',
+                array($batch['training_date'], $finalTime, $batch['venue_name'], $capacity, $batch['instructor_name'] ?? '', $batch['training_type'], $sessionId)
+            );
+        }
+
+        $nextToken = $existingSelected + 1;
+        $added = 0;
+        foreach ($requestIds as $requestId) {
+            $row = db_single(
+                $conn,
+                "SELECT tr.id AS request_id, tr.workman_id, w.name, w.safety_language,
+                        COALESCE(tbw_same.ticked, 0) AS already_selected,
+                        EXISTS (
+                            SELECT 1
+                            FROM training_batch_workers used
+                            WHERE used.training_request_id = tr.id
+                              AND used.batch_id <> ?
+                              AND used.ticked = 1
+                              AND LOWER(COALESCE(used.status, 'scheduled')) IN ('scheduled', 'completed')
+                        ) AS used_elsewhere,
+                        (
+                            SELECT COUNT(*)
+                            FROM training_results r
+                            WHERE r.workman_id = tr.workman_id
+                              AND r.created_at >= DATE_SUB(?, INTERVAL 30 DAY)
+                        ) + 1 AS attempt_no
+                 FROM training_requests tr
+                 JOIN workmen w ON w.id = tr.workman_id
+                 LEFT JOIN training_batch_workers tbw_same ON tbw_same.batch_id = ? AND tbw_same.training_request_id = tr.id
+                 WHERE tr.id = ?
+                 LIMIT 1",
+                'isii',
+                array((int)$batchId, $batch['training_date'], (int)$batchId, $requestId)
+            );
+            if (!$row) continue;
+            if ((int)$row['used_elsewhere'] === 1) {
+                throw new RuntimeException(($row['name'] ?? 'Worker') . ' is already assigned to another active batch.');
+            }
+            if (strtolower(trim((string)($row['safety_language'] ?: $batch['language_name']))) !== strtolower(trim((string)$batch['language_name']))) {
+                throw new RuntimeException(($row['name'] ?? 'Worker') . ' does not match this batch language.');
+            }
+            $attemptNo = max(1, (int)$row['attempt_no']);
+            if ($attemptNo > 3) {
+                throw new RuntimeException(($row['name'] ?? 'Worker') . ' has reached maximum 3 attempts. Please apply again after the allowed period.');
+            }
+
+            $token = str_pad((string)$nextToken, 6, '0', STR_PAD_LEFT);
+            $trainingToken = clms_safety_generate_training_token($batch['training_date'], $nextToken);
+            db_execute(
+                $conn,
+                "INSERT INTO training_batch_workers (batch_id, training_request_id, workman_id, ticked, token_number, training_token, attempt_no, status, scheduled_at, created_at)
+                 VALUES (?, ?, ?, 1, ?, ?, ?, 'scheduled', NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE training_request_id = VALUES(training_request_id), ticked = 1, token_number = COALESCE(token_number, VALUES(token_number)), training_token = COALESCE(training_token, VALUES(training_token)), attempt_no = VALUES(attempt_no), status = 'scheduled', scheduled_at = NOW()",
+                'iiissi',
+                array((int)$batchId, $requestId, (int)$row['workman_id'], $token, $trainingToken, $attemptNo)
+            );
+            db_execute(
+                $conn,
+                "UPDATE training_requests
+                 SET training_type = ?, scheduled_date = ?, scheduled_shift = ?, scheduled_venue = ?, scheduled_time = ?,
+                     batch_number = ?, instructor = ?, contractor_confirmed = 1, scheduled_by = ?, scheduled_session_id = ?,
+                     status = 'contractor_confirmed', updated_at = NOW()
+                 WHERE id = ?",
+                'sssssssiii',
+                array($batch['training_type'], $batch['training_date'], $shift, $batch['venue_name'], $finalTime, $batch['batch_number'], $batch['instructor_name'] ?? '', (int)$userId, $sessionId, $requestId)
+            );
+            db_execute(
+                $conn,
+                "INSERT INTO training_session_workers (session_id, workman_id, training_request_id, attendance_status, result, created_at)
+                 VALUES (?, ?, ?, 'pending', 'pending', NOW())
+                 ON DUPLICATE KEY UPDATE session_id = VALUES(session_id)",
+                'iii',
+                array($sessionId, (int)$row['workman_id'], $requestId)
+            );
+            db_execute(
+                $conn,
+                "UPDATE workmen SET training_status = 'scheduled', safety_training_status = 'TRAINING_CONFIRMED', updated_at = NOW() WHERE id = ?",
+                'i',
+                array((int)$row['workman_id'])
+            );
+
+            if (empty($row['already_selected'])) {
+                $nextToken++;
+                $added++;
+            }
+        }
+
+        db_execute(
+            $conn,
+            "UPDATE training_schedule
+             SET enrolled_count = (
+                 SELECT COUNT(*)
+                 FROM training_session_workers tsw
+                 JOIN training_requests tr ON tr.id = tsw.training_request_id
+                 WHERE tsw.session_id = ? AND tr.status = 'contractor_confirmed'
+             )
+             WHERE id = ?",
+            'ii',
+            array($sessionId, $sessionId)
+        );
+        db_execute($conn, "UPDATE training_class_batches SET status = 'scheduled', updated_at = NOW() WHERE id = ?", 'i', array((int)$batchId));
+        $conn->commit();
+        return array('added' => $added, 'batch_number' => $batch['batch_number']);
+    } catch (Throwable $e) {
+        $conn->rollback();
+        throw $e;
+    }
+}
+
 function clms_safety_schedule_batch($conn, $batchId, $selectedRequestIds, $userId, $forceRequestId = 0) {
     clms_safety_ensure_control_schema($conn);
     $batch = db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', array($batchId));
     if (!$batch) throw new RuntimeException('Invalid batch selection.');
 
-    $capacity = max(1, (int)$batch['capacity']);
+    $capacityInfo = clms_safety_batch_capacity_summary($conn, $batch);
+    $capacity = (int)$capacityInfo['total'];
     $selectedRequestIds = array_values(array_unique(array_map('intval', (array)$selectedRequestIds)));
     $selectedRequestIds = array_filter($selectedRequestIds, function($id) { return $id > 0; });
     if (count($selectedRequestIds) > $capacity) {
@@ -673,7 +980,8 @@ function clms_safety_save_batch_selection($conn, $batchId, $selectedRequestIds, 
     $batch = db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', array($batchId));
     if (!$batch) throw new RuntimeException('Invalid batch selection.');
 
-    $capacity = max(1, (int)$batch['capacity']);
+    $capacityInfo = clms_safety_batch_capacity_summary($conn, $batch);
+    $capacity = (int)$capacityInfo['total'];
     $selectedRequestIds = array_values(array_unique(array_map('intval', (array)$selectedRequestIds)));
     $selectedRequestIds = array_filter($selectedRequestIds, function($id) { return $id > 0; });
     if (count($selectedRequestIds) > $capacity) {

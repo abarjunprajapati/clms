@@ -575,6 +575,8 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'dcate', 'dcate') . ",
                 " . enrolment_expr($conn, 'workmen', 'certified_wage_rate', 'certified_wage_rate') . ",
                 " . enrolment_expr($conn, 'workmen', 'safety_language', 'safety_language') . ",
+                " . enrolment_expr($conn, 'workmen', 'work_order_source', 'work_order_source') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_fee_payment_option', 'safety_fee_payment_option') . ",
                 " . enrolment_expr($conn, 'workmen', 'executing_officer_code', 'executing_officer_code') . ",
                 " . enrolment_expr($conn, 'workmen', 'executing_officer_name', 'executing_officer_name') . ",
                 " . enrolment_expr($conn, 'workmen', 'execution_training_status', 'execution_training_status') . ",
@@ -689,7 +691,7 @@ function renderContent() {
     .doc-card { border:1px solid #e2e8f0; background:#f8fafc; border-radius:10px; padding:14px; }
     .doc-card .form-label { margin-bottom:8px; }
     @media (max-width: 900px) { .form-grid-3, .form-grid-4 { grid-template-columns: 1fr 1fr; } }
-    @media (max-width: 640px) { .form-grid-2, .form-grid-3, .form-grid-4 { grid-template-columns: 1fr; } .enroll-actions { flex-direction:column; align-items:stretch; } .enroll-actions-left, .enroll-actions-right { width:100%; } .enroll-actions .btn { flex:1; } }
+    @media (max-width: 640px) { .form-grid-2, .form-grid-3, .form-grid-4, .preview-grid, .preview-section-grid { grid-template-columns: 1fr; } .enroll-actions { flex-direction:column; align-items:stretch; } .enroll-actions-left, .enroll-actions-right { width:100%; } .enroll-actions .btn { flex:1; } }
     .work-flow-panel { grid-column:1 / -1; border:1px solid var(--border-color); border-radius:8px; background:#f8fafc; padding:16px; margin-bottom:5px; }
     .work-flow-title { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700; color:#0f172a; margin-bottom:14px; }
     .work-flow-title i { color:#6366f1; }
@@ -722,9 +724,15 @@ function renderContent() {
     .choice-row input { width:18px; height:18px; }
     .training-booking-form { margin-top:16px; border:1px solid #bfdbfe; background:#eff6ff; border-radius:10px; padding:16px; }
     .training-booking-form.hidden { display:none; }
-    .preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .preview-section { border:1px solid #dbe4ef; border-radius:8px; background:#fff; overflow:hidden; }
+    .preview-section.full { grid-column:1 / -1; }
+    .preview-section-title { padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:11px; font-weight:900; color:#334155; text-transform:uppercase; }
+    .preview-section-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; }
     .preview-item { border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#fff; }
     .preview-item span { display:block; color:#64748b; font-size:11px; font-weight:800; text-transform:uppercase; margin-bottom:4px; }
+    .preview-section .preview-item { border:0; border-radius:0; border-right:1px solid #eef2f7; border-bottom:1px solid #eef2f7; min-width:0; }
+    .preview-section .preview-item strong { display:block; overflow-wrap:anywhere; line-height:1.35; }
     .preview-question { margin:16px 0 0; padding:10px 12px; border:1px solid #bfdbfe; border-radius:8px; background:#eff6ff; color:#1e3a8a; font-weight:800; }
     #enrollForm .form-control {
       min-height: 42px;
@@ -935,6 +943,7 @@ function renderContent() {
         <form id="enrollForm" enctype="multipart/form-data">
           <input type="hidden" name="worker_id" id="workerEditId" value="">
           <input type="hidden" name="source" id="workerSource" value="MANUAL">
+          <input type="hidden" name="work_order_source" id="workOrderSource" value="">
           <input type="hidden" name="contractor_id" value="<?= (int)$c_id ?>">
           <div class="square-tabs">
             <button type="button" class="square-tab active" data-tab="basic">1. Basic Info</button>
@@ -942,7 +951,8 @@ function renderContent() {
             <button type="button" class="square-tab" data-tab="address">3. Address / Contact</button>
             <button type="button" class="square-tab" data-tab="work">4. Work / Compliance</button>
             <button type="button" class="square-tab" data-tab="docs">5. Documents</button>
-            <button type="button" class="square-tab" data-tab="training">6. Book Appointment for Safety Training</button>
+            <button type="button" class="square-tab" data-tab="payment">6. Safety Fee Payment</button>
+            <button type="button" class="square-tab" data-tab="training">7. Book Appointment for Safety Training</button>
           </div>
 
           <!-- Tab 1: Basic -->
@@ -965,7 +975,8 @@ function renderContent() {
                     <option value="<?= htmlspecialchars($wo['work_order_no']) ?>"
                             data-project="<?= htmlspecialchars($wo['project_name'] ?? '') ?>"
                             data-project-no="<?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>"
-                            data-department="<?= htmlspecialchars($wo['department'] ?? '') ?>">
+                            data-department="<?= htmlspecialchars($wo['department'] ?? '') ?>"
+                            data-source="<?= htmlspecialchars($wo['source'] ?? '') ?>">
                       <?= !empty($wo['source']) ? '[' . htmlspecialchars($wo['source']) . '] ' : '' ?><?= htmlspecialchars($wo['work_order_no']) ?>
                     </option>
                   <?php endforeach; ?>
@@ -1223,16 +1234,36 @@ function renderContent() {
             </div>
           </div>
 
-          <!-- Tab 6: Book Appointment for Safety Training -->
+          <!-- Tab 6: Safety Fee Payment -->
+          <div class="modal-tab-content hidden" id="tab-payment">
+            <div class="training-booking-box" id="pwoPaymentOptionBox" style="margin-bottom:12px;display:none;">
+              <label class="choice-row active">
+                <input type="radio" name="safety_fee_payment_option" value="pay_now" checked>
+                <span>Pay Safety Fee Now</span>
+              </label>
+              <label class="choice-row">
+                <input type="radio" name="safety_fee_payment_option" value="pay_later">
+                <span>Pay Safety Fee Later</span>
+              </label>
+            </div>
+            <div class="alert alert-info" id="pwoPaymentRequiredNote" style="margin:0 0 12px;display:none;">
+              Pay Safety Fee first. Safety Training & Seat Booking will open after payment.
+            </div>
+            <div class="alert alert-info" id="nonPwoPaymentNote" style="margin:0 0 12px;">
+              Safety Fee Payment is applicable only for PWO. For non-PWO, continue to Safety Seat Booking.
+            </div>
+          </div>
+
+          <!-- Tab 7: Book Appointment for Safety Training -->
           <div class="modal-tab-content hidden" id="tab-training">
-            <div class="training-booking-box">
+            <div class="training-booking-box" id="trainingBookingChoiceBox">
               <label class="choice-row">
                 <input type="radio" name="training_booking_choice" value="book_now" checked>
                 <span>I need to book an appointment for Safety Training</span>
               </label>
-              <label class="choice-row">
+              <label class="choice-row" id="trainingLaterChoiceRow">
                 <input type="radio" name="training_booking_choice" value="not_now">
-                <span>Save as draft and book Safety Training later</span>
+                <span id="trainingLaterChoiceText">Save as draft and book Safety Training later</span>
               </label>
             </div>
             <div id="trainingBookingForm" class="training-booking-form hidden">
@@ -1301,7 +1332,7 @@ function renderContent() {
     </div>
 
     <div id="submitPreviewModal" class="modal-overlay hidden">
-      <div class="modal-box" style="max-width:760px;">
+      <div class="modal-box" style="max-width:980px;">
         <div class="modal-header">
           <h3 class="modal-title">Preview Entitlement Details</h3>
           <button class="modal-close" type="button" onclick="closeSubmitPreview()">&times;</button>
@@ -1469,7 +1500,7 @@ function renderContent() {
         const formSection = document.getElementById('formSection');
         const viewModal = document.getElementById('viewModal');
         const form = document.getElementById('enrollForm');
-        const tabOrder = ['basic', 'personal', 'address', 'work', 'docs', 'training'];
+        const tabOrder = ['basic', 'personal', 'address', 'work', 'docs', 'payment', 'training'];
         const scheduledTrainingSessions = <?= json_encode(db_fetch_all($conn, "SELECT id, batch_number, training_date, session_name, language_name, capacity FROM training_class_batches WHERE training_date >= CURDATE() AND LOWER(COALESCE(status, 'open')) IN ('open','draft','scheduled') ORDER BY training_date ASC, session_name ASC LIMIT 100"), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
         
         const defaultDepartment = <?= json_encode($department_name) ?>;
@@ -1720,6 +1751,8 @@ function renderContent() {
           if (woSelect && workOptions.length === 1) {
             woSelect.value = workOptions[0].work_order_no;
             syncWorkOrderFields(woSelect.value);
+          } else {
+            refreshWorkflowPaymentState(false);
           }
           const photoInput = form.querySelector('[name="photo"]');
           const requiredDocInputs = form.querySelectorAll('#tab-docs input[type="file"]');
@@ -1748,6 +1781,7 @@ function renderContent() {
           document.getElementById('enrollFormTitle').textContent = ' New ' + requestedPassLabel;
           resetWorkFlow();
           updateNationalityLocationMode();
+          refreshWorkflowPaymentState(false);
         }
         
         function activateTab(tabId) {
@@ -1759,6 +1793,7 @@ function renderContent() {
           const draftBtn = document.getElementById('btnSaveDraft');
           if (draftBtn) draftBtn.style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
           document.getElementById('btnSubmit').style.display = index === tabOrder.length - 1 ? 'inline-flex' : 'none';
+          if (tabId === 'payment') refreshWorkflowPaymentState(false);
           if (tabId === 'training') refreshTrainingBookingFields();
         }
         
@@ -1781,12 +1816,19 @@ function renderContent() {
           const option = workOptions.find(item => String(item.work_order_no) === String(workOrderNo));
           const projectSelect = form.querySelector('[name="project_name"]');
           const deptField = form.querySelector('[name="department"]');
+          const sourceInput = document.getElementById('workOrderSource');
           if (projectSelect && option) projectSelect.value = option.project_no || option.work_order_no || '';
+          if (sourceInput) {
+            const inferred = String(option?.source || '').toUpperCase()
+              || (String(workOrderNo || '').toUpperCase().indexOf('PWO') === 0 ? 'PWO' : '');
+            sourceInput.value = inferred;
+          }
           if (deptField && option && option.department) {
             deptField.value = option.department;
             deptField.setAttribute('readonly', true);
             deptField.style.backgroundColor = '#f1f5f9';
           }
+          refreshWorkflowPaymentState();
         }
 
         form.querySelector('[name="work_order_no"]')?.addEventListener('change', (e) => syncWorkOrderFields(e.target.value));
@@ -2209,6 +2251,13 @@ function renderContent() {
           }
           const field = form.querySelector(`[name="${name}"]`);
           if (!field) return;
+          if (field.type === 'radio') {
+            form.querySelectorAll(`[name="${name}"]`).forEach(input => {
+              input.checked = String(input.value) === String(value ?? '');
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            return;
+          }
           field.value = value ?? '';
           field.dispatchEvent(new Event('input', { bubbles: true }));
           field.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2255,6 +2304,8 @@ function renderContent() {
             esi_registered_worker: worker.esi_no ? 'YES' : 'NO',
             certified_wage_rate: worker.certified_wage_rate,
             safety_language: worker.safety_language,
+            work_order_source: worker.work_order_source,
+            safety_fee_payment_option: worker.safety_fee_payment_option || 'pay_now',
             blood_group: worker.blood_group,
             region: worker.region,
             pwd_status: worker.pwd_status,
@@ -2288,6 +2339,11 @@ function renderContent() {
             notify('Document Required', 'Executing Officer ne request reject ki hai. Corrected Training Approval document dobara upload karein.', 'warning');
           }
           syncWorkFlowFromFields();
+          syncWorkOrderFields(values.work_order_no || '');
+          if (worker.safety_fee_payment_option) {
+            setFieldValue('safety_fee_payment_option', worker.safety_fee_payment_option);
+          }
+          refreshWorkflowPaymentState(false);
           listSection.style.display = 'none';
           formSection.style.display = 'block';
           formSection.classList.remove('hidden');
@@ -2353,12 +2409,14 @@ function renderContent() {
         certifiedWageInput?.addEventListener('blur', () => validateCertifiedWage(true));
 
         function refreshTrainingBookingFields() {
+          refreshWorkflowPaymentState(false);
           const choice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
           const bookingBox = document.getElementById('trainingBookingForm');
           const isBookingNow = choice === 'book_now';
           bookingBox?.classList.toggle('hidden', !isBookingNow);
           document.querySelectorAll('.choice-row').forEach(row => {
             const input = row.querySelector('[name="training_booking_choice"]');
+            if (!input) return;
             row.classList.toggle('active', Boolean(input?.checked));
           });
           const aadhaarValue = form.querySelector('[name="aadhaar"]')?.value || '';
@@ -2386,9 +2444,69 @@ function renderContent() {
             populateTrainingDateOptions();
           }
           if (submitBtn) {
-            submitBtn.disabled = !isBookingNow;
-            submitBtn.title = isBookingNow ? '' : 'Save Draft is available. Submit requires Safety Training booking.';
+            const canSubmitWithoutBooking = isPwoPayLater();
+            submitBtn.disabled = !isBookingNow && !canSubmitWithoutBooking;
+            submitBtn.title = isBookingNow || canSubmitWithoutBooking ? '' : 'Save Draft is available. Submit requires Safety Training booking.';
           }
+        }
+
+        function selectedWorkOrderSource() {
+          const hidden = document.getElementById('workOrderSource')?.value || '';
+          if (hidden) return hidden.toUpperCase();
+          const select = form.querySelector('[name="work_order_no"]');
+          const selected = select?.selectedOptions?.[0];
+          const source = String(selected?.dataset?.source || '').trim().toUpperCase();
+          if (source) return source;
+          const combinedText = `${select?.value || ''} ${selected?.textContent || ''}`.toUpperCase();
+          if (/\bPWO\b/.test(combinedText) || combinedText.indexOf('PWO') === 0 || combinedText.indexOf('-PWO') >= 0) return 'PWO';
+          if (/\bSO\b/.test(combinedText)) return 'SO';
+          if (/\bPO\b/.test(combinedText)) return 'PO';
+          return '';
+        }
+
+        function isPwoWorkOrder() {
+          return selectedWorkOrderSource() === 'PWO';
+        }
+
+        function selectedSafetyFeeOption() {
+          return form.querySelector('[name="safety_fee_payment_option"]:checked')?.value || 'pay_now';
+        }
+
+        function isPwoPayLater() {
+          return isPwoWorkOrder() && selectedSafetyFeeOption() === 'pay_later';
+        }
+
+        function refreshWorkflowPaymentState(syncBooking = true) {
+          const isPwo = isPwoWorkOrder();
+          const paymentBox = document.getElementById('pwoPaymentOptionBox');
+          const paymentRequiredNote = document.getElementById('pwoPaymentRequiredNote');
+          const nonPwoPaymentNote = document.getElementById('nonPwoPaymentNote');
+          const laterText = document.getElementById('trainingLaterChoiceText');
+          const laterInput = form.querySelector('[name="training_booking_choice"][value="not_now"]');
+          const bookNowInput = form.querySelector('[name="training_booking_choice"][value="book_now"]');
+          if (paymentBox) paymentBox.style.display = isPwo ? 'grid' : 'none';
+          if (nonPwoPaymentNote) nonPwoPaymentNote.style.display = isPwo ? 'none' : 'block';
+          if (paymentRequiredNote) {
+            paymentRequiredNote.style.display = isPwo ? 'block' : 'none';
+            paymentRequiredNote.textContent = isPwoPayLater()
+              ? 'Enrollment Completed. Please do Safety Payment for proceeding further.'
+              : 'Pay Safety Fee first. Safety Training & Seat Booking will open after payment.';
+          }
+          document.querySelectorAll('[name="safety_fee_payment_option"]').forEach(input => {
+            const row = input.closest('.choice-row');
+            if (row) row.classList.toggle('active', Boolean(input.checked));
+          });
+          if (laterText) {
+            laterText.textContent = isPwoWorkOrder() && selectedSafetyFeeOption() === 'pay_now'
+              ? 'Pay Safety Fee first. Safety Training & Seat Booking will open after payment.'
+              : isPwoPayLater()
+              ? 'Enrollment Completed. Please do Safety Payment for proceeding further.'
+              : 'Save as draft and book Safety Training later';
+          }
+          if (!isPwo && laterInput?.checked && bookNowInput) {
+            bookNowInput.checked = true;
+          }
+          if (syncBooking) refreshTrainingBookingFields();
         }
 
         function fallbackTrainingDates() {
@@ -2447,6 +2565,9 @@ function renderContent() {
         document.querySelectorAll('[name="training_booking_choice"]').forEach(input => {
           input.addEventListener('change', refreshTrainingBookingFields);
         });
+        document.querySelectorAll('[name="safety_fee_payment_option"]').forEach(input => {
+          input.addEventListener('change', () => refreshWorkflowPaymentState(true));
+        });
         document.getElementById('trainingBookingDate')?.addEventListener('change', e => {
           const session = e.target.selectedOptions[0]?.dataset.session || '';
           const sessionSelect = document.getElementById('trainingBookingSession');
@@ -2461,27 +2582,143 @@ function renderContent() {
         function previewValue(name) {
           const field = form.querySelector(`[name="${name}"]`);
           if (!field) return '';
+          if (field.type === 'radio') {
+            return form.querySelector(`[name="${name}"]:checked`)?.value || '';
+          }
           if (field.tagName === 'SELECT') return field.selectedOptions[0]?.textContent?.trim() || field.value;
           return field.value || '';
         }
 
+        function previewRawValue(name) {
+          const field = form.querySelector(`[name="${name}"]`);
+          if (!field) return '';
+          if (field.type === 'radio') return form.querySelector(`[name="${name}"]:checked`)?.value || '';
+          return field.value || '';
+        }
+
+        function escapePreviewHtml(value) {
+          return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+        }
+
+        function previewLabel(value) {
+          const normalized = String(value || '').replace(/_/g, ' ').trim();
+          return normalized ? normalized.replace(/\b\w/g, char => char.toUpperCase()) : '';
+        }
+
+        function previewFiles() {
+          const fileLabels = [
+            ['photo', 'Photo'],
+            ['aadhaar_doc', 'Aadhaar Copy'],
+            ['education_doc', 'Education Certificate'],
+            ['bank_doc', 'Bank Document'],
+            ['gatepass_doc', 'Gate Pass Document'],
+            ['skill_cert_doc', 'Skill Certificate'],
+            ['medical_doc', 'Medical Document'],
+            ['police_doc', 'Police Verification'],
+            ['insurance_doc', 'Insurance Document'],
+            ['training_approval_doc', 'Training Attendance Approval']
+          ];
+          const isEdit = Boolean(document.getElementById('workerEditId')?.value);
+          return fileLabels.map(([name, label]) => {
+            const input = form.querySelector(`[name="${name}"]`);
+            const fileName = input?.files?.[0]?.name || (isEdit ? 'Already uploaded / no new file selected' : '');
+            return [label, fileName || '-'];
+          });
+        }
+
+        function renderPreviewSection(title, items, full = false) {
+          const filtered = items.filter(item => item && item.length >= 2);
+          const body = filtered.map(([label, value]) => `
+            <div class="preview-item">
+              <span>${escapePreviewHtml(label)}</span>
+              <strong>${escapePreviewHtml(value || '-')}</strong>
+            </div>
+          `).join('');
+          return `
+            <section class="preview-section ${full ? 'full' : ''}">
+              <div class="preview-section-title">${escapePreviewHtml(title)}</div>
+              <div class="preview-section-grid">${body}</div>
+            </section>
+          `;
+        }
+
         function showSubmitPreview() {
           const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
-          const bookingText = bookingChoice === 'book_now'
-            ? `${previewValue('training_booking_date')} / ${previewValue('training_booking_session')} / ${previewValue('training_booking_language')}`
-            : 'Not booked now';
-          const rows = [
-            ['Basic Info', `${previewValue('name')} | Aadhaar: ${previewValue('aadhaar')} | Mobile: ${previewValue('mobile')}`],
-            ['Personal Info', `${previewValue('gender')} | DOB: ${previewValue('dob')} | Blood: ${previewValue('blood_group')} | Nationality: ${previewValue('nationality')}`],
-            ['Medical Info', `Fitness: ${previewValue('medical_fitness')} | Emergency: ${previewValue('emergency_contact')}`],
-            ['Address / Contact', `${previewValue('present_address')} | ${previewValue('state')} - ${previewValue('district')} | PIN: ${previewValue('pincode')}`],
-            ['Work / Compliance', `${previewValue('department')} | ${previewValue('nature_of_work')} | Trade: ${previewValue('trade')} | Wage: ${previewValue('certified_wage_rate')}`],
-            ['Officer / PWO', `E-Code: ${previewValue('executing_officer_code')} | Name: ${previewValue('executing_officer_name')} | PWO: ${previewValue('pwo_no')}`],
-            ['Documents', 'Photo, Aadhaar and uploaded documents will be submitted.'],
-            ['Safety Training Details', bookingText],
-            ['Declaration', 'Tick verification checkbox before final submission.']
+          const safetyPaymentOption = isPwoWorkOrder()
+            ? previewLabel(selectedSafetyFeeOption())
+            : 'Not applicable';
+          const sections = [
+            renderPreviewSection('Basic Info', [
+              ['Pass Type', previewValue('pass_type')],
+              ['Work Order No', previewValue('work_order_no')],
+              ['Work Order Type', selectedWorkOrderSource() || '-'],
+              ['Project No / WBS No', previewValue('project_name')],
+              ['Date of Joining', previewValue('registration_date')],
+              ['Aadhaar Number', previewValue('aadhaar')],
+              ['Full Name', previewValue('name')],
+              ['Father Name', previewValue('father_name')]
+            ]),
+            renderPreviewSection('Personal / Medical', [
+              ['Gender', previewValue('gender')],
+              ['Date of Birth', previewValue('dob')],
+              ['Marital Status', previewValue('marital_status')],
+              ['Nationality', previewValue('nationality')],
+              ['Identification Mark', previewValue('identification_mark')],
+              ['Blood Group', previewValue('blood_group')],
+              ['Religion', previewValue('region')],
+              ['Person with Disability', previewValue('pwd_status')],
+              ['Passport No', previewValue('passport_no')],
+              ['Driving Licence No', previewValue('driving_licence_no')]
+            ]),
+            renderPreviewSection('Address / Contact', [
+              ['Permanent Address', previewValue('permanent_address')],
+              ['Present Address', previewValue('present_address')],
+              ['State', previewValue('state')],
+              ['District', previewValue('district')],
+              ['Pin Code', previewValue('pincode')],
+              ['Mobile Number', previewValue('mobile')],
+              ['Email', previewValue('email')],
+              ['Emergency Contact', previewValue('emergency_contact')]
+            ], true),
+            renderPreviewSection('Work / Compliance', [
+              ['Department', previewValue('department')],
+              ['Years of Experience', previewValue('experience')],
+              ['Category', flowState.category],
+              ['Qualification', flowState.qualification],
+              ['Job Profile / Nature of Work', previewValue('nature_of_work')],
+              ['Skill Category', previewValue('skill_category')],
+              ['Role Type', previewValue('role_type')],
+              ['Education', previewValue('education')],
+              ['EPF Registered', previewValue('epf_registered_worker')],
+              ['UAN Number', previewValue('pf_no') || previewValue('uan_number')],
+              ['ESI Registered', previewValue('esi_registered_worker')],
+              ['ESI Number', previewValue('esi_no')],
+              ['Certified Wage Rate', previewValue('certified_wage_rate')],
+              ['Safety Induction Language', previewValue('safety_language')]
+            ], true),
+            renderPreviewSection('Executing Officer', [
+              ['E-Code', previewValue('executing_officer_code')],
+              ['Officer Name', previewValue('executing_officer_name')]
+            ]),
+            renderPreviewSection('Safety Training / Payment', [
+              ['PO Type PWO?', isPwoWorkOrder() ? 'Yes' : 'No'],
+              ['Safety Fee Option', safetyPaymentOption],
+              ['Booking Choice', bookingChoice === 'book_now' ? 'Safety seat booking selected' : 'Book/pay later'],
+              ['Training Date', bookingChoice === 'book_now' ? previewRawValue('training_booking_date') : '-'],
+              ['Training Session', bookingChoice === 'book_now' ? previewRawValue('training_booking_session') : '-'],
+              ['Training Language', previewRawValue('training_booking_language') || previewValue('safety_language')]
+            ]),
+            renderPreviewSection('Documents', previewFiles(), true),
+            renderPreviewSection('Declaration', [
+              ['Final Confirmation', 'Please verify all details before final submission.']
+            ], true)
           ];
-          document.getElementById('submitPreviewContent').innerHTML = rows.map(([label, value]) => `<div class="preview-item"><span>${label}</span><strong>${value || '-'}</strong></div>`).join('');
+          document.getElementById('submitPreviewContent').innerHTML = sections.join('');
           document.getElementById('submitVerifiedCheckbox').checked = false;
           document.getElementById('submitPreviewModal').classList.remove('hidden');
           document.getElementById('submitPreviewModal').classList.add('show');
@@ -2516,7 +2753,8 @@ function renderContent() {
                   : 'The information has been saved as draft only. Please complete safety training booking before submitting.';
                 notify('Draft Saved', msg, 'success');
               } else {
-                notify('Error', result.message || `Draft save failed. HTTP ${res.status}`, 'error');
+                const detail = result.message || responseText || `Draft save failed. HTTP ${res.status}`;
+                notify('Error', detail.length > 500 ? detail.slice(0, 500) : detail, 'error');
               }
             } catch (err) {
               notify('Error', err.message || 'Server error.', 'error');
@@ -2553,7 +2791,7 @@ function renderContent() {
           }
 
           const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
-          if (bookingChoice !== 'book_now') {
+          if (bookingChoice !== 'book_now' && !isPwoPayLater()) {
             activateTab('training');
             notify('Safety Training Booking Required', 'The information has been saved as draft only. Please complete safety training booking before submitting.', 'warning');
             return;
@@ -2619,7 +2857,18 @@ function renderContent() {
               result = { success: false, message: responseText || 'Invalid server response.' };
             }
             if (result.success) {
-              notify('Success', result.message + '\nTemp ID: ' + result.temp_id, 'success').then(() => location.reload());
+              let successMessage = result.message + '\nTemp ID: ' + result.temp_id;
+              if (result.payment && result.payment.payment_link) {
+                successMessage += '\nPayment Ref: ' + result.payment.payment_ref + '\nAmount: Rs. ' + result.payment.amount;
+              }
+              notify('Success', successMessage, 'success').then(() => {
+                if (result.payment && result.payment.payment_link && selectedSafetyFeeOption() === 'pay_now') {
+                  const workerId = result.worker_id || result.workman_id || '';
+                  window.location.href = workerId ? `../payment.php?selected_worker_id=${encodeURIComponent(workerId)}` : '../payment.php';
+                } else {
+                  location.reload();
+                }
+              });
             } else {
               notify('Error', result.message || `Enrollment failed. HTTP ${res.status}`, 'error');
             }

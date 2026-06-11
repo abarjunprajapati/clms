@@ -135,7 +135,7 @@ function clms_ensure_payment_flow($conn) {
     }
 
     $defaults = [
-        ['training_fee_per_worker', '500', 'payment', 'Safety induction fee per worker'],
+        ['training_fee_per_worker', '500', 'payment', 'Safety fee per worker'],
         ['training_payment_gst_percent', '18', 'payment', 'GST percentage for safety induction fee'],
         ['training_payment_link_valid_hours', '72', 'payment', 'Payment link validity in hours'],
         ['payment_gateway_provider', 'demo_qr', 'payment', 'Gateway provider name. demo_qr enables QR demo flow.'],
@@ -155,6 +155,17 @@ function clms_ensure_payment_flow($conn) {
             'ssss',
             $setting
         );
+    }
+
+    if (clms_payment_table_exists($conn, 'workmen')) {
+        foreach ([
+            'execution_training_status' => "VARCHAR(50) NULL DEFAULT 'pending'",
+            'execution_training_remarks' => 'TEXT NULL',
+            'work_order_source' => 'VARCHAR(30) NULL',
+            'safety_fee_payment_option' => 'VARCHAR(30) NULL',
+        ] as $column => $definition) {
+            clms_payment_ensure_column($conn, 'workmen', $column, $definition);
+        }
     }
 }
 
@@ -332,6 +343,112 @@ function clms_paid_training_worker_ids($conn, array $workerIds) {
     return array_map(function($row) { return (int)$row['workman_id']; }, $rows);
 }
 
+function clms_pending_safety_fee_workers($conn, $contractorId) {
+    clms_ensure_payment_flow($conn);
+    if (!$contractorId) return [];
+
+    $fee = clms_training_fee_per_worker($conn);
+    $workSourceExpr = clms_payment_column_exists($conn, 'workmen', 'work_order_source') ? "COALESCE(w.work_order_source, '')" : "''";
+    $applicationExpr = clms_payment_column_exists($conn, 'workmen', 'application_no') ? "COALESCE(w.application_no, '')" : "''";
+    $workOrderExpr = clms_payment_column_exists($conn, 'workmen', 'work_order_no') ? "COALESCE(w.work_order_no, '')" : "''";
+    $projectExpr = clms_payment_column_exists($conn, 'workmen', 'project_name') ? "COALESCE(w.project_name, '')" : "''";
+    $createdExpr = clms_payment_column_exists($conn, 'workmen', 'created_at') ? "w.created_at" : "NULL";
+    $paymentOptionExpr = clms_payment_column_exists($conn, 'workmen', 'safety_fee_payment_option') ? "COALESCE(w.safety_fee_payment_option, '')" : "''";
+
+    $rows = db_fetch_all(
+        $conn,
+        "SELECT
+            w.id,
+            COALESCE(NULLIF(w.temp_id, ''), CONCAT('W', LPAD(w.id, 3, '0'))) AS worker_code,
+            COALESCE(w.name, 'Worker') AS name,
+            $applicationExpr AS application_no,
+            $workOrderExpr AS work_order_no,
+            $workSourceExpr AS work_order_source,
+            $projectExpr AS project_name,
+            $createdExpr AS enrollment_date,
+            ? AS safety_fee,
+            (
+                SELECT pr.payment_ref
+                FROM training_payment_request_workers pw
+                JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                WHERE pw.workman_id = w.id
+                  AND pr.status IN ('pending','link_sent','gateway_created','submitted')
+                ORDER BY pr.id DESC
+                LIMIT 1
+            ) AS open_payment_ref
+         FROM workmen w
+         WHERE w.contractor_id = ?
+           AND COALESCE(w.status, '') <> 'draft'
+           AND (UPPER($workSourceExpr) = 'PWO' OR UPPER($workOrderExpr) LIKE 'PWO%')
+           AND NOT EXISTS (
+                SELECT 1
+                FROM training_payment_request_workers paid_pw
+                JOIN training_payment_requests paid_pr ON paid_pr.id = paid_pw.payment_request_id
+                WHERE paid_pw.workman_id = w.id
+                  AND paid_pr.status IN ('paid','verified')
+           )
+           AND (
+                COALESCE(w.execution_training_status, '') IN ('pending_payment','link_sent')
+                OR $paymentOptionExpr IN ('pay_now','pay_later')
+           )
+         ORDER BY w.id DESC",
+        'di',
+        [$fee, (int)$contractorId]
+    );
+
+    foreach ($rows as &$row) {
+        $row['safety_fee'] = $fee;
+        $row['payment_status'] = 'Pending';
+    }
+    unset($row);
+    return $rows;
+}
+
+function clms_cancel_open_training_payments_for_workers($conn, $contractorId, array $workerIds) {
+    clms_ensure_payment_flow($conn);
+    $workerIds = array_values(array_unique(array_filter(array_map('intval', $workerIds))));
+    if (!$contractorId || !$workerIds) return;
+
+    $placeholders = implode(',', array_fill(0, count($workerIds), '?'));
+    $types = 'i' . str_repeat('i', count($workerIds));
+    $params = array_merge([(int)$contractorId], $workerIds);
+    $rows = db_fetch_all(
+        $conn,
+        "SELECT DISTINCT pr.id
+         FROM training_payment_requests pr
+         JOIN training_payment_request_workers pw ON pw.payment_request_id = pr.id
+         WHERE pr.contractor_id = ?
+           AND pr.status IN ('pending','link_sent','gateway_created','submitted')
+           AND pw.workman_id IN ($placeholders)",
+        $types,
+        $params
+    );
+
+    $selected = array_fill_keys($workerIds, true);
+    foreach ($rows as $row) {
+        $requestId = (int)$row['id'];
+        $linkedIds = clms_payment_worker_ids_for_request($conn, $requestId);
+        $outsideSelected = array_filter($linkedIds, function($workerId) use ($selected) {
+            return !isset($selected[(int)$workerId]);
+        });
+        if ($outsideSelected) continue;
+        db_execute(
+            $conn,
+            "UPDATE training_payment_requests
+             SET status = 'cancelled', updated_at = NOW()
+             WHERE id = ?
+               AND status IN ('pending','link_sent','gateway_created','submitted')",
+            'i',
+            [$requestId]
+        );
+    }
+}
+
+function clms_create_selected_training_payment_request($conn, $contractorId, array $workerIds, $createdBy = 0, $source = 'selected_payment') {
+    clms_cancel_open_training_payments_for_workers($conn, $contractorId, $workerIds);
+    return clms_create_training_payment_request($conn, $contractorId, $workerIds, $createdBy, $source);
+}
+
 function clms_get_contractor_user_for_payment($conn, $contractorId) {
     $contractor = db_single($conn, "SELECT id, user_id, email, contractor_name, vendor_name, application_no FROM contractors WHERE id = ? LIMIT 1", 'i', [(int)$contractorId]);
     if (!$contractor) return null;
@@ -342,6 +459,34 @@ function clms_get_contractor_user_for_payment($conn, $contractorId) {
     }
     $contractor['resolved_user_id'] = $userId;
     return $contractor;
+}
+
+function clms_get_current_contractor_for_payment($conn, $userId = 0, $vendorCode = '') {
+    if (!clms_payment_table_exists($conn, 'contractors')) return null;
+    $where = [];
+    $types = '';
+    $params = [];
+    if ((int)$userId > 0 && clms_payment_column_exists($conn, 'contractors', 'user_id')) {
+        $where[] = 'user_id = ?';
+        $types .= 'i';
+        $params[] = (int)$userId;
+    }
+    $vendorCode = trim((string)$vendorCode);
+    if ($vendorCode !== '') {
+        foreach (['vendor_code', 'contractor_id', 'sap_code', 'application_no'] as $column) {
+            if (!clms_payment_column_exists($conn, 'contractors', $column)) continue;
+            $where[] = "`$column` = ?";
+            $types .= 's';
+            $params[] = $vendorCode;
+        }
+    }
+    if (!$where) return null;
+    return db_single(
+        $conn,
+        'SELECT * FROM contractors WHERE ' . implode(' OR ', $where) . ' ORDER BY id DESC LIMIT 1',
+        $types,
+        $params
+    );
 }
 
 function clms_create_training_payment_request($conn, $contractorId, array $workerIds, $createdBy = 0, $source = 'enrolment') {
@@ -443,7 +588,7 @@ function clms_notify_training_payment_request($conn, $request, $source = 'enrolm
     $contractor = clms_get_contractor_user_for_payment($conn, (int)$request['contractor_id']);
     $userId = (int)($contractor['resolved_user_id'] ?? 0);
     if (!$userId) return;
-    $message = "Safety induction fee payment link generated. Ref {$request['payment_ref']}, Amount Rs. "
+    $message = "Safety fee payment link generated. Ref {$request['payment_ref']}, Amount Rs. "
         . number_format((float)$request['total_amount'], 2)
         . ". Link valid till " . date('d M Y h:i A', strtotime($request['link_expires_at']))
         . ". " . $request['payment_link'];
@@ -468,7 +613,7 @@ function clms_mark_training_payment_paid($conn, $paymentRequestId, $gatewayPayme
         $conn,
         "UPDATE training_requests tr
          JOIN training_payment_request_workers pw ON pw.training_request_id = tr.id
-         SET tr.remarks = CONCAT(COALESCE(tr.remarks, ''), '\nPayment verified for safety induction fee.'),
+         SET tr.remarks = CONCAT(COALESCE(tr.remarks, ''), '\nSafety fee payment completed.'),
              tr.updated_at = NOW()
          WHERE pw.payment_request_id = ?",
         'i',
@@ -486,16 +631,19 @@ function clms_submit_demo_training_payment($conn, $paymentRequestId, $payerRefer
     db_execute(
         $conn,
         "UPDATE training_payment_requests
-         SET status = 'submitted',
+         SET status = 'paid',
              payer_reference = ?,
              contractor_payment_note = ?,
              submitted_at = NOW(),
              gateway_provider = 'demo_qr',
+             gateway_payment_id = ?,
+             paid_at = NOW(),
              updated_at = NOW()
          WHERE id = ?",
-        'ssi',
-        [$payerReference, trim((string)$note), (int)$paymentRequestId]
+        'sssi',
+        [$payerReference, trim((string)$note), $payerReference, (int)$paymentRequestId]
     );
+    clms_release_workers_after_training_payment($conn, (int)$paymentRequestId, 0);
 }
 
 function clms_verify_demo_training_payment($conn, $paymentRequestId, $approved, $remarks = '', $userId = 0) {
@@ -531,7 +679,7 @@ function clms_verify_demo_training_payment($conn, $paymentRequestId, $approved, 
             $conn,
             "UPDATE training_requests tr
              JOIN training_payment_request_workers pw ON pw.training_request_id = tr.id
-             SET tr.remarks = CONCAT(COALESCE(tr.remarks, ''), '\nPayment verified by Welfare.'),
+             SET tr.remarks = CONCAT(COALESCE(tr.remarks, ''), '\nSafety fee payment completed.'),
                  tr.updated_at = NOW()
              WHERE pw.payment_request_id = ?",
             'i',
@@ -558,7 +706,7 @@ function clms_verify_demo_training_payment($conn, $paymentRequestId, $approved, 
         "UPDATE workmen w
          JOIN training_payment_request_workers pw ON pw.workman_id = w.id
          SET w.execution_training_status = 'pending_payment',
-             w.execution_training_remarks = 'Payment rejected by Welfare. Waiting for corrected payment reference.',
+             w.execution_training_remarks = 'Safety fee payment rejected. Waiting for corrected payment reference.',
              w.updated_at = NOW()
          WHERE pw.payment_request_id = ?",
         'i',
@@ -600,7 +748,7 @@ function clms_release_workers_after_training_payment($conn, $paymentRequestId, $
                     $conn,
                     "UPDATE workmen
                      SET execution_training_status = 'approved',
-                         execution_training_remarks = 'Payment verified by Welfare. Training approval attachment available, forwarded to Safety Training.',
+                         execution_training_remarks = 'Safety fee payment completed. Training approval attachment available, forwarded to Safety Training.',
                          execution_training_reviewed_by = ?,
                          execution_training_reviewed_at = NOW(),
                          updated_at = NOW()
@@ -615,7 +763,7 @@ function clms_release_workers_after_training_payment($conn, $paymentRequestId, $
                 $contractorId,
                 (int)$userId,
                 'payment_verified_attachment',
-                'Payment verified by Welfare. Training approval attachment available, forwarded to Safety Training.'
+                'Safety fee payment completed. Training approval attachment available, forwarded to Safety Training.'
             );
             continue;
         }
@@ -623,11 +771,37 @@ function clms_release_workers_after_training_payment($conn, $paymentRequestId, $
         if (!in_array($executionStatus, ['', 'pending', 'pending_payment', 'link_sent'], true)) {
             continue;
         }
+        $hasTrainingRequest = db_single(
+            $conn,
+            "SELECT id
+             FROM training_requests
+             WHERE workman_id = ?
+               AND LOWER(COALESCE(status, 'pending')) IN ('pending_eo','pending','scheduled','contractor_confirmed','passed')
+             ORDER BY id DESC
+             LIMIT 1",
+            'i',
+            [$workmanId]
+        );
+        if (!$hasTrainingRequest) {
+            db_execute(
+                $conn,
+                "UPDATE workmen
+                 SET execution_training_status = 'pending_booking',
+                     execution_training_remarks = 'Safety fee payment completed. Waiting for Safety Training & Seat Booking.',
+                     execution_training_reviewed_by = NULL,
+                     execution_training_reviewed_at = NULL,
+                     updated_at = NOW()
+                 WHERE id = ?",
+                'i',
+                [$workmanId]
+            );
+            continue;
+        }
         db_execute(
             $conn,
             "UPDATE workmen
              SET execution_training_status = 'pending_eo',
-                 execution_training_remarks = 'Payment verified by Welfare. Waiting for Executing Officer approval.',
+                 execution_training_remarks = 'Safety fee payment completed. Safety seat booking submitted. Waiting for Executing Officer approval.',
                  execution_training_reviewed_by = NULL,
                  execution_training_reviewed_at = NULL,
                  updated_at = NOW()

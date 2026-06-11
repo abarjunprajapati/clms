@@ -70,6 +70,7 @@ function executionTrainingEnsureFlowSchema($conn) {
         'safety_training_status' => "VARCHAR(50) DEFAULT 'PENDING_TRAINING'",
         'executing_officer_code' => 'VARCHAR(50) NULL',
         'executing_officer_id' => 'BIGINT NULL',
+        'work_order_source' => 'VARCHAR(20) NULL',
         'updated_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
     ] as $column => $definition) {
         executionTrainingEnsureColumn($conn, 'workmen', $column, $definition);
@@ -119,7 +120,7 @@ try {
 
     $worker = db_single(
         $conn,
-        "SELECT w.id, w.name, w.contractor_id, w.training_approval_doc, w.training_status
+        "SELECT w.id, w.name, w.contractor_id, w.training_approval_doc, w.training_status, w.work_order_source
          FROM workmen w
          WHERE w.id = ?
            AND (
@@ -136,7 +137,8 @@ try {
         executionTrainingJson(['status' => false, 'message' => 'Worker is not assigned to this officer.'], 403);
     }
 
-    $paidPayment = db_single(
+    $requiresPayment = strtoupper(trim((string)($worker['work_order_source'] ?? ''))) === 'PWO';
+    $paidPayment = $requiresPayment ? db_single(
         $conn,
         "SELECT pr.id
          FROM training_payment_request_workers pw
@@ -146,9 +148,24 @@ try {
          LIMIT 1",
         'i',
         [$workmanId]
-    );
-    if (!$paidPayment) {
+    ) : ['id' => 0];
+    if ($requiresPayment && !$paidPayment) {
         executionTrainingJson(['status' => false, 'message' => 'Payment is not verified by Welfare yet.'], 400);
+    }
+
+    $submittedTraining = db_single(
+        $conn,
+        "SELECT id, status
+         FROM training_requests
+         WHERE workman_id = ?
+           AND status IN ('pending_eo','welfare_pending','pending','scheduled','contractor_confirmed','passed')
+         ORDER BY id DESC
+         LIMIT 1",
+        'i',
+        [$workmanId]
+    );
+    if (!$submittedTraining) {
+        executionTrainingJson(['status' => false, 'message' => 'Safety seat booking / enrolment submission is not completed yet.'], 400);
     }
 
     $conn->begin_transaction();
@@ -174,7 +191,7 @@ try {
     );
 
     if ($decision === 'approved') {
-        clms_training_ensure_request($conn, $workmanId, (int)$worker['contractor_id'], (int)($_SESSION['user_id'] ?? 0), 'execution', 'Auto-created after Executing Officer online approval. Waiting for Welfare check.');
+        clms_training_ensure_request($conn, $workmanId, (int)$worker['contractor_id'], (int)($_SESSION['user_id'] ?? 0), 'execution', 'Forwarded after Executing Officer approval. Waiting for Safety Department approval.');
     }
 
     $conn->commit();
@@ -182,8 +199,8 @@ try {
     executionTrainingJson([
         'status' => true,
         'message' => $decision === 'approved'
-            ? 'Executing Officer approval completed. Request forwarded to Welfare for safety training check.'
-            : 'Executing Officer rejected the enrolment approval request.',
+            ? 'Executing Officer approval completed. Request forwarded to Safety Department Approval.'
+            : 'Executing Officer rejected the enrolment approval request. Returned to Contractor for Correction / Resubmission.',
     ]);
 } catch (Throwable $e) {
     if (isset($conn) && method_exists($conn, 'rollback')) {

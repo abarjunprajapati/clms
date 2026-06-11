@@ -13,6 +13,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $batchId = (int)($_POST['batch_id'] ?? 0);
         $forceRequestId = (int)($_POST['force_request_id'] ?? 0);
+        if (($_POST['batch_action'] ?? '') === 'reschedule') {
+            $result = clms_safety_reschedule_batch($conn, $batchId, $_POST, (int)($_SESSION['user_id'] ?? 0));
+            $_SESSION['success'] = 'Batch ' . $result['batch_number'] . ' rescheduled to ' . date('d M Y', strtotime($result['training_date'])) . ' (' . $result['session_name'] . ').';
+            header('Location: training_schedule.php?batch_id=' . $batchId);
+            exit;
+        }
         $selected = $_POST['selected_requests'] ?? array();
         $mode = ($_POST['schedule_mode'] ?? 'schedule') === 'draft' ? 'draft' : 'schedule';
         if ($mode === 'draft') {
@@ -37,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 function renderContent() {
     global $conn;
+    $venues = clms_safety_active_rows(db_fetch_all($conn, "SELECT id, venue_code, venue_name, COALESCE(seats, 35) seats, status FROM training_venue_masters ORDER BY venue_name ASC"));
+    $instructors = clms_safety_active_rows(db_fetch_all($conn, "SELECT id, instructor_code, instructor_name, status FROM safety_instructor_masters ORDER BY instructor_name ASC"));
 
     $batches = db_fetch_all($conn, "
         SELECT b.*,
@@ -64,14 +72,15 @@ function renderContent() {
             break;
         }
     }
-    $capacity = $batch ? max(1, (int)$batch['capacity']) : 0;
-    $emergencySeats = $batch ? max(0, (int)($batch['emergency_seats'] ?? 0)) : 0;
-    $regularCapacity = max(0, $capacity - $emergencySeats);
+    $capacityInfo = $batch ? clms_safety_batch_capacity_summary($conn, $batch) : array('total' => 0, 'regular' => 0, 'emergency' => 0);
+    $capacity = (int)$capacityInfo['total'];
+    $emergencySeats = (int)$capacityInfo['emergency'];
+    $regularCapacity = (int)$capacityInfo['regular'];
 ?>
 <div class="content-header schedule-header">
   <div>
     <h2 class="page-title"><i class="fas fa-calendar-alt"></i> Training Schedule</h2>
-    <p class="page-subtitle">Assign workers to a batch by ticking seats. Extra workers stay waiting until a selected row is unticked.</p>
+    <p class="page-subtitle">Assign language-matching workers in enrolment-date order. The first available seats are auto-ticked.</p>
   </div>
   <div class="schedule-actions">
     <a href="training_class_master.php" class="btn btn-outline"><i class="fas fa-calendar-plus"></i> Create Batch</a>
@@ -111,6 +120,58 @@ function renderContent() {
   <div class="summary-card capacity"><span>Slots</span><strong><b id="selectedCount">0</b> / <?= $capacity ?></strong><small><?= $regularCapacity ?> regular + <?= $emergencySeats ?> emergency</small></div>
 </section>
 
+<section class="card glass reschedule-card">
+  <div class="card-header schedule-table-head">
+    <div>
+      <div class="card-title"><i class="fas fa-calendar-day"></i> Reschedule This Batch</div>
+      <p>Use this when today's training cannot be conducted. Assigned workers, tokens and attempts remain with the same batch.</p>
+    </div>
+  </div>
+  <div class="card-body">
+    <form method="post" class="reschedule-form" onsubmit="return confirm('Reschedule this batch and all assigned workers?');">
+      <input type="hidden" name="batch_action" value="reschedule">
+      <input type="hidden" name="batch_id" value="<?= (int)$batch['id'] ?>">
+      <label>New Date
+        <input class="form-control" type="date" name="reschedule_date" min="<?= date('Y-m-d') ?>" value="<?= htmlspecialchars($batch['training_date']) ?>" required>
+      </label>
+      <label>Location
+        <select class="form-control" name="reschedule_venue_id" required>
+          <?php foreach ($venues as $venue): ?>
+            <option value="<?= (int)$venue['id'] ?>" <?= (int)$venue['id'] === (int)($batch['venue_id'] ?? 0) ? 'selected' : '' ?>>
+              <?= htmlspecialchars(($venue['venue_code'] ? $venue['venue_code'] . ' - ' : '') . $venue['venue_name']) ?> (<?= (int)$venue['seats'] ?> regular)
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <label>Session
+        <select class="form-control" name="reschedule_session_name">
+          <option value="FN" <?= ($batch['session_name'] ?? '') === 'FN' ? 'selected' : '' ?>>FN</option>
+          <option value="AN" <?= ($batch['session_name'] ?? '') === 'AN' ? 'selected' : '' ?>>AN</option>
+        </select>
+      </label>
+      <label>Time From
+        <input class="form-control" type="time" name="reschedule_time_from" value="<?= htmlspecialchars(substr((string)($batch['time_from'] ?: ''), 0, 5)) ?>">
+      </label>
+      <label>Time To
+        <input class="form-control" type="time" name="reschedule_time_to" value="<?= htmlspecialchars(substr((string)($batch['time_to'] ?: ''), 0, 5)) ?>">
+      </label>
+      <label>Trainer
+        <select class="form-control" name="reschedule_instructor_id">
+          <option value="">Not assigned</option>
+          <?php foreach ($instructors as $instructor): ?>
+            <option value="<?= (int)$instructor['id'] ?>" <?= (int)$instructor['id'] === (int)($batch['instructor_id'] ?? 0) ? 'selected' : '' ?>>
+              <?= htmlspecialchars(($instructor['instructor_code'] ? $instructor['instructor_code'] . ' - ' : '') . $instructor['instructor_name']) ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <div class="reschedule-actions">
+        <button type="submit" class="btn btn-warning"><i class="fas fa-calendar-day"></i> Reschedule Batch</button>
+      </div>
+    </form>
+  </div>
+</section>
+
 <form method="post" id="scheduleForm">
   <input type="hidden" name="batch_id" value="<?= (int)$batch['id'] ?>">
   <input type="hidden" name="force_request_id" value="<?= (int)$forceRequestId ?>">
@@ -118,7 +179,7 @@ function renderContent() {
     <div class="card-header schedule-table-head">
       <div>
         <div class="card-title"><i class="fas fa-users"></i> Assign Batch Workers</div>
-        <p>Workers matching <?= htmlspecialchars($batch['language_name']) ?> safety language are shown. Seats 1-<?= $regularCapacity ?> are regular; seats <?= $regularCapacity + 1 ?>-<?= $capacity ?> are emergency reserve. Selecting beyond <?= $capacity ?> will be blocked.</p>
+        <p>Only <?= htmlspecialchars($batch['language_name']) ?> language workers are shown, sorted by enrolment date. The first <?= $capacity ?> rows are auto-ticked; selecting row <?= $capacity + 1 ?> without unticking another row is blocked.</p>
       </div>
       <div class="table-actions">
         <button type="button" class="btn btn-sm btn-outline" onclick="exportScheduleCsv()"><i class="fas fa-file-excel"></i> XL</button>
@@ -132,7 +193,7 @@ function renderContent() {
           <tr>
             <th>Tick</th>
             <th>S.No</th>
-            <th>Application Dt</th>
+            <th>Enrolment Dt</th>
             <th>Aadhaar</th>
             <th>Name</th>
             <th>Contractor Code</th>
@@ -148,7 +209,7 @@ function renderContent() {
             $isForcedRequest = $forceRequestId > 0 && (int)$worker['training_request_id'] === $forceRequestId;
             $autoChecked = $alreadyScheduled ? (((int)$worker['ticked'] === 1) || $isForcedRequest) : (($idx < $capacity) || $isForcedRequest);
             $isBlocked = (int)$worker['attempt_no'] > 3;
-            $tokenPreview = $worker['training_token'] ?: ($autoChecked ? ('TRN' . date('Y', strtotime($batch['training_date'] ?? 'now')) . str_pad((string)($idx + 1), 5, '0', STR_PAD_LEFT)) : '');
+            $tokenPreview = $worker['token_number'] ?: ($autoChecked ? str_pad((string)($idx + 1), 6, '0', STR_PAD_LEFT) : '');
             $seatLabel = ($autoChecked && $idx >= $regularCapacity) ? 'Emergency' : ($autoChecked ? 'Selected' : 'Waiting');
             $seatBadge = $seatLabel === 'Emergency' ? 'badge-warning' : ($autoChecked ? 'badge-info' : 'badge-gray');
           ?>
@@ -166,7 +227,7 @@ function renderContent() {
               >
             </td>
             <td><?= $idx + 1 ?></td>
-            <td><?= !empty($worker['requested_date']) ? date('d M Y', strtotime($worker['requested_date'])) : date('d M Y', strtotime($worker['request_created_at'])) ?></td>
+            <td><?= !empty($worker['enrolment_date']) ? date('d M Y', strtotime($worker['enrolment_date'])) : (!empty($worker['requested_date']) ? date('d M Y', strtotime($worker['requested_date'])) : date('d M Y', strtotime($worker['request_created_at']))) ?></td>
             <td><?= htmlspecialchars($worker['aadhaar'] ?? '') ?></td>
             <td><strong><?= htmlspecialchars($worker['name'] ?? '') ?></strong><div class="muted"><?= htmlspecialchars($worker['temp_id'] ?? '') ?></div></td>
             <td><?= htmlspecialchars($worker['contractor_code'] ?? '') ?></td>
@@ -207,6 +268,11 @@ function renderContent() {
   .summary-card.capacity{border-color:#bfdbfe;background:#eff6ff}
   .summary-card.capacity strong{color:#1d4ed8}
   .summary-card.capacity small{display:block;margin-top:4px;color:#475569;font-size:11px;font-weight:700}
+  .reschedule-card{margin-bottom:16px;border-color:#fde68a}
+  .reschedule-card .card-header{background:#fffbeb}
+  .reschedule-form{display:grid;grid-template-columns:repeat(3,minmax(170px,1fr));gap:12px;align-items:end}
+  .reschedule-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:800;color:#475569}
+  .reschedule-actions{display:flex;justify-content:flex-end}
   .schedule-table-head{align-items:flex-start}
   .schedule-table-head p{margin:4px 0 0;font-size:12px;color:#64748b}
   .workers-card{overflow:hidden}
@@ -215,15 +281,13 @@ function renderContent() {
   .waiting-row{background:#fffaf0}
   .seat-disabled-row{opacity:.62;background:#f8fafc}
   .worker-check{width:18px;height:18px;cursor:pointer}
-  @media(max-width:1000px){.batch-summary{grid-template-columns:repeat(2,minmax(160px,1fr))}.schedule-header{flex-direction:column;align-items:stretch}}
-  @media(max-width:640px){.batch-summary{grid-template-columns:1fr}.batch-select-form label{min-width:0}.schedule-actions .btn,.table-actions .btn{flex:1}}
+  @media(max-width:1000px){.batch-summary{grid-template-columns:repeat(2,minmax(160px,1fr))}.schedule-header{flex-direction:column;align-items:stretch}.reschedule-form{grid-template-columns:repeat(2,minmax(170px,1fr))}}
+  @media(max-width:640px){.batch-summary{grid-template-columns:1fr}.batch-select-form label{min-width:0}.schedule-actions .btn,.table-actions .btn{flex:1}.reschedule-form{grid-template-columns:1fr}.reschedule-actions .btn{width:100%}}
   @media print{.sidebar,.topbar,.selector-card,.schedule-actions,.table-actions{display:none!important}.main-content{margin:0!important}.card{box-shadow:none!important}.batch-summary{grid-template-columns:repeat(4,1fr)}}
 </style>
 <script>
   const scheduleCapacity = <?= (int)$capacity ?>;
   const regularCapacity = <?= (int)$regularCapacity ?>;
-  const trainingTokenPrefix = 'TRN<?= date('Y', strtotime($batch['training_date'] ?? 'now')) ?>';
-
   function refreshSelection() {
     const checks = Array.from(document.querySelectorAll('.worker-check'));
     const checked = checks.filter(input => input.checked);
@@ -244,7 +308,7 @@ function renderContent() {
     });
     checked.forEach((input, idx) => {
       const target = document.getElementById(input.dataset.tokenTarget);
-      if (target) target.textContent = trainingTokenPrefix + String(idx + 1).padStart(5, '0');
+      if (target) target.textContent = String(idx + 1).padStart(6, '0');
       const state = input.closest('tr')?.querySelector('.row-state');
       if (state && idx >= regularCapacity) {
         state.textContent = 'Emergency';

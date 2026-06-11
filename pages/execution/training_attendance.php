@@ -49,6 +49,33 @@ function renderContent() {
     clms_ensure_payment_flow($conn);
     $ctx = executionTrainingDeskContext($conn, $officerId, $userId);
 
+    $autoApproveRows = db_fetch_all($conn, "
+        SELECT w.id
+        FROM workmen w
+        WHERE COALESCE(w.training_approval_doc, '') <> ''
+          AND COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending')
+          AND (
+            UPPER(COALESCE(w.work_order_source, '')) <> 'PWO'
+            OR EXISTS (
+              SELECT 1
+              FROM training_payment_request_workers pw
+              JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+              WHERE pw.workman_id = w.id
+                AND pr.status = 'paid'
+            )
+          )
+          AND {$ctx['where']}
+        LIMIT 100
+    ", $ctx['types'], $ctx['params']);
+    foreach ($autoApproveRows as $autoRow) {
+        clms_training_auto_approve_attached_document(
+            $conn,
+            (int)$autoRow['id'],
+            (int)($officerId ?: $userId),
+            'Auto-approved because Training Attendance Approval document is attached.'
+        );
+    }
+
     clms_training_seed_approved_queue($conn);
 
     $rows = db_fetch_all($conn, "
@@ -61,10 +88,19 @@ function renderContent() {
         WHERE COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending','approved')
           AND EXISTS (
               SELECT 1
+              FROM training_requests tr_submit
+              WHERE tr_submit.workman_id = w.id
+                AND tr_submit.status IN ('pending_eo','welfare_pending','pending','scheduled','contractor_confirmed','passed')
+          )
+          AND (
+            UPPER(COALESCE(w.work_order_source, '')) <> 'PWO'
+            OR EXISTS (
+              SELECT 1
               FROM training_payment_request_workers pw
               JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
               WHERE pw.workman_id = w.id
                 AND pr.status = 'paid'
+            )
           )
           AND {$ctx['where']}
         ORDER BY COALESCE(w.execution_training_reviewed_at, w.created_at) DESC
