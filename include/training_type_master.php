@@ -64,7 +64,7 @@ function clms_ensure_training_type_master($conn) {
 
 function clms_get_training_type_rows($conn, $activeOnly = true) {
     if (!clms_ensure_training_type_master($conn)) return [];
-    $where = $activeOnly ? "WHERE LOWER(status) = 'active'" : "";
+    $where = $activeOnly ? "WHERE LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= CURDATE()) AND (to_date IS NULL OR to_date >= CURDATE())" : "";
     return db_fetch_all($conn, "SELECT id, type_name, duration_hours, pass_mark, from_date, to_date, status FROM master_training_types $where ORDER BY type_name ASC");
 }
 
@@ -72,14 +72,14 @@ function clms_training_type_is_active($conn, $typeName) {
     if (!clms_ensure_training_type_master($conn)) return false;
     $row = db_single(
         $conn,
-        "SELECT id FROM master_training_types WHERE LOWER(status) = 'active' AND LOWER(TRIM(type_name)) = LOWER(TRIM(?)) LIMIT 1",
+        "SELECT id FROM master_training_types WHERE LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= CURDATE()) AND (to_date IS NULL OR to_date >= CURDATE()) AND LOWER(TRIM(type_name)) = LOWER(TRIM(?)) LIMIT 1",
         's',
         [trim((string)$typeName)]
     );
     return (bool)$row;
 }
 
-function clms_add_training_type($conn, $typeName, $durationHours = 8, $passMark = 60, $fromDate = null, $toDate = null, $id = 0) {
+function clms_add_training_type($conn, $typeName, $durationHours = 8, $passMark = 60, $fromDate = null, $toDate = null, $id = 0, $status = 'active') {
     if (!clms_ensure_training_type_master($conn)) {
         throw new RuntimeException('Training type master table could not be initialized.');
     }
@@ -91,6 +91,13 @@ function clms_add_training_type($conn, $typeName, $durationHours = 8, $passMark 
     $passMark = min(100, max(0, (int)$passMark));
     $fromDate = $fromDate ?: date('Y-m-d');
     $toDate = $toDate ?: '9999-12-31';
+    $status = strtolower(trim((string)$status)) === 'active' ? 'active' : 'inactive';
+    if ($toDate < $fromDate) {
+        throw new InvalidArgumentException('To Date cannot be earlier than From Date.');
+    }
+    if ($status === 'active' && $toDate < date('Y-m-d')) {
+        throw new InvalidArgumentException('Previous/expired date training type cannot be set Active.');
+    }
 
     $existing = (int)$id > 0 ? ['id' => (int)$id] : db_single(
         $conn,
@@ -102,16 +109,16 @@ function clms_add_training_type($conn, $typeName, $durationHours = 8, $passMark 
     if ($existing) {
         $ok = db_execute(
             $conn,
-            "UPDATE master_training_types SET type_name = ?, duration_hours = ?, pass_mark = ?, from_date = ?, to_date = ?, status = 'active' WHERE id = ?",
-            'siissi',
-            [$typeName, $durationHours, $passMark, $fromDate, $toDate, (int)$existing['id']]
+            "UPDATE master_training_types SET type_name = ?, duration_hours = ?, pass_mark = ?, from_date = ?, to_date = ?, status = ? WHERE id = ?",
+            'siisssi',
+            [$typeName, $durationHours, $passMark, $fromDate, $toDate, $status, (int)$existing['id']]
         );
     } else {
         $ok = db_execute(
             $conn,
-            "INSERT INTO master_training_types (type_name, duration_hours, pass_mark, from_date, to_date, status) VALUES (?, ?, ?, ?, ?, 'active')",
-            'siiss',
-            [$typeName, $durationHours, $passMark, $fromDate, $toDate]
+            "INSERT INTO master_training_types (type_name, duration_hours, pass_mark, from_date, to_date, status) VALUES (?, ?, ?, ?, ?, ?)",
+            'siisss',
+            [$typeName, $durationHours, $passMark, $fromDate, $toDate, $status]
         );
     }
 
@@ -125,7 +132,15 @@ function clms_inactivate_training_type($conn, $id) {
     db_execute($conn, "UPDATE master_training_types SET status = 'inactive' WHERE id = ?", 'i', [(int)$id]);
 }
 
-function clms_delete_training_type($conn, $id) {
+function clms_set_training_type_status($conn, $id, $status) {
     if (!clms_ensure_training_type_master($conn)) return;
-    db_execute($conn, "DELETE FROM master_training_types WHERE id = ?", 'i', [(int)$id]);
+    $status = strtolower(trim((string)$status)) === 'active' ? 'active' : 'inactive';
+    if ($status === 'active') {
+        $row = db_single($conn, "SELECT from_date, to_date FROM master_training_types WHERE id = ? LIMIT 1", 'i', [(int)$id]);
+        if (!$row) throw new RuntimeException('Training type not found.');
+        if (!empty($row['to_date']) && $row['to_date'] < date('Y-m-d')) {
+            throw new RuntimeException('Previous/expired date training type cannot be activated.');
+        }
+    }
+    db_execute($conn, "UPDATE master_training_types SET status = ? WHERE id = ?", 'si', [$status, (int)$id]);
 }

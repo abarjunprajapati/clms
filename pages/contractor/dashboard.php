@@ -4,6 +4,7 @@ checkAuth(['contractor']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
 require_once __DIR__ . '/../../include/safety_training_control.php';
+require_once __DIR__ . '/../../include/payment_flow.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -101,6 +102,7 @@ function renderContent() {
     $vendor_code = $contractor['vendor_code'] ?? '';
     $contractor_status = strtolower($contractor['status'] ?? 'pending');
     $cidWhere = $c_id ? "contractor_id = {$c_id}" : '1=0';
+    $pendingPaymentWorkers = $c_id ? count(clms_pending_safety_fee_workers($conn, $c_id)) : 0;
     $annexure2a = $c_id ? db_single($conn, "SELECT workflow_status, submitted_at, updated_at FROM annexure2a WHERE contractor_id = ? ORDER BY id DESC LIMIT 1", 'i', [$c_id]) : null;
     $annexure2a_status = strtolower($annexure2a['workflow_status'] ?? '');
     $display_contractor_status = ($contractor_status === 'pending' && $annexure2a_status === 'resubmitted') ? 'resubmitted' : $contractor_status;
@@ -278,6 +280,7 @@ function renderContent() {
             ['label' => 'Supervisor', 'detail' => 'Register site supervisors (1 per 50 workmen)', 'icon' => 'fa-user-shield', 'link' => 'enrolment-4a.php?type=supervisor', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('supervisor'))],
             ['label' => 'Workmen', 'detail' => 'Register and manage your workers', 'icon' => 'fa-users', 'link' => 'enrolment-4a.php?type=workmen', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('workmen'))],
             ['label' => 'Safety Training Request', 'detail' => 'Submit requests and confirm Safety schedule', 'icon' => 'fa-graduation-cap', 'link' => 'training_request.php', 'status' => 'active', 'count' => $trainingRequestReady],
+            ['label' => 'Pending Fee Payment', 'detail' => 'View unpaid PWO workers and complete safety fee payment', 'icon' => 'fa-credit-card', 'link' => 'payment.php', 'status' => 'active', 'count' => $pendingPaymentWorkers],
             ['label' => 'Book Safety Training', 'detail' => 'Book appointment against available Safety batches', 'icon' => 'fa-calendar-check', 'link' => 'book_safety_training.php', 'status' => 'active', 'count' => $bookingPending],
             ['label' => 'Gate Pass', 'detail' => 'Generate temporary and monthly passes', 'icon' => 'fa-id-badge', 'link' => 'gatepass-6a.php', 'status' => 'active', 'count' => 'Generate'],
             ['label' => 'ACC Card', 'detail' => 'Track permanent biometric card status', 'icon' => 'fa-fingerprint', 'link' => 'pass_status.php', 'status' => 'active', 'count' => 'Track'],
@@ -518,6 +521,7 @@ function renderContent() {
             <!-- <a href="annexure-3a.php" class="action-tile"><i class="fas fa-file-signature"></i><span>Customer Registration</span></a> -->
             <a href="enrolment-4a.php" class="action-tile"><i class="fas fa-user-plus"></i><span>Enroll Worker 4A</span></a>
             <a href="training_request.php" class="action-tile"><i class="fas fa-calendar-check"></i><span>Request Training</span></a>
+            <a href="payment.php" class="action-tile action-tile-primary"><i class="fas fa-credit-card"></i><span>Pending Fee Payment</span></a>
             <a href="book_safety_training.php" class="action-tile action-tile-primary"><i class="fas fa-book-medical"></i><span>Book Safety Training</span></a>
             <a href="gatepass-6a.php" class="action-tile"><i class="fas fa-id-badge"></i><span>Gate Pass 6A</span></a>
             <a href="documents.php" class="action-tile"><i class="fas fa-upload"></i><span>Upload Documents</span></a>

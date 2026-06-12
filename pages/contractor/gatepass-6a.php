@@ -8,358 +8,352 @@ require_once '../../include/gate_pass_document_master.php';
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
-$user_id = $_SESSION['user_id'];
+$user_id = (int)($_SESSION['user_id'] ?? 0);
 clms_get_portal_contractor($conn);
+
+function gatePassColumnExists($conn, $table, $column) {
+    $table = mysqli_real_escape_string($conn, $table);
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $result && mysqli_num_rows($result) > 0;
+}
 
 function renderContent() {
     global $conn, $user_id;
 
-    $contractor = db_single($conn, "SELECT id, contractor_name FROM contractors WHERE user_id = ?", 'i', [$user_id]);
-    $c_id = $contractor['id'] ?? null;
+    $contractor = db_single($conn, "SELECT id, contractor_name FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [$user_id]);
+    $contractorId = (int)($contractor['id'] ?? 0);
+    $documents = clms_get_gate_pass_documents_for_form($conn);
+    $roleTypeExpr = gatePassColumnExists($conn, 'workmen', 'role_type') ? "COALESCE(w.role_type, '')" : "''";
+    $safetyEnrollmentExpr = gatePassColumnExists($conn, 'workmen', 'safety_enrollment_status') ? "COALESCE(w.safety_enrollment_status, 'approved')" : "'approved'";
 
-    // Training-passed workers eligible for gate pass
-    $trained_workers = $c_id ? db_fetch_all($conn,
-        "SELECT id, name, trade, skill, temp_id, aadhaar, training_valid_till FROM workmen
-         WHERE contractor_id = ?
-           AND (
-                training_status IN ('pass','passed','training_passed','qualified','completed')
-                OR safety_training_status IN ('1','TRAINING_PASSED','PASSED','pass','passed')
-           )
-           AND (training_valid_till IS NULL OR training_valid_till >= CURDATE())
-         ORDER BY name",
-        'i', [$c_id]) : [];
-
-    // Existing gate pass requests (Annexure 5A / 6A)
-    $existing_passes = $c_id ? db_fetch_all($conn,
-        "SELECT tr.request_no as pass_no, tr.pass_type, tr.from_date as valid_from, tr.to_date as valid_to, 
-                tr.status, tr.created_at, w.name as worker_name, w.trade, w.temp_id, gpw.gatepass_no,
-                (
-                    SELECT COUNT(*)
-                    FROM documents d
-                    WHERE d.workman_id = w.id
-                      AND COALESCE(d.status, 'pending') IN ('rejected', 'reupload_required')
-                ) AS rejected_doc_count
-         FROM gate_pass_requests tr
-         JOIN gate_pass_request_workers gpw ON tr.id = gpw.request_id
-         JOIN workmen w ON gpw.workman_id = w.id
-         WHERE tr.contractor_id = ?
-         ORDER BY tr.created_at DESC",
-        'i', [$c_id]) : [];
-
-    $reupload_docs = $c_id ? db_fetch_all($conn,
+    $workers = $contractorId ? db_fetch_all(
+        $conn,
         "SELECT
-            d.id,
-            d.document_type,
-            d.file_path,
-            COALESCE(d.status, 'pending') AS status,
-            COALESCE(d.remarks, '') AS remarks,
-            d.uploaded_at,
-            w.name AS worker_name,
-            w.temp_id,
-            gpr.request_no
-         FROM documents d
-         JOIN workmen w ON w.id = d.workman_id
-         JOIN gate_pass_request_workers gprw ON gprw.workman_id = w.id
-         JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
+            w.id, w.name, w.aadhaar, w.temp_id, w.worker_type, $roleTypeExpr AS role_type, w.trade, w.skill,
+            w.training_valid_till, $safetyEnrollmentExpr AS safety_enrollment_status,
+            COALESCE(w.training_status, '') AS training_status,
+            COALESCE(w.safety_training_status, '') AS safety_training_status,
+            (
+                SELECT gpr.status
+                FROM gate_pass_request_workers gprw
+                JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
+                WHERE gprw.workman_id = w.id
+                  AND LOWER(COALESCE(gpr.status, 'pending')) IN ('draft','pending','submitted','reupload_required')
+                ORDER BY gpr.id DESC LIMIT 1
+            ) AS gate_pass_request_status
+         FROM workmen w
          WHERE w.contractor_id = ?
-           AND COALESCE(d.status, 'pending') IN ('rejected', 'reupload_required')
-           AND COALESCE(gpr.status, 'pending') IN ('pending', 'reupload_required')
-         ORDER BY d.uploaded_at DESC, d.id DESC",
-        'i', [$c_id]) : [];
-    ?>
+           AND LOWER($safetyEnrollmentExpr) = 'approved'
+           AND (
+                LOWER(COALESCE(w.training_status, '')) IN ('pass','passed','training_passed','qualified','completed')
+                OR LOWER(COALESCE(w.safety_training_status, '')) IN ('1','training_passed','passed','pass','qualified','completed')
+           )
+           AND (w.training_valid_till IS NULL OR w.training_valid_till >= CURDATE())
+         ORDER BY w.name ASC",
+        'i',
+        [$contractorId]
+    ) : [];
 
-    <div class="content-header">
-      <div>
-        <h2 class="page-title"><i class="fas fa-id-badge" style="color:#6366f1;margin-right:10px;"></i> Gate Pass Request </h2>
-        <!-- <p class="page-subtitle">Raise gate pass requests for safety-trained workmen and upload Annexure 6A documents.</p> -->
-      </div>
+    $requests = $contractorId ? db_fetch_all(
+        $conn,
+        "SELECT gpr.request_no, gpr.status, gpr.created_at, w.name AS worker_name, w.temp_id
+         FROM gate_pass_requests gpr
+         JOIN gate_pass_request_workers gprw ON gprw.request_id = gpr.id
+         JOIN workmen w ON w.id = gprw.workman_id
+         WHERE gpr.contractor_id = ?
+           AND LOWER(COALESCE(gpr.status, '')) <> 'draft'
+         ORDER BY gpr.id DESC
+         LIMIT 10",
+        'i',
+        [$contractorId]
+    ) : [];
+    $availableWorkerCount = count(array_filter($workers, function($worker) {
+        return trim((string)($worker['gate_pass_request_status'] ?? '')) === '';
+    }));
+?>
+<div class="content-header">
+  <div>
+    <h2 class="page-title"><i class="fas fa-id-badge" style="color:#2563eb;margin-right:10px;"></i>Gate Pass Creation Request</h2>
+    <p class="page-subtitle">Select an eligible employee, upload supporting documents, and submit for approval.</p>
+  </div>
+  <a href="pass_status.php" class="btn btn-outline"><i class="fas fa-list-check"></i> Request Tracker</a>
+</div>
+
+<?php if (!$contractorId): ?>
+  <div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i><div>Complete contractor registration first.</div></div>
+<?php return; endif; ?>
+
+<div class="flow-steps" aria-label="Gate Pass request progress">
+  <div class="flow-step active" data-step-indicator="1"><span>1</span><div><strong>Select Employee</strong><small>Safety-cleared employees</small></div></div>
+  <div class="flow-line"></div>
+  <div class="flow-step" data-step-indicator="2"><span>2</span><div><strong>Upload Documents</strong><small>Required supporting files</small></div></div>
+  <div class="flow-line"></div>
+  <div class="flow-step" data-step-indicator="3"><span>3</span><div><strong>Approval Process</strong><small>Starts after final submit</small></div></div>
+</div>
+
+<section id="employeeStep" class="workflow-panel">
+  <div class="panel-heading">
+    <div>
+      <h3>Select Employee</h3>
+      <p>Only enrollment-approved employees with completed Safety Training are displayed.</p>
     </div>
+    <div class="eligible-count"><?= $availableWorkerCount ?> available</div>
+  </div>
+  <div class="search-strip">
+    <div class="search-field"><i class="fas fa-fingerprint"></i><input type="search" id="aadhaarSearch" placeholder="Search Aadhaar No."></div>
+    <div class="search-field"><i class="fas fa-user"></i><input type="search" id="nameSearch" placeholder="Search Employee Name"></div>
+    <button type="button" class="btn btn-primary" id="searchEmployees"><i class="fas fa-search"></i> Search</button>
+    <button type="button" class="btn btn-outline" id="resetSearch"><i class="fas fa-rotate-left"></i> Reset</button>
+  </div>
 
-    <?php if (!$c_id): ?>
-    <div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i><div>Complete contractor registration first.</div></div>
-    <?php return; endif; ?>
-
-    <?php if (empty($trained_workers)): ?>
-    <div class="alert alert-danger">
-      <i class="fas fa-ban"></i>
-      <div>
-        <strong>No Safety-Cleared Workers Found.</strong> Training must be completed and approved by the Safety Department.
-        <a href="training_request.php" style="color:white;text-decoration:underline;margin-left:8px;">Request Training →</a>
-      </div>
-    </div>
-    <?php endif; ?>
-
-    <?php if (!empty($reupload_docs)): ?>
-    <div class="alert alert-danger" style="justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <i class="fas fa-file-circle-exclamation"></i>
-        <div><strong><?= count($reupload_docs) ?> rejected document(s)</strong> need correction before this gate pass can proceed.</div>
-      </div>
-      <a href="gatepass-reupload.php" class="btn btn-sm btn-danger"><i class="fas fa-upload"></i> Re-upload Documents</a>
-    </div>
-    <?php endif; ?>
-
-    <div style="display:grid;grid-template-columns:480px 1fr;gap:20px;align-items:start;">
-
-      <!-- Gate Pass Form -->
-      <div class="card glass">
-        <div class="card-header"><div class="card-title"><i class="fas fa-file-signature"></i> New Gate Pass Request</div></div>
-        <div class="card-body">
-          <?php if (empty($trained_workers)): ?>
-          <div class="empty-state" style="padding:30px 0;">
-            <i class="fas fa-lock" style="font-size:40px;opacity:.2;display:block;margin-bottom:12px;"></i>
-            <p>Apply for training first to unlock gate passes.</p>
-          </div>
+  <div class="table-wrap">
+    <table class="data-table employee-table">
+      <thead><tr><th>Select</th><th>S.No.</th><th>Aadhaar No.</th><th>Employee Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="employeeRows">
+      <?php if (!$workers): ?>
+        <tr><td colspan="7"><div class="empty-state"><i class="fas fa-user-shield"></i><strong>No eligible employees found</strong><span>Enrollment approval and Safety Training completion are required.</span></div></td></tr>
+      <?php endif; ?>
+      <?php foreach ($workers as $workerIndex => $worker):
+        $category = $worker['worker_type'] ?: ($worker['role_type'] ?: ($worker['skill'] ?: 'Worker'));
+        $hasRequest = trim((string)$worker['gate_pass_request_status']) !== '';
+      ?>
+        <tr data-name="<?= htmlspecialchars(strtolower((string)$worker['name'])) ?>" data-aadhaar="<?= htmlspecialchars(strtolower((string)$worker['aadhaar'])) ?>">
+          <td><input type="checkbox" class="worker-checkbox" value="<?= (int)$worker['id'] ?>" <?= $hasRequest ? 'disabled' : '' ?>></td>
+          <td><?= $workerIndex + 1 ?></td>
+          <td><?= htmlspecialchars($worker['aadhaar'] ?: '-') ?></td>
+          <td><strong><?= htmlspecialchars($worker['name']) ?></strong><small><?= htmlspecialchars($worker['temp_id'] ?: 'No Temp ID') ?></small></td>
+          <td><?= htmlspecialchars($category) ?></td>
+          <td>
+            <?php if ($hasRequest): ?>
+              <span class="status-pill warning"><?= htmlspecialchars(strtoupper(str_replace('_', ' ', $worker['gate_pass_request_status']))) ?></span>
+            <?php else: ?>
+              <span class="status-pill success"><i class="fas fa-check"></i> Approved</span>
+            <?php endif; ?>
+          </td>
+          <td>
+          <?php if ($hasRequest): ?>
+            <a class="btn btn-sm btn-outline" href="pass_status.php"><i class="fas fa-eye"></i> View Status</a>
           <?php else: ?>
-          <form id="gatePassForm" enctype="multipart/form-data">
-
-            <div class="form-section-label">📋 Worker & Pass Details</div>
-            <div class="form-group">
-              <label class="form-label required">Select Worker</label>
-              <select class="form-control" name="workman_id" id="workerSelect" required>
-                <option value="">Choose a trained worker...</option>
-                <?php foreach ($trained_workers as $w): ?>
-                <option value="<?= $w['id'] ?>" data-name="<?= htmlspecialchars($w['name']) ?>">
-                  <?= htmlspecialchars($w['name']) ?> — <?= htmlspecialchars($w['trade'] ?? '') ?>
-                  <?= $w['temp_id'] ? ' | ' . htmlspecialchars($w['temp_id']) : '' ?>
-                  <?= !empty($w['training_valid_till']) ? ' | Training valid till ' . date('d M Y', strtotime($w['training_valid_till'])) : '' ?>
-                </option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label required">Pass Type</label>
-              <div class="pass-type-grid">
-                <label class="pass-type-card">
-                  <input type="radio" name="pass_type" value="temporary" checked>
-                  <div class="ptc-inner">
-                    <i class="fas fa-clock"></i>
-                    <div>Temporary Pass</div>
-                    <small>30 Days validity</small>
-                  </div>
-                </label>
-                <label class="pass-type-card">
-                  <input type="radio" name="pass_type" value="permanent">
-                  <div class="ptc-inner">
-                    <i class="fas fa-id-card"></i>
-                    <div>Permanent Pass</div>
-                    <small>Full contract term</small>
-                  </div>
-                </label>
-              </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-              <div class="form-group">
-                <label class="form-label required">Valid From</label>
-                <input type="date" class="form-control" name="valid_from" required min="<?= date('Y-m-d') ?>">
-              </div>
-              <div class="form-group">
-                <label class="form-label required">Valid To</label>
-                <input type="date" class="form-control" name="valid_to" required min="<?= date('Y-m-d', strtotime('+1 day')) ?>">
-              </div>
-            </div>
-
-            <div class="annexure-doc-title">ANNEXURE-6A</div>
-            <div class="annexure-doc-subtitle">LIST OF DOCUMENTS TO BE SUBMITTED BY CONTRACTOR FOR GATE PASS</div>
-
-            <?php
-            $annexure6aDocs = clms_get_gate_pass_documents_for_form($conn);
-            ?>
-            <?php foreach ($annexure6aDocs as $index => $doc): ?>
-            <div class="doc-upload-item">
-              <div class="doc-upload-info">
-                <i class="fas <?= $doc['icon'] ?>" style="color:<?= $doc['color'] ?>;"></i>
-                <div>
-                  <div class="doc-name">
-                    <span class="doc-serial"><?= $index + 1 ?>.</span>
-                    <?= htmlspecialchars($doc['label']) ?>
-                    <span class="badge <?= $doc['required'] ? 'badge-danger' : 'badge-gray' ?> doc-status"><?= $doc['required'] ? 'Mandatory' : 'Optional' ?></span>
-                  </div>
-                  <div class="doc-hint"><?= htmlspecialchars($doc['hint']) ?></div>
-                </div>
-              </div>
-              <input type="file" name="<?= htmlspecialchars($doc['key']) ?>" accept=".pdf,.jpg,.jpeg,.png" <?= $doc['required'] ? 'required' : '' ?> class="doc-file-input" id="doc-<?= htmlspecialchars($doc['id']) ?>">
-              <label for="doc-<?= htmlspecialchars($doc['id']) ?>" class="btn btn-sm btn-outline doc-upload-btn"><i class="fas fa-upload"></i> Upload</label>
-              <span class="doc-filename" id="fn-<?= htmlspecialchars($doc['id']) ?>">No file</span>
-            </div>
-            <?php endforeach; ?>
-
-            <div class="form-group" style="margin-top:12px;">
-              <label class="form-label">Additional Remarks</label>
-              <textarea class="form-control" name="remarks" rows="2" placeholder="Any special notes..."></textarea>
-            </div>
-
-            <button type="submit" class="btn btn-primary" style="width:100%;margin-top:16px;" id="submitGPBtn">
-              <i class="fas fa-paper-plane"></i> Submit Gate Pass Request
-            </button>
-          </form>
+            <button type="button" class="btn btn-sm btn-primary select-worker" data-worker='<?= htmlspecialchars(json_encode([
+              'id' => (int)$worker['id'],
+              'name' => $worker['name'],
+              'aadhaar' => $worker['aadhaar'],
+              'category' => $category,
+              'temp_id' => $worker['temp_id'],
+            ]), ENT_QUOTES, 'UTF-8') ?>'><i class="fas fa-arrow-right"></i> Submit</button>
           <?php endif; ?>
-        </div>
-      </div>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</section>
 
-      <!-- Existing Pass Requests -->
-      <div class="card glass">
-        <div class="card-header">
-          <div class="card-title"><i class="fas fa-list-check"></i> Gate Pass Requests</div>
-          <a href="pass_status.php" class="btn btn-sm btn-outline">Full Tracker</a>
-        </div>
-        <div class="card-body" style="padding:0;">
-          <?php if (empty($existing_passes)): ?>
-          <div class="empty-state" style="padding:40px 0;">
-            <i class="fas fa-id-card" style="font-size:40px;opacity:.2;display:block;margin-bottom:12px;"></i>
-            <p>No gate pass requests submitted yet.</p>
-          </div>
-          <?php else: ?>
-          <table class="data-table">
-            <thead><tr><th>Worker</th><th>Pass Type</th><th>Valid Period</th><th>Status</th><th>Action</th></tr></thead>
-            <tbody>
-            <?php foreach ($existing_passes as $gp): ?>
-            <tr>
-              <td>
-                <div style="font-weight:600;"><?= htmlspecialchars($gp['worker_name'] ?? '—') ?></div>
-                <div style="font-size:11px;color:var(--text-muted);">
-                    <?= htmlspecialchars($gp['trade'] ?? '') ?> 
-                    <?= $gp['temp_id'] ? ' | ' . htmlspecialchars($gp['temp_id']) : '' ?>
-                </div>
-                <?php if ($gp['gatepass_no']): ?>
-                <div style="font-size:10px; color:#10b981; font-weight:700;">Pass: <?= htmlspecialchars($gp['gatepass_no']) ?></div>
-                <?php endif; ?>
-              </td>
-              <td><span class="badge badge-gray"><?= htmlspecialchars($gp['pass_type'] ?? '—') ?></span></td>
-              <td style="font-size:12px;">
-                <?= $gp['valid_from'] ? date('d M Y', strtotime($gp['valid_from'])) : '—' ?>
-                <br>to <?= $gp['valid_to'] ? date('d M Y', strtotime($gp['valid_to'])) : '—' ?>
-              </td>
-              <td>
-                <?php
-                  $st = $gp['status'] ?? 'pending';
-                  if ((int)($gp['rejected_doc_count'] ?? 0) > 0 && !in_array($st, ['approved', 'active', 'issued'], true)) {
-                    $st = 'reupload_required';
-                  }
-                  $sc = ['active'=>'badge-success','pending'=>'badge-warning','reupload_required'=>'badge-danger','rejected'=>'badge-danger','expired'=>'badge-gray','approved'=>'badge-success'];
-                ?>
-                <span class="badge <?= $sc[$st] ?? 'badge-gray' ?>"><?= strtoupper(str_replace('_', ' ', $st)) ?></span>
-              </td>
-              <td>
-                <a href="pass_status.php" class="btn btn-sm btn-outline"><i class="fas fa-eye"></i></a>
-              </td>
-            </tr>
-            <?php endforeach; ?>
-            </tbody>
-          </table>
-          <?php endif; ?>
-        </div>
-      </div>
+<section id="documentStep" class="workflow-panel hidden">
+  <div class="panel-heading">
+    <div>
+      <h3>Gate Pass Supporting Document Upload</h3>
+      <p>Upload all mandatory documents before submitting the request.</p>
     </div>
+    <span class="status-pill neutral" id="documentProgress">0 / <?= count($documents) ?> uploaded</span>
+  </div>
 
-    <style>
-    .form-section-label { font-size:12px;font-weight:700;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;margin-top:4px; }
-    .form-group { margin-bottom:14px; }
-    .form-label { display:block;font-size:13px;font-weight:600;margin-bottom:5px; }
-    .form-label.required::after { content:' *';color:#ef4444; }
-    .form-control { width:100%;padding:9px 13px;border-radius:8px;border:1.5px solid var(--border-color);background:var(--input-bg,rgba(255,255,255,.04));color:var(--text-primary);font-size:13px;transition:.2s;box-sizing:border-box; }
-    .form-control:focus { outline:none;border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.12); }
-    .pass-type-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
-    .pass-type-card { cursor:pointer;position:relative; }
-    .pass-type-card input[type="radio"] { position:absolute;opacity:0; }
-    .ptc-inner { padding:14px;border:2px solid var(--border-color);border-radius:12px;text-align:center;transition:.2s;font-weight:600;font-size:13px; }
-    .ptc-inner i { font-size:22px;margin-bottom:6px;display:block;color:var(--text-muted); }
-    .ptc-inner small { font-size:11px;color:var(--text-muted);font-weight:400; }
-    .pass-type-card input:checked ~ .ptc-inner { border-color:#6366f1;background:rgba(99,102,241,.08);color:#6366f1; }
-    .pass-type-card input:checked ~ .ptc-inner i { color:#6366f1; }
-    .annexure-doc-title { text-align:center;font-size:14px;font-weight:800;letter-spacing:.4px;margin-top:16px;color:var(--text-primary); }
-    .annexure-doc-subtitle { text-align:center;font-size:11px;font-weight:700;margin:4px 0 10px;color:var(--text-muted); }
-    .doc-upload-item { display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border-color);border-radius:10px;margin-bottom:8px;flex-wrap:wrap; }
-    .doc-upload-info { display:flex;align-items:center;gap:10px;flex:1;min-width:0; }
-    .doc-upload-info i { font-size:20px;flex:0 0 auto; }
-    .doc-name { font-size:13px;font-weight:600;line-height:1.35; }
-    .doc-serial { color:var(--text-muted);margin-right:3px; }
-    .doc-hint { font-size:11px;color:var(--text-muted);margin-top:2px; }
-    .doc-file-input { width:0.1px; height:0.1px; opacity:0; overflow:hidden; position:absolute; z-index:-1; }
-    .doc-upload-btn { white-space:nowrap; }
-    .doc-filename { font-size:11px;color:var(--text-muted);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-    .doc-status { font-size:10px;margin-left:4px; }
-    .empty-state { text-align:center;color:var(--text-muted); }
-    </style>
+  <div class="employee-summary">
+    <div><span>Employee Name</span><strong id="selectedName">-</strong></div>
+    <div><span>Aadhaar No.</span><strong id="selectedAadhaar">-</strong></div>
+    <div><span>Category</span><strong id="selectedCategory">-</strong></div>
+    <div><span>Temp ID</span><strong id="selectedTempId">-</strong></div>
+  </div>
 
-    <script>
-    // File input display
-    document.querySelectorAll('.doc-file-input').forEach(input => {
-      input.addEventListener('change', function() {
-        const id = this.id.replace('doc-', '');
-        const span = document.getElementById('fn-' + id);
-        if (span && this.files[0]) {
-          span.textContent = this.files[0].name;
-          span.style.color = '#10b981';
-        }
-      });
-    });
+  <form id="documentForm" enctype="multipart/form-data">
+    <input type="hidden" name="request_id" id="requestId">
+    <input type="hidden" name="workman_id" id="selectedWorkerId">
+    <input type="hidden" name="action" value="submit">
+    <div class="document-list">
+      <?php foreach ($documents as $index => $doc): ?>
+      <div class="document-row">
+        <div class="document-number"><?= $index + 1 ?></div>
+        <div class="document-info"><strong><?= htmlspecialchars($doc['label']) ?></strong><small><?= htmlspecialchars($doc['hint']) ?></small></div>
+        <button type="button" class="btn btn-sm btn-outline download-format" data-document="<?= htmlspecialchars($doc['label']) ?>"><i class="fas fa-download"></i> Download</button>
+        <label class="btn btn-sm btn-outline upload-control" for="gate-doc-<?= htmlspecialchars($doc['id']) ?>"><i class="fas fa-upload"></i> Choose File</label>
+        <input class="gate-doc-input" type="file" id="gate-doc-<?= htmlspecialchars($doc['id']) ?>" name="<?= htmlspecialchars($doc['key']) ?>" accept=".pdf,.jpg,.jpeg,.png" <?= $doc['required'] ? 'required' : '' ?>>
+        <span class="file-state" data-file-state>Pending</span>
+      </div>
+      <?php endforeach; ?>
+    </div>
+    <div class="form-group remarks-field"><label class="form-label">Remarks</label><textarea class="form-control" name="remarks" rows="2" placeholder="Optional remarks for the approving officer"></textarea></div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-outline" id="backToEmployees"><i class="fas fa-arrow-left"></i> Back</button>
+      <button type="button" class="btn btn-outline" id="saveGatePassDraft"><i class="fas fa-floppy-disk"></i> Save Draft</button>
+      <button type="submit" class="btn btn-primary" id="submitGatePass"><i class="fas fa-paper-plane"></i> Submit Gate Pass Request</button>
+    </div>
+  </form>
+</section>
 
-    // Auto set valid_to for temporary pass
-    document.querySelectorAll('[name="pass_type"]').forEach(r => {
-      r.addEventListener('change', function() {
-        const from = document.querySelector('[name="valid_from"]').value;
-        if (from && this.value === 'temporary') {
-          const d = new Date(from);
-          d.setDate(d.getDate() + 30);
-          document.querySelector('[name="valid_to"]').value = d.toISOString().split('T')[0];
-        }
-      });
-    });
+<section class="workflow-panel request-panel">
+  <div class="panel-heading"><div><h3>Recent Gate Pass Requests</h3><p>Submitted requests and current approval status.</p></div></div>
+  <div class="table-wrap">
+    <table class="data-table"><thead><tr><th>Request No.</th><th>Employee</th><th>Temp ID</th><th>Status</th><th>Submitted</th></tr></thead>
+      <tbody>
+      <?php if (!$requests): ?><tr><td colspan="5" class="muted-cell">No submitted gate pass requests yet.</td></tr><?php endif; ?>
+      <?php foreach ($requests as $request): ?>
+        <tr><td><strong><?= htmlspecialchars($request['request_no']) ?></strong></td><td><?= htmlspecialchars($request['worker_name']) ?></td><td><?= htmlspecialchars($request['temp_id'] ?: '-') ?></td><td><span class="status-pill warning"><?= htmlspecialchars(strtoupper(str_replace('_', ' ', $request['status']))) ?></span></td><td><?= !empty($request['created_at']) ? date('d M Y, h:i A', strtotime($request['created_at'])) : '-' ?></td></tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</section>
 
-    document.querySelector('[name="valid_from"]')?.addEventListener('change', function() {
-      const passType = document.querySelector('[name="pass_type"]:checked')?.value;
-      if (this.value && passType === 'temporary') {
-        const d = new Date(this.value);
-        d.setDate(d.getDate() + 30);
-        document.querySelector('[name="valid_to"]').value = d.toISOString().split('T')[0];
-      }
-    });
+<style>
+.hidden{display:none!important}.flow-steps{display:flex;align-items:center;margin:0 0 18px;padding:14px 16px;border:1px solid var(--border-color);background:var(--card-bg,#fff);border-radius:8px}.flow-step{display:flex;align-items:center;gap:9px;color:var(--text-muted);min-width:180px}.flow-step>span{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#e2e8f0;color:#475569;font-weight:800}.flow-step div{display:flex;flex-direction:column}.flow-step strong{font-size:13px}.flow-step small{font-size:11px}.flow-step.active{color:#1d4ed8}.flow-step.active>span{background:#2563eb;color:#fff}.flow-step.done>span{background:#16a34a;color:#fff}.flow-line{height:1px;background:var(--border-color);flex:1;margin:0 12px}.workflow-panel{border:1px solid var(--border-color);background:var(--card-bg,#fff);border-radius:8px;margin-bottom:18px;overflow:hidden}.panel-heading{padding:15px 18px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;gap:12px}.panel-heading h3{font-size:16px;margin:0}.panel-heading p{font-size:12px;color:var(--text-muted);margin:3px 0 0}.eligible-count{font-weight:800;color:#1d4ed8;background:#eff6ff;padding:6px 9px;border-radius:6px}.search-strip{display:flex;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border-color)}.search-field{position:relative;flex:1}.search-field i{position:absolute;left:12px;top:11px;color:#64748b}.search-field input{width:100%;padding:9px 12px 9px 34px;border:1px solid var(--border-color);border-radius:6px;background:var(--input-bg,#fff);color:var(--text-primary)}.table-wrap{overflow:auto}.employee-table td:first-child,.employee-table th:first-child{text-align:center;width:60px}.worker-checkbox{width:16px;height:16px;cursor:pointer}.data-table td small{display:block;color:var(--text-muted);font-size:11px;margin-top:3px}.status-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:5px;font-size:10px;font-weight:800;white-space:nowrap}.status-pill.success{background:#dcfce7;color:#166534}.status-pill.warning{background:#fef3c7;color:#92400e}.status-pill.neutral{background:#e2e8f0;color:#475569}.employee-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border-color);border-bottom:1px solid var(--border-color)}.employee-summary>div{background:var(--card-bg,#fff);padding:12px 16px}.employee-summary span{display:block;font-size:10px;text-transform:uppercase;color:var(--text-muted);font-weight:800;margin-bottom:3px}.employee-summary strong{font-size:13px}.document-list{padding:14px 18px}.document-row{display:grid;grid-template-columns:28px minmax(220px,1fr) 105px 110px 130px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-color)}.document-number{font-weight:800;color:#64748b}.document-info{display:flex;flex-direction:column}.document-info strong{font-size:13px}.document-info small{font-size:11px;color:var(--text-muted);margin-top:3px}.gate-doc-input{position:absolute;width:1px;height:1px;opacity:0}.file-state{font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-state.uploaded{color:#15803d;font-weight:700}.remarks-field{padding:0 18px}.form-actions{display:flex;justify-content:flex-end;gap:10px;padding:14px 18px;border-top:1px solid var(--border-color)}.empty-state{display:flex;flex-direction:column;align-items:center;gap:5px;padding:30px;color:var(--text-muted)}.empty-state i{font-size:28px}.muted-cell{text-align:center;color:var(--text-muted);padding:24px!important}.request-panel{margin-top:8px}@media(max-width:900px){.flow-step{min-width:0}.flow-step small{display:none}.employee-summary{grid-template-columns:1fr 1fr}.document-row{grid-template-columns:28px 1fr 90px}.document-row .status-pill{display:none}.upload-control{grid-column:2}.file-state{grid-column:3}.panel-heading{align-items:flex-start}.search-strip{flex-direction:column}}
+</style>
 
-    function showToast(msg, type='success') {
-      let t = document.createElement('div');
-      t.className='toast-msg toast-'+type;
-      t.innerHTML=`<i class="fas fa-${type==='success'?'check-circle':'exclamation-circle'}"></i> ${msg}`;
-      document.body.appendChild(t);
-      setTimeout(()=>t.remove(),3500);
-    }
+<script>
+const employeeStep = document.getElementById('employeeStep');
+const documentStep = document.getElementById('documentStep');
+const documentForm = document.getElementById('documentForm');
+const aadhaarSearch = document.getElementById('aadhaarSearch');
+const nameSearch = document.getElementById('nameSearch');
 
-    document.getElementById('gatePassForm')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById('submitGPBtn');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
-
-      const form = e.target;
-      const formData = new FormData(form);
-
-      try {
-        const res = await fetch('../../api/save_gate_pass_request.php', {
-          method: 'POST',
-          body: formData   // multipart for file uploads
-        });
-        const result = await res.json();
-        if (result.success) {
-          showToast('Gate pass request submitted successfully!', 'success');
-          setTimeout(() => location.reload(), 1800);
-        } else {
-          showToast('Error: ' + (result.message || 'Submission failed'), 'error');
-        }
-      } catch(err) {
-        showToast('Network error — please try again.', 'error');
-      }
-
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Gate Pass Request';
-    });
-    </script>
-    <style>
-    .toast-msg { position:fixed;bottom:30px;right:30px;z-index:9999;padding:14px 20px;border-radius:12px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;animation:slideUp .3s ease;box-shadow:0 8px 30px rgba(0,0,0,.2); }
-    .toast-success { background:#10b981;color:white; }
-    .toast-error   { background:#ef4444;color:white; }
-    @keyframes slideUp { from{transform:translateY(30px);opacity:0;}to{transform:translateY(0);opacity:1;} }
-    </style>
-    <?php
+function fireMessage(icon, title, text) {
+  if (typeof Swal !== 'undefined' && Swal.fire) return Swal.fire({icon, title, text, confirmButtonColor:'#1d4ed8'});
+  alert(title + ': ' + text);
+  return Promise.resolve();
 }
 
-renderLayout("Gate Pass Application (6A)", 'renderContent', $role, $name);
+function setStep(step) {
+  document.querySelectorAll('[data-step-indicator]').forEach(item => {
+    const value = Number(item.dataset.stepIndicator);
+    item.classList.toggle('active', value === step);
+    item.classList.toggle('done', value < step);
+  });
+}
+
+async function selectEmployee(worker, button = null) {
+  if (button) button.disabled = true;
+  try {
+    const body = new FormData();
+    body.append('action', 'prepare');
+    body.append('workman_id', worker.id);
+    const response = await fetch('../../api/save_gate_pass_request.php', {method:'POST', body});
+    const result = await response.json();
+    if (!result.success) throw new Error(result.message || 'Unable to prepare Gate Pass request.');
+    document.getElementById('requestId').value = result.data?.request_id || result.request_id || '';
+    document.getElementById('selectedWorkerId').value = worker.id;
+    document.getElementById('selectedName').textContent = worker.name || '-';
+    document.getElementById('selectedAadhaar').textContent = worker.aadhaar || '-';
+    document.getElementById('selectedCategory').textContent = worker.category || '-';
+    document.getElementById('selectedTempId').textContent = worker.temp_id || '-';
+    employeeStep.classList.add('hidden');
+    documentStep.classList.remove('hidden');
+    setStep(2);
+    window.scrollTo({top:0, behavior:'smooth'});
+  } catch (error) {
+    fireMessage('error', 'Gate Pass Request', error.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+document.querySelectorAll('.select-worker').forEach(button => {
+  button.addEventListener('click', e => selectEmployee(JSON.parse(e.currentTarget.dataset.worker), e.currentTarget));
+});
+document.querySelectorAll('.worker-checkbox').forEach(checkbox => {
+  checkbox.addEventListener('change', e => {
+    document.querySelectorAll('.worker-checkbox').forEach(other => {
+      if (other !== e.currentTarget) other.checked = false;
+    });
+    const button = e.currentTarget.closest('tr')?.querySelector('.select-worker');
+    if (button) button.click();
+  });
+});
+function filterEmployees() {
+  const aadhaar = aadhaarSearch.value.trim().toLowerCase();
+  const name = nameSearch.value.trim().toLowerCase();
+  document.querySelectorAll('#employeeRows tr[data-name]').forEach(row => {
+    row.classList.toggle('hidden', !row.dataset.aadhaar.includes(aadhaar) || !row.dataset.name.includes(name));
+  });
+}
+document.getElementById('searchEmployees')?.addEventListener('click', filterEmployees);
+[aadhaarSearch, nameSearch].forEach(input => input?.addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    filterEmployees();
+  }
+}));
+document.getElementById('resetSearch')?.addEventListener('click', () => {
+  aadhaarSearch.value = '';
+  nameSearch.value = '';
+  filterEmployees();
+});
+document.getElementById('backToEmployees')?.addEventListener('click', () => {
+  documentStep.classList.add('hidden');
+  employeeStep.classList.remove('hidden');
+  setStep(1);
+});
+
+function updateDocumentProgress() {
+  const inputs = Array.from(document.querySelectorAll('.gate-doc-input'));
+  const uploaded = inputs.filter(input => input.files.length > 0).length;
+  document.getElementById('documentProgress').textContent = `${uploaded} / ${inputs.length} uploaded`;
+}
+document.querySelectorAll('.gate-doc-input').forEach(input => {
+  input.addEventListener('change', () => {
+    const state = input.closest('.document-row').querySelector('[data-file-state]');
+    state.textContent = input.files[0]?.name || 'Pending';
+    state.classList.toggle('uploaded', Boolean(input.files[0]));
+    updateDocumentProgress();
+  });
+});
+document.querySelectorAll('.download-format').forEach(button => {
+  button.addEventListener('click', event => {
+    const documentName = event.currentTarget.dataset.document || 'Gate Pass Document';
+    const content = `GATE PASS SUPPORTING DOCUMENT FORMAT\n\nDocument: ${documentName}\nEmployee Name: ____________________\nAadhaar No.: ______________________\nDate: _____________________________\n\nDeclaration / Details:\n\n\nSignature: ________________________\n`;
+    const blob = new Blob([content], {type:'text/plain'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = documentName.replace(/[^a-z0-9]+/gi, '_').toLowerCase() + '_format.txt';
+    link.click();
+    URL.revokeObjectURL(link.href);
+  });
+});
+
+async function saveGatePass(action) {
+  const button = action === 'save_draft' ? document.getElementById('saveGatePassDraft') : document.getElementById('submitGatePass');
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving';
+  try {
+    const formData = new FormData(documentForm);
+    formData.set('action', action);
+    const response = await fetch('../../api/save_gate_pass_request.php', {method:'POST', body:formData});
+    const result = await response.json();
+    if (!result.success) throw new Error(result.message || 'Gate Pass request could not be saved.');
+    if (action === 'save_draft') {
+      await fireMessage('success', 'Draft Saved', 'Uploaded documents have been saved. You can continue and submit later.');
+      return;
+    }
+    setStep(3);
+    await fireMessage('success', 'Gate Pass Request Submitted', 'Approval process has been initiated.');
+    location.reload();
+  } catch (error) {
+    fireMessage('error', action === 'save_draft' ? 'Draft Save Failed' : 'Submission Failed', error.message);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = original;
+  }
+}
+document.getElementById('saveGatePassDraft')?.addEventListener('click', () => saveGatePass('save_draft'));
+
+documentForm?.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!documentForm.reportValidity()) return;
+  saveGatePass('submit');
+});
+</script>
+<?php
+}
+
+renderLayout("Gate Pass Creation Request", 'renderContent', $role, $name);

@@ -11,9 +11,10 @@ clms_safety_ensure_control_schema($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        if (($_POST['batch_action'] ?? '') === 'delete') {
-            $deletedBatch = clms_safety_delete_batch($conn, (int)($_POST['batch_id'] ?? 0));
-            $_SESSION['success'] = 'Batch ' . $deletedBatch . ' deleted.';
+        if (($_POST['batch_action'] ?? '') === 'set_status') {
+            $status = ($_POST['status'] ?? '') === 'active' ? 'active' : 'inactive';
+            clms_safety_set_batch_status($conn, (int)($_POST['batch_id'] ?? 0), $status);
+            $_SESSION['success'] = 'Batch status set ' . $status . '.';
             header('Location: training_class_master.php');
             exit;
         }
@@ -35,10 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 function renderContent() {
     global $conn;
-    $venues = clms_safety_active_rows(db_fetch_all($conn, "SELECT id, venue_code, venue_name, COALESCE(seats, 35) seats, status FROM training_venue_masters ORDER BY venue_name ASC"));
-    $languages = clms_safety_active_rows(db_fetch_all($conn, "SELECT id, language_name, status FROM training_language_masters ORDER BY sort_order ASC, language_name ASC"));
+    $venues = clms_safety_active_rows(db_fetch_all($conn, "SELECT id, venue_code, venue_name, COALESCE(seats, 35) seats, from_date, to_date, status FROM training_venue_masters ORDER BY venue_name ASC"));
+    $languages = clms_safety_active_rows(db_fetch_all($conn, "SELECT id, language_name, from_date, to_date, status FROM training_language_masters ORDER BY sort_order ASC, language_name ASC"));
     $types = clms_safety_active_rows(clms_get_training_type_rows($conn, false));
-    $instructors = clms_safety_active_rows(db_fetch_all($conn, "SELECT id, instructor_code, instructor_name, status FROM safety_instructor_masters ORDER BY instructor_name ASC"));
+    $instructors = clms_safety_active_rows(db_fetch_all($conn, "SELECT id, instructor_code, instructor_name, from_date, to_date, status FROM safety_instructor_masters ORDER BY instructor_name ASC"));
     $batches = db_fetch_all($conn, "SELECT b.*, COALESCE(wc.total_workers, 0) total_workers FROM training_class_batches b LEFT JOIN (SELECT batch_id, COUNT(*) total_workers FROM training_batch_workers WHERE ticked = 1 GROUP BY batch_id) wc ON wc.batch_id = b.id ORDER BY b.created_at DESC, b.id DESC LIMIT 20");
     $prefillRequestId = (int)($_GET['request_id'] ?? 0);
     $prefillRequest = $prefillRequestId ? db_single($conn, "
@@ -92,9 +93,9 @@ function renderContent() {
       $assigned = (int)$b['total_workers'];
       $available = max(0, $capacity - $assigned);
       $fillPct = min(100, max(0, round(($assigned / $capacity) * 100)));
-      $canDelete = $assigned === 0;
+      $active = in_array(strtolower((string)$b['status']), array('open', 'scheduled', 'active'), true) && $b['training_date'] >= date('Y-m-d');
       $assignUrl = 'training_schedule.php?batch_id=' . (int)$b['id'] . ($prefillRequestId ? '&request_id=' . (int)$prefillRequestId : '');
-    ?><tr><td><strong><?= htmlspecialchars($b['batch_number']) ?></strong><div style="font-size:11px;color:var(--text-muted)">Token: <?= htmlspecialchars($b['batch_token']) ?></div></td><td><?= date('d M Y', strtotime($b['training_date'])) ?></td><td><?= htmlspecialchars($b['venue_name']) ?></td><td><?= htmlspecialchars($b['language_name']) ?></td><td><div class="worker-capacity"><div class="worker-capacity-top"><strong><?= $assigned ?></strong><span>of <?= $capacity ?> assigned</span><em><?= $available ?> open</em></div><div class="worker-capacity-bar"><span style="width:<?= $fillPct ?>%"></span></div><div class="worker-capacity-split"><span><?= $regular ?> regular</span><span><?= $emg ?> emergency</span></div></div></td><td><span class="badge badge-info"><?= htmlspecialchars(ucfirst($b['status'])) ?></span></td><td><div class="row-actions"><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars($assignUrl) ?>">Assign Workers</a><a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a><?php if ($canDelete): ?><form method="post" style="margin:0" onsubmit="return confirm('Delete empty batch <?= htmlspecialchars($b['batch_number'], ENT_QUOTES) ?>?');"><input type="hidden" name="batch_action" value="delete"><input type="hidden" name="batch_id" value="<?= (int)$b['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">Delete</button></form><?php endif; ?></div></td></tr><?php endforeach; ?>
+    ?><tr><td><strong><?= htmlspecialchars($b['batch_number']) ?></strong><div style="font-size:11px;color:var(--text-muted)">Token: <?= htmlspecialchars($b['batch_token']) ?></div></td><td><?= date('d M Y', strtotime($b['training_date'])) ?></td><td><?= htmlspecialchars($b['venue_name']) ?></td><td><?= htmlspecialchars($b['language_name']) ?></td><td><div class="worker-capacity"><div class="worker-capacity-top"><strong><?= $assigned ?></strong><span>of <?= $capacity ?> assigned</span><em><?= $available ?> open</em></div><div class="worker-capacity-bar"><span style="width:<?= $fillPct ?>%"></span></div><div class="worker-capacity-split"><span><?= $regular ?> regular</span><span><?= $emg ?> emergency</span></div></div></td><td><span class="badge <?= $active ? 'badge-success' : 'badge-gray' ?>"><?= $active ? 'Active' : 'Inactive' ?></span></td><td><div class="row-actions"><?php if ($active): ?><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars($assignUrl) ?>">Assign Workers</a><?php endif; ?><a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a><form method="post" style="margin:0"><input type="hidden" name="batch_action" value="set_status"><input type="hidden" name="batch_id" value="<?= (int)$b['id'] ?>"><input type="hidden" name="status" value="<?= $active ? 'inactive' : 'active' ?>"><button class="btn btn-sm <?= $active ? 'btn-warning' : 'btn-success' ?>" type="submit" <?= !$active && $b['training_date'] < date('Y-m-d') ? 'disabled title="Previous date batch cannot be activated"' : '' ?>><?= $active ? 'Inactive' : 'Active' ?></button></form></div></td></tr><?php endforeach; ?>
     </tbody></table>
   </div>
 </section>
@@ -118,8 +119,12 @@ const existingBatches = <?= json_encode(array_map(function($b) {
     'time_to' => substr((string)($b['time_to'] ?? ''), 0, 5),
     'instructor_id' => (string)($b['instructor_id'] ?? ''),
     'instructor_name' => (string)($b['instructor_name'] ?? ''),
+    'status' => (string)($b['status'] ?? ''),
   ];
-}, $batches), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+}, array_values(array_filter($batches, function($b) {
+  return in_array(strtolower((string)($b['status'] ?? '')), array('open', 'scheduled', 'active'), true)
+    && (string)($b['training_date'] ?? '') >= date('Y-m-d');
+}))), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 
 function updateSeats(){
   var s=document.getElementById('venueSelect');

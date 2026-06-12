@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
+checkAuth(['safety_user', 'super_admin']);
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/workflow_engine.php';
+require_once __DIR__ . '/../../include/training_flow.php';
 
 header('Content-Type: application/json');
 
@@ -9,6 +11,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'error' => 'Invalid request method']);
     exit;
 }
+
+clms_training_ensure_schema($conn);
 
 $request_ids = $_POST['request_ids'] ?? [];
 $session_id = intval($_POST['session_id'] ?? 0);
@@ -37,7 +41,24 @@ mysqli_begin_transaction($conn);
 try {
     $linked = 0;
     foreach ($request_ids as $req_id) {
-        $req = db_single($conn, "SELECT * FROM training_requests WHERE id=?", 'i', [$req_id]);
+        $req = db_single(
+            $conn,
+            "SELECT tr.*
+             FROM training_requests tr
+             JOIN workmen w ON w.id = tr.workman_id
+             WHERE tr.id = ?
+               AND (
+                   tr.status = 'contractor_confirmed'
+                   OR (
+                       tr.status = 'pending'
+                       AND LOWER(COALESCE(w.execution_training_status, '')) = 'approved'
+                       AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
+                   )
+               )
+             LIMIT 1",
+            'i',
+            [$req_id]
+        );
         if (!$req) continue;
 
         $workman_id = $req['workman_id'];

@@ -16,6 +16,15 @@ function ensureGatePassDocumentSchema($conn) {
     @mysqli_query($conn, "ALTER TABLE documents ADD COLUMN gate_pass_request_id INT NULL");
     @mysqli_query($conn, "ALTER TABLE documents MODIFY document_type VARCHAR(255) NULL");
     @mysqli_query($conn, "ALTER TABLE documents MODIFY status VARCHAR(30) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE gate_pass_requests MODIFY status VARCHAR(30) DEFAULT 'pending'");
+    @mysqli_query($conn, "ALTER TABLE gate_pass_request_workers MODIFY status VARCHAR(30) DEFAULT 'pending'");
+}
+
+function gatePassApiColumnExists($conn, $table, $column) {
+    $table = mysqli_real_escape_string($conn, $table);
+    $column = mysqli_real_escape_string($conn, $column);
+    $result = mysqli_query($conn, "SHOW COLUMNS FROM `$table` LIKE '$column'");
+    return $result && mysqli_num_rows($result) > 0;
 }
 
 function uploadAnnexure6ADoc($conn, $workmanId, $requestId, $docType, $key) {
@@ -71,7 +80,9 @@ try {
     $app = db_single($conn, "SELECT application_id FROM annexure2a WHERE contractor_id = ? ORDER BY id DESC LIMIT 1", 'i', [$contractorId]);
     $applicationNo = $contractor['application_no'] ?: ($app['application_id'] ?? ('APP-' . $contractorId));
 
+    $action = strtolower(trim((string)($_POST['action'] ?? 'submit')));
     $workmanId = (int)($_POST['workman_id'] ?? 0);
+    $requestId = (int)($_POST['request_id'] ?? 0);
     $passType = strtolower(trim($_POST['pass_type'] ?? 'Workmen'));
     $passType = in_array(ucfirst($passType), ['Contractor', 'Supervisor', 'Workmen']) ? ucfirst($passType) : 'Workmen';
     
@@ -85,9 +96,13 @@ try {
         throw new Exception('Invalid validity date range');
     }
 
+    $roleTypeExpr = gatePassApiColumnExists($conn, 'workmen', 'role_type') ? "COALESCE(role_type, '')" : "''";
+    $safetyEnrollmentExpr = gatePassApiColumnExists($conn, 'workmen', 'safety_enrollment_status') ? "COALESCE(safety_enrollment_status, 'approved')" : "'approved'";
     $worker = db_single(
         $conn,
-        "SELECT id, name, training_status, safety_training_status, training_valid_till FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
+        "SELECT id, name, worker_type, $roleTypeExpr AS role_type, training_status, safety_training_status,
+                $safetyEnrollmentExpr AS safety_enrollment_status, training_valid_till
+         FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
         'ii',
         [$workmanId, $contractorId]
     );
@@ -102,33 +117,112 @@ try {
     if (!$trainingPassed) {
         throw new Exception('Safety training is not passed. Annexure 5A gate pass request is blocked.');
     }
+    if (strtolower((string)($worker['safety_enrollment_status'] ?? 'approved')) !== 'approved') {
+        throw new Exception('Enrollment approval is required before Gate Pass creation.');
+    }
     if (!empty($worker['training_valid_till']) && strtotime($worker['training_valid_till']) < strtotime(date('Y-m-d'))) {
         throw new Exception('Safety training validity has expired. Please request re-training before gate pass.');
+    }
+
+    if ($action === 'prepare') {
+        $workerCategory = strtolower(trim((string)($worker['worker_type'] ?: ($worker['role_type'] ?? 'workmen'))));
+        if (strpos($workerCategory, 'supervisor') !== false) {
+            $passType = 'Supervisor';
+        } elseif (strpos($workerCategory, 'contractor') !== false || strpos($workerCategory, 'representative') !== false) {
+            $passType = 'Contractor';
+        } else {
+            $passType = 'Workmen';
+        }
+        $existing = db_single(
+            $conn,
+            "SELECT gpr.id, gpr.request_no, gpr.status
+             FROM gate_pass_requests gpr
+             JOIN gate_pass_request_workers gprw ON gprw.request_id = gpr.id
+             WHERE gpr.contractor_id = ?
+               AND gprw.workman_id = ?
+               AND LOWER(COALESCE(gpr.status, 'pending')) IN ('draft','pending','submitted','reupload_required')
+             ORDER BY gpr.id DESC LIMIT 1",
+            'ii',
+            [$contractorId, $workmanId]
+        );
+        if ($existing && strtolower((string)$existing['status']) !== 'draft') {
+            throw new Exception('An active Gate Pass request already exists for this employee.');
+        }
+        if ($existing) {
+            apiSuccess([
+                'request_id' => (int)$existing['id'],
+                'request_no' => $existing['request_no'],
+                'workman_id' => $workmanId,
+            ], 'Gate Pass document upload is ready.');
+        }
+
+        $requestNo = 'GPR-' . date('Ymd') . '-' . random_int(1000, 9999);
+        $conn->begin_transaction();
+        db_execute(
+            $conn,
+            "INSERT INTO gate_pass_requests (
+                request_no, application_id, contractor_id, pass_type, from_date, to_date, status, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, 'draft', NOW(), NOW())",
+            'ssisss',
+            [$requestNo, $applicationNo, $contractorId, $passType, $validFrom, $validTo]
+        );
+        $requestId = (int)$conn->insert_id;
+        db_execute(
+            $conn,
+            "INSERT INTO gate_pass_request_workers (request_id, workman_id, status, created_at) VALUES (?, ?, 'draft', NOW())",
+            'ii',
+            [$requestId, $workmanId]
+        );
+        $conn->commit();
+        apiSuccess([
+            'request_id' => $requestId,
+            'request_no' => $requestNo,
+            'workman_id' => $workmanId,
+        ], 'Gate Pass document upload is ready.');
+    }
+
+    if (!in_array($action, ['save_draft', 'submit'], true)) {
+        throw new Exception('Invalid Gate Pass action.');
+    }
+    if (!$requestId) {
+        throw new Exception('Prepare the Gate Pass request before uploading documents.');
+    }
+    $draftRequest = db_single(
+        $conn,
+        "SELECT gpr.id, gpr.request_no, gpr.application_id, gpr.status
+         FROM gate_pass_requests gpr
+         JOIN gate_pass_request_workers gprw ON gprw.request_id = gpr.id
+         WHERE gpr.id = ? AND gpr.contractor_id = ? AND gprw.workman_id = ?
+         LIMIT 1",
+        'iii',
+        [$requestId, $contractorId, $workmanId]
+    );
+    if (!$draftRequest || strtolower((string)$draftRequest['status']) !== 'draft') {
+        throw new Exception('Gate Pass draft not found or already submitted.');
     }
 
     $requiredDocs = clms_get_gate_pass_document_type_map($conn, true);
     $allDocs = clms_get_gate_pass_document_type_map($conn, false);
     $optionalDocs = array_diff_key($allDocs, $requiredDocs);
 
-    foreach ($requiredDocs as $key => $name) {
-        if (empty($_FILES[$key]) || $_FILES[$key]['error'] !== UPLOAD_ERR_OK) {
-            throw new Exception("Mandatory document missing: $name ($key)");
+    if ($action === 'submit') {
+        foreach ($requiredDocs as $key => $name) {
+            $existingDocument = db_single(
+                $conn,
+                "SELECT id FROM documents
+                 WHERE workman_id = ? AND gate_pass_request_id = ? AND document_type = ?
+                 ORDER BY id DESC LIMIT 1",
+                'iis',
+                [$workmanId, $requestId, $name]
+            );
+            if (!$existingDocument && (empty($_FILES[$key]) || $_FILES[$key]['error'] !== UPLOAD_ERR_OK)) {
+                throw new Exception("Mandatory document missing: $name");
+            }
         }
     }
 
-    $requestNo = 'GPR-' . date('Ymd') . '-' . random_int(1000, 9999);
+    $requestNo = $draftRequest['request_no'];
     $conn->begin_transaction();
-
-    // Insert Gate Pass Request
-    db_execute(
-        $conn,
-        "INSERT INTO gate_pass_requests (
-            request_no, application_id, contractor_id, pass_type, from_date, to_date, status, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())",
-        'ssisss',
-        [$requestNo, $applicationNo, $contractorId, $passType, $validFrom, $validTo]
-    );
-    $requestId = $conn->insert_id;
 
     // Upload and insert documents against this specific gate pass request.
     foreach ($requiredDocs as $key => $docType) {
@@ -139,10 +233,34 @@ try {
         uploadAnnexure6ADoc($conn, $workmanId, $requestId, $docType, $key);
     }
 
-    // Link worker to request
+    if ($action === 'save_draft') {
+        db_execute(
+            $conn,
+            "UPDATE gate_pass_requests SET updated_at = NOW() WHERE id = ? AND contractor_id = ? AND status = 'draft'",
+            'ii',
+            [$requestId, $contractorId]
+        );
+        $conn->commit();
+        apiSuccess([
+            'request_no' => $requestNo,
+            'request_id' => $requestId,
+            'workman_id' => $workmanId,
+        ], 'Gate Pass draft saved successfully.');
+    }
+
     db_execute(
         $conn,
-        "INSERT INTO gate_pass_request_workers (request_id, workman_id, status, created_at) VALUES (?, ?, 'pending', NOW())",
+        "UPDATE gate_pass_requests
+         SET status = 'pending', from_date = ?, to_date = ?, updated_at = NOW()
+         WHERE id = ? AND contractor_id = ? AND status = 'draft'",
+        'ssii',
+        [$validFrom, $validTo, $requestId, $contractorId]
+    );
+    db_execute(
+        $conn,
+        "UPDATE gate_pass_request_workers
+         SET status = 'pending', updated_at = NOW()
+         WHERE request_id = ? AND workman_id = ?",
         'ii',
         [$requestId, $workmanId]
     );

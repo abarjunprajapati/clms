@@ -135,8 +135,8 @@ function clms_ensure_payment_flow($conn) {
     }
 
     $defaults = [
-        ['training_fee_per_worker', '500', 'payment', 'Safety fee per worker'],
-        ['training_payment_gst_percent', '18', 'payment', 'GST percentage for safety induction fee'],
+        ['training_fee_per_worker', '1000', 'payment', 'Safety fee per worker'],
+        ['training_payment_gst_percent', '0', 'payment', 'GST percentage for safety induction fee'],
         ['training_payment_link_valid_hours', '72', 'payment', 'Payment link validity in hours'],
         ['payment_gateway_provider', 'demo_qr', 'payment', 'Gateway provider name. demo_qr enables QR demo flow.'],
         ['payment_gateway_key_id', '', 'payment', 'Gateway public/key id.'],
@@ -156,6 +156,22 @@ function clms_ensure_payment_flow($conn) {
             $setting
         );
     }
+    db_execute(
+        $conn,
+        "UPDATE system_settings
+         SET setting_value = '1000', updated_at = NOW()
+         WHERE setting_key = 'training_fee_per_worker'
+           AND (setting_value IS NULL OR setting_value = '' OR setting_value = '500')
+           AND (updated_by IS NULL OR updated_by = 0)"
+    );
+    db_execute(
+        $conn,
+        "UPDATE system_settings
+         SET setting_value = '0', updated_at = NOW()
+         WHERE setting_key = 'training_payment_gst_percent'
+           AND (setting_value IS NULL OR setting_value = '' OR setting_value = '18')
+           AND (updated_by IS NULL OR updated_by = 0)"
+    );
 
     if (clms_payment_table_exists($conn, 'workmen')) {
         foreach ([
@@ -186,11 +202,11 @@ function clms_payment_setting($conn, $key, $default = '') {
 }
 
 function clms_training_fee_per_worker($conn) {
-    return max(0, (float)clms_payment_setting($conn, 'training_fee_per_worker', '500'));
+    return max(0, (float)clms_payment_setting($conn, 'training_fee_per_worker', '1000'));
 }
 
 function clms_training_payment_gst_percent($conn) {
-    return max(0, (float)clms_payment_setting($conn, 'training_payment_gst_percent', '18'));
+    return max(0, (float)clms_payment_setting($conn, 'training_payment_gst_percent', '0'));
 }
 
 function clms_training_payment_link_hours($conn) {

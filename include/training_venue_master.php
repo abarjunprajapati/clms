@@ -41,15 +41,21 @@ function clms_ensure_training_venue_masters($conn) {
 
 function clms_get_training_venue_rows($conn, $activeOnly = true) {
     if (!clms_ensure_training_venue_masters($conn)) return [];
-    $where = $activeOnly ? "WHERE LOWER(status) = 'active'" : "";
+    $dateColumns = clms_training_venue_column_exists($conn, 'from_date') && clms_training_venue_column_exists($conn, 'to_date');
+    $where = $activeOnly
+        ? "WHERE LOWER(status) = 'active'" . ($dateColumns ? " AND (from_date IS NULL OR from_date <= CURDATE()) AND (to_date IS NULL OR to_date >= CURDATE())" : "")
+        : "";
     return db_fetch_all($conn, "SELECT id, venue_name, status, created_at FROM training_venue_masters $where ORDER BY venue_name ASC");
 }
 
 function clms_training_venue_is_active($conn, $venueName) {
     if (!clms_ensure_training_venue_masters($conn)) return false;
+    $dateCondition = clms_training_venue_column_exists($conn, 'from_date') && clms_training_venue_column_exists($conn, 'to_date')
+        ? " AND (from_date IS NULL OR from_date <= CURDATE()) AND (to_date IS NULL OR to_date >= CURDATE())"
+        : "";
     $row = db_single(
         $conn,
-        "SELECT id FROM training_venue_masters WHERE LOWER(status) = 'active' AND LOWER(TRIM(venue_name)) = LOWER(TRIM(?)) LIMIT 1",
+        "SELECT id FROM training_venue_masters WHERE LOWER(status) = 'active' $dateCondition AND LOWER(TRIM(venue_name)) = LOWER(TRIM(?)) LIMIT 1",
         's',
         [trim((string)$venueName)]
     );

@@ -5,6 +5,7 @@ ob_start();
 require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['safety_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
+require_once __DIR__ . '/../../include/training_flow.php';
 require_once __DIR__ . '/../../include/training_venue_master.php';
 require_once __DIR__ . '/../../include/training_type_master.php';
 header('Content-Type: application/json; charset=utf-8');
@@ -38,6 +39,7 @@ register_shutdown_function(function() {
 });
 
 safety_schedule_ensure_schema($conn);
+clms_training_ensure_schema($conn);
 
 $data = json_decode(file_get_contents('php://input'), true);
 if (!is_array($data)) {
@@ -77,12 +79,29 @@ $safety_user_id = $_SESSION['user_id'] ?? 0;
 
 $conn->begin_transaction();
 try {
+    $approval = db_single(
+        $conn,
+        "SELECT tr.id
+         FROM training_requests tr
+         JOIN workmen w ON w.id = tr.workman_id
+         WHERE tr.id = ?
+           AND LOWER(COALESCE(tr.status, '')) = 'pending'
+           AND LOWER(COALESCE(w.execution_training_status, '')) = 'approved'
+           AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
+         LIMIT 1",
+        'i',
+        [$req_id]
+    );
+    if (!$approval) {
+        throw new Exception('Safety Department enrollment approval is required before scheduling.');
+    }
+
     // 1. Update training request
     db_execute($conn,
         "UPDATE training_requests SET
             training_type=?, scheduled_date=?, scheduled_shift=?, scheduled_venue=?, scheduled_time=?,
             safety_remarks=?, batch_number=?, instructor=?, scheduled_by=?, status='scheduled', updated_at=NOW()
-        WHERE id=?",
+        WHERE id=? AND status='pending'",
         'ssssssssii',
         [$training_type, $scheduled_date, $scheduled_shift, $scheduled_venue, $scheduled_time, $safety_remarks, $batch_number, $instructor, $safety_user_id, $req_id]
     );

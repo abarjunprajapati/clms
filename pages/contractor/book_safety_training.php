@@ -137,7 +137,7 @@ function renderContent() {
                     $conn,
                     "SELECT id, status FROM training_requests
                      WHERE workman_id = ?
-                       AND LOWER(COALESCE(status, 'pending')) IN ('welfare_pending','pending','failed','fail','absent','training_failed','rejected','correction_required')
+                       AND LOWER(COALESCE(status, 'pending')) IN ('pending_safety','welfare_pending','pending','failed','fail','absent','training_failed','rejected','correction_required','safety_rejected')
                      ORDER BY id DESC LIMIT 1",
                     'i',
                     [$workerId]
@@ -214,7 +214,7 @@ function renderContent() {
             GROUP BY batch_id
         ) x ON x.batch_id = b.id
         WHERE b.training_date >= CURDATE()
-          AND LOWER(COALESCE(b.status, 'draft')) IN ('draft','open','scheduled')
+          AND LOWER(COALESCE(b.status, 'draft')) IN ('draft','open','scheduled','active')
         ORDER BY b.training_date ASC, b.session_name ASC, b.id ASC
     ");
     foreach ($batches as &$batchRow) {
@@ -248,7 +248,7 @@ function renderContent() {
             SELECT tr2.id
             FROM training_requests tr2
             WHERE tr2.workman_id = w.id
-              AND LOWER(COALESCE(tr2.status, 'pending')) IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed')
+              AND LOWER(COALESCE(tr2.status, 'pending')) IN ('pending_eo','pending_safety','welfare_pending','pending','scheduled','contractor_confirmed','passed')
             ORDER BY tr2.id DESC
             LIMIT 1
         )
@@ -280,7 +280,7 @@ function renderContent() {
     ", 'ii', [$contractorId, $contractorId]) : [];
 
     $pendingBookings = count(array_filter($workers, function($worker) {
-        return in_array(strtolower((string)($worker['request_status'] ?? $worker['training_status'] ?? 'pending')), ['pending','welfare_pending','training_pending'], true);
+        return in_array(strtolower((string)($worker['request_status'] ?? $worker['training_status'] ?? 'pending')), ['pending_eo','pending_safety','pending','welfare_pending','training_pending'], true);
     }));
     $paymentPendingWorkers = count(array_filter($workers, function($worker) {
         return (int)($worker['payment_pending'] ?? 0) === 1;

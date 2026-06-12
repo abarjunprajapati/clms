@@ -333,6 +333,7 @@ function worker4a_ensure_schema($conn) {
         'nationality' => "VARCHAR(100) NULL DEFAULT 'Indian'",
         'aadhaar' => 'VARCHAR(20) NULL',
         'mobile' => 'VARCHAR(20) NULL',
+        'whatsapp_no' => 'VARCHAR(20) NULL',
         'emergency_contact' => 'VARCHAR(20) NULL',
         'permanent_address' => 'TEXT NULL',
         'present_address' => 'TEXT NULL',
@@ -376,6 +377,10 @@ function worker4a_ensure_schema($conn) {
         'execution_training_remarks' => 'TEXT NULL',
         'execution_training_reviewed_by' => 'BIGINT NULL',
         'execution_training_reviewed_at' => 'DATETIME NULL',
+        'safety_enrollment_status' => "VARCHAR(30) DEFAULT 'pending'",
+        'safety_enrollment_remarks' => 'TEXT NULL',
+        'safety_enrollment_reviewed_by' => 'BIGINT NULL',
+        'safety_enrollment_reviewed_at' => 'DATETIME NULL',
         'photo' => 'VARCHAR(255) NULL',
         'education_doc' => 'VARCHAR(255) NULL',
         'educational_doc' => 'VARCHAR(255) NULL',
@@ -643,7 +648,12 @@ function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $r
 
     $existing = db_single(
         $conn,
-        "SELECT id FROM training_requests WHERE workman_id = ? AND status IN ('pending_eo','welfare_pending','pending','scheduled','contractor_confirmed','passed') ORDER BY id DESC LIMIT 1",
+        "SELECT id, status
+         FROM training_requests
+         WHERE workman_id = ?
+           AND status IN ('pending_eo','pending_safety','welfare_pending','pending','safety_rejected','scheduled','contractor_confirmed','passed')
+         ORDER BY id DESC
+         LIMIT 1",
         'i',
         [$workman_id]
     );
@@ -651,9 +661,15 @@ function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $r
         db_execute(
             $conn,
             "UPDATE training_requests
-             SET training_type = ?, preferred_date = ?, preferred_shift = ?, remarks = ?, source = 'enrolment', requested_by = ?, updated_at = NOW()
+             SET training_type = ?, preferred_date = ?, preferred_shift = ?, remarks = ?,
+                 source = 'enrolment', requested_by = ?,
+                 status = CASE
+                     WHEN status IN ('pending_eo','pending_safety','welfare_pending','pending','safety_rejected') THEN ?
+                     ELSE status
+                 END,
+                 updated_at = NOW()
              WHERE id = ?",
-            'ssssii',
+            'ssssisi',
             [
                 $data['training_type'] ?? 'Safety Induction',
                 $data['training_booking_date'] ?? null,
@@ -662,6 +678,7 @@ function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $r
                     ? 'Safety training appointment requested during entitlement booking.'
                     : 'Auto-created after Executing Officer approval/document validation. Waiting for Safety Department approval.',
                 (int)$requested_by,
+                $initialStatus,
                 (int)$existing['id']
             ]
         );
@@ -840,6 +857,16 @@ worker4a_ensure_schema($conn);
     } elseif (!in_array($safetyFeePaymentOption, ['pay_now', 'pay_later'], true)) {
         $safetyFeePaymentOption = 'pay_now';
     }
+    $pwoPaymentAlreadyPaid = false;
+    if ($isPwoWorkOrder && $editing_worker_id > 0) {
+        $paidWorkerIdsForBooking = clms_paid_training_worker_ids($conn, [$editing_worker_id]);
+        $pwoPaymentAlreadyPaid = in_array($editing_worker_id, $paidWorkerIdsForBooking, true);
+    }
+    if ($isPwoWorkOrder && !$pwoPaymentAlreadyPaid) {
+        $data['training_booking_choice'] = 'not_now';
+        $data['training_booking_date'] = '';
+        $data['training_booking_session'] = '';
+    }
     $trade = $data['nature_of_work'] ?? '';
     $skill = $data['skill_category'] ?? '';
     $workmen_skill_category = normalize_skill_category($skill);
@@ -868,9 +895,16 @@ worker4a_ensure_schema($conn);
         if (trim($data['safety_language'] ?? '') === '') {
             throw new Exception("Language Preferred for Safety Induction is mandatory.");
         }
-        if (($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
+        $whatsappNo = trim((string)($data['whatsapp_no'] ?? ''));
+        if ($whatsappNo === '') {
+            throw new Exception("WhatsApp Number is mandatory.");
+        }
+        if (!preg_match('/^[0-9]{10}$/', $whatsappNo)) {
+            throw new Exception("Please enter a valid 10 digit WhatsApp Number.");
+        }
+        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid) && ($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
             if (trim((string)($data['training_booking_date'] ?? '')) === '' || trim((string)($data['training_booking_session'] ?? '')) === '') {
-                throw new Exception('Please select safety training date and session, or choose I do not need to book now.');
+                throw new Exception('Please select safety training date and session before submitting enrollment.');
             }
         }
         if (trim($data['pwd_status'] ?? '') === '') {
@@ -905,6 +939,7 @@ worker4a_ensure_schema($conn);
         'nationality' => $data['nationality'] ?? 'Indian',
         'aadhaar' => $data['aadhaar'] ?? '',
         'mobile' => $data['mobile'] ?? '',
+        'whatsapp_no' => $data['whatsapp_no'] ?? '',
         'emergency_contact' => $data['emergency_contact'] ?? '',
         'permanent_address' => $data['permanent_address'] ?? '',
         'present_address' => $data['present_address'] ?? '',
@@ -1037,15 +1072,25 @@ worker4a_ensure_schema($conn);
     $workman_row['signature_doc'] = $uploaded_files['signature'];
     $workman_row['training_approval_doc'] = $uploaded_files['training_approval_doc'];
     if ($action !== 'draft') {
-        $workman_row['execution_training_status'] = $isPwoWorkOrder ? 'pending_payment' : 'pending_eo';
+        $nonPwoBookedNow = !$isPwoWorkOrder && ($data['training_booking_choice'] ?? 'not_now') === 'book_now';
+        $pwoBookedAfterPayment = $isPwoWorkOrder && $pwoPaymentAlreadyPaid && ($data['training_booking_choice'] ?? 'not_now') === 'book_now';
+        $workman_row['execution_training_status'] = $isPwoWorkOrder
+            ? ($pwoBookedAfterPayment ? 'pending_eo' : 'pending_payment')
+            : ($nonPwoBookedNow ? 'pending_eo' : 'pending_booking');
         $workman_row['execution_training_remarks'] = $isPwoWorkOrder
-            ? 'Waiting for Safety fee payment verification.'
-            : 'Safety seat booking submitted. Waiting for Executing Officer approval.';
+            ? ($pwoBookedAfterPayment ? 'Safety fee payment completed. Safety seat booking submitted. Waiting for Executing Officer approval.' : 'Waiting for Safety fee payment verification.')
+            : ($nonPwoBookedNow ? 'Safety seat booking submitted. Waiting for Executing Officer approval.' : 'Enrollment completed. Waiting for Safety Training & Seat Booking.');
+        $workman_row['execution_training_reviewed_by'] = null;
+        $workman_row['execution_training_reviewed_at'] = null;
+        $workman_row['safety_enrollment_status'] = 'pending';
+        $workman_row['safety_enrollment_remarks'] = null;
+        $workman_row['safety_enrollment_reviewed_by'] = null;
+        $workman_row['safety_enrollment_reviewed_at'] = null;
     }
     if (!empty($new_uploaded_files['training_approval_doc'])) {
         $workman_row['execution_training_remarks'] = $isPwoWorkOrder
-            ? 'Waiting for Safety fee payment verification.'
-            : 'Training approval attachment uploaded. Waiting for Executing Officer approval.';
+            ? ($pwoPaymentAlreadyPaid ? 'Safety fee payment completed. Training approval attachment uploaded.' : 'Waiting for Safety fee payment verification.')
+            : 'Training approval attachment uploaded. Waiting for Safety Training & Seat Booking.';
     }
 
     if ($existing_workman) {
@@ -1081,7 +1126,7 @@ worker4a_ensure_schema($conn);
                 throw new Exception('Payment link generate nahi ho pa raha. Safety Fee Payment settings check karein.');
             }
         }
-        if (($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
+        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid) && ($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
             $trainingData = $data;
             $trainingData['initial_training_status'] = 'pending_eo';
             worker4a_ensure_training_request($conn, $workman_id_new, $contractor_id, (int)($_SESSION['user_id'] ?? 0), $trainingData);
@@ -1176,13 +1221,22 @@ worker4a_ensure_schema($conn);
     }
 
     $successMessage = "Worker enrolled successfully.";
-    if ($action !== 'draft' && $isPwoWorkOrder && $safetyFeePaymentOption === 'pay_later') {
-        $successMessage = "Enrollment completed. Please do Safety Payment for proceeding further.";
+    if ($action !== 'draft' && $isPwoWorkOrder && $pwoPaymentAlreadyPaid && ($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
+        $successMessage = "Worker enrolled successfully. Safety Training booking submitted.";
+    } elseif ($action !== 'draft' && $isPwoWorkOrder && $safetyFeePaymentOption === 'pay_later') {
+        $successMessage = "Enrollment Complete. Please do safety payment for proceeding further.";
     } elseif ($action !== 'draft' && $isPwoWorkOrder) {
-        $successMessage = "Worker enrolled successfully. Safety fee payment is required before Executing Officer approval.";
+        $successMessage = "Worker enrolled successfully. Please complete Safety Fee Payment to open Safety Training & Seat Booking.";
     } elseif ($action !== 'draft') {
-        $successMessage = "Worker enrolled successfully. Request forwarded to Executing Officer approval inbox.";
+        $successMessage = "Worker enrolled successfully. Safety Training booking submitted.";
     }
+
+    $bookingLink = ($action !== 'draft' && !$isPwoWorkOrder && ($data['training_booking_choice'] ?? 'not_now') !== 'book_now')
+        ? 'book_safety_training.php?worker_id=' . urlencode((string)$workman_id_new)
+        : null;
+    $bookingMenuLink = ($action !== 'draft' && $isPwoWorkOrder && $safetyFeePaymentOption === 'pay_later')
+        ? 'book_safety_training.php?worker_id=' . urlencode((string)$workman_id_new)
+        : null;
 
     worker4a_json([
         "success" => true,
@@ -1192,10 +1246,14 @@ worker4a_ensure_schema($conn);
         "temp_id" => $temp_id,
         "payment" => $paymentRequest ? [
             "payment_ref" => $paymentRequest['payment_ref'],
+            "payment_token" => $paymentRequest['payment_token'],
             "amount" => $paymentRequest['total_amount'],
             "payment_link" => $paymentRequest['payment_link'],
             "link_expires_at" => $paymentRequest['link_expires_at'],
+            "demo" => clms_demo_payment_details($conn, $paymentRequest),
         ] : null,
+        "booking_link" => $bookingLink,
+        "booking_menu_link" => $bookingMenuLink,
         "notification_debug" => $notificationDebug
     ]);
 

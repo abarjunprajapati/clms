@@ -97,7 +97,11 @@ try {
     foreach ($workerIds as $workerId) {
         $worker = db_single(
             $conn,
-            "SELECT id, training_status, execution_training_status, execution_training_reviewed_by FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
+            "SELECT id, training_status, execution_training_status, execution_training_reviewed_by,
+                    COALESCE(safety_enrollment_status, 'pending') AS safety_enrollment_status
+             FROM workmen
+             WHERE id = ? AND contractor_id = ?
+             LIMIT 1",
             'ii',
             [$workerId, $contractorId]
         );
@@ -106,6 +110,9 @@ try {
         }
 
         if (strtolower((string)($worker['execution_training_status'] ?? 'pending')) !== 'approved' || (int)($worker['execution_training_reviewed_by'] ?? 0) <= 0) {
+            continue;
+        }
+        if (strtolower((string)($worker['safety_enrollment_status'] ?? 'pending')) !== 'approved') {
             continue;
         }
 
@@ -118,7 +125,7 @@ try {
             $conn,
             "SELECT id FROM training_requests
              WHERE workman_id = ?
-               AND status IN ('welfare_pending','pending','scheduled','contractor_confirmed','passed')
+               AND status IN ('pending','scheduled','contractor_confirmed','passed')
              ORDER BY id DESC LIMIT 1",
             'i',
             [$workerId]
@@ -150,7 +157,7 @@ try {
                      remarks = ?,
                      source = 'contractor',
                      requested_by = ?,
-                     status = 'welfare_pending',
+                     status = 'pending',
                      contractor_confirmed = 0,
                      scheduled_date = NULL,
                      scheduled_shift = NULL,
@@ -189,7 +196,7 @@ try {
             'remarks' => trim($input['remarks'] ?? ''),
             'source' => 'contractor',
             'requested_by' => $userId,
-            'status' => 'welfare_pending',
+            'status' => 'pending',
             'created_at' => date('Y-m-d H:i:s'),
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
@@ -352,6 +359,7 @@ function training_ensure_schema($conn) {
         training_ensure_column($conn, 'workmen', 'safety_training_status', "VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
         training_ensure_column($conn, 'workmen', 'execution_training_status', "VARCHAR(30) DEFAULT 'pending'");
         training_ensure_column($conn, 'workmen', 'execution_training_reviewed_by', 'BIGINT NULL');
+        training_ensure_column($conn, 'workmen', 'safety_enrollment_status', "VARCHAR(30) DEFAULT 'pending'");
         training_ensure_column($conn, 'workmen', 'updated_at', 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP');
         @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN training_status VARCHAR(50) DEFAULT 'pending'");
         @mysqli_query($conn, "ALTER TABLE workmen MODIFY COLUMN safety_training_status VARCHAR(50) DEFAULT 'PENDING_TRAINING'");

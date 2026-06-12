@@ -433,7 +433,7 @@ function renderContent() {
                   FROM training_requests tr2
                   WHERE tr2.workman_id = w.id
                     AND LOWER(COALESCE(tr2.status, 'pending')) IN (
-                        'pending', 'welfare_pending', 'scheduled', 'contractor_confirmed',
+                        'pending_safety', 'welfare_pending', 'pending', 'scheduled', 'contractor_confirmed',
                         'passed', 'failed', 'completed', 'training_scheduled',
                         'training_passed', 'training_failed'
                     )
@@ -560,7 +560,7 @@ function renderContent() {
             <label class="form-label">Status</label>
             <select name="status" class="form-control">
               <option value="">All</option>
-              <?php foreach (['pending', 'welfare_pending', 'contractor_confirmed', 'scheduled', 'passed', 'failed', 'absent'] as $statusOption): ?>
+              <?php foreach (['pending_safety', 'pending', 'contractor_confirmed', 'scheduled', 'passed', 'failed', 'absent'] as $statusOption): ?>
                 <option value="<?= htmlspecialchars($statusOption) ?>" <?= $status_filter === $statusOption ? 'selected' : '' ?>><?= htmlspecialchars(ucwords(str_replace('_', ' ', $statusOption))) ?></option>
               <?php endforeach; ?>
             </select>

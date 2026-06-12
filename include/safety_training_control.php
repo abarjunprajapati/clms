@@ -33,14 +33,117 @@ function clms_safety_ensure_index($conn, $table, $indexName, $sql) {
     @mysqli_query($conn, $sql);
 }
 
+function clms_safety_master_status($status) {
+    return strtolower(trim((string)$status)) === 'active' ? 'active' : 'inactive';
+}
+
+function clms_safety_validate_master_dates($fromDate, $toDate, $status = 'active') {
+    $fromDate = trim((string)$fromDate) ?: date('Y-m-d');
+    $toDate = trim((string)$toDate) ?: '9999-12-31';
+    if (strtotime($fromDate) === false || strtotime($toDate) === false) {
+        throw new InvalidArgumentException('Please enter valid From Date and To Date.');
+    }
+    if ($toDate < $fromDate) {
+        throw new InvalidArgumentException('To Date cannot be earlier than From Date.');
+    }
+    if (clms_safety_master_status($status) === 'active' && $toDate < date('Y-m-d')) {
+        throw new InvalidArgumentException('Previous/expired date record cannot be set Active.');
+    }
+    return array($fromDate, $toDate);
+}
+
+function clms_safety_set_master_status($conn, $table, $id, $status) {
+    $allowedTables = array(
+        'training_venue_masters',
+        'safety_instructor_masters',
+        'training_language_masters',
+        'training_fee_masters',
+    );
+    if (!in_array($table, $allowedTables, true)) {
+        throw new InvalidArgumentException('Invalid Safety Master.');
+    }
+    $status = clms_safety_master_status($status);
+    if ($status === 'active') {
+        $row = db_single($conn, "SELECT from_date, to_date FROM `$table` WHERE id = ? LIMIT 1", 'i', array((int)$id));
+        if (!$row) throw new RuntimeException('Master record not found.');
+        clms_safety_validate_master_dates($row['from_date'] ?? '', $row['to_date'] ?? '', 'active');
+    }
+    db_execute($conn, "UPDATE `$table` SET status = ?, updated_at = NOW() WHERE id = ?", 'si', array($status, (int)$id));
+}
+
+function clms_safety_expire_master_rows($conn) {
+    $today = date('Y-m-d');
+    foreach (array('training_venue_masters', 'safety_instructor_masters', 'training_language_masters', 'training_fee_masters') as $table) {
+        if (clms_safety_table_exists($conn, $table) && clms_safety_column_exists($conn, $table, 'to_date')) {
+            @db_execute($conn, "UPDATE `$table` SET status = 'inactive', updated_at = NOW() WHERE LOWER(COALESCE(status, '')) = 'active' AND to_date < ?", 's', array($today));
+        }
+    }
+    if (clms_safety_table_exists($conn, 'master_training_types')) {
+        @db_execute($conn, "UPDATE master_training_types SET status = 'inactive' WHERE LOWER(COALESCE(status, '')) = 'active' AND to_date < ?", 's', array($today));
+    }
+    if (clms_safety_table_exists($conn, 'training_class_batches')) {
+        @db_execute($conn, "UPDATE training_class_batches SET status = 'inactive', updated_at = NOW() WHERE training_date < ? AND LOWER(COALESCE(status, '')) IN ('draft', 'open', 'scheduled', 'active')", 's', array($today));
+    }
+}
+
+function clms_safety_ensure_master_tables($conn) {
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS safety_instructor_masters (
+        id INT NOT NULL AUTO_INCREMENT,
+        instructor_code VARCHAR(30) NULL,
+        instructor_name VARCHAR(150) NOT NULL,
+        mobile VARCHAR(20) NULL,
+        email VARCHAR(120) NULL,
+        from_date DATE NULL,
+        to_date DATE NOT NULL DEFAULT '9999-12-31',
+        status VARCHAR(20) NOT NULL DEFAULT 'active',
+        created_by INT NULL,
+        created_at DATETIME NULL,
+        updated_at DATETIME NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_instructor_name (instructor_name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_language_masters (
+        id INT NOT NULL AUTO_INCREMENT,
+        language_name VARCHAR(80) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'active',
+        sort_order INT DEFAULT 0,
+        from_date DATE NULL,
+        to_date DATE NOT NULL DEFAULT '9999-12-31',
+        created_by INT NULL,
+        created_at DATETIME NULL,
+        updated_at DATETIME NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_training_language (language_name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_fee_masters (
+        id INT NOT NULL AUTO_INCREMENT,
+        fee_source VARCHAR(20) NOT NULL,
+        amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        from_date DATE NULL,
+        to_date DATE NOT NULL DEFAULT '9999-12-31',
+        status VARCHAR(20) NOT NULL DEFAULT 'active',
+        created_by INT NULL,
+        created_at DATETIME NULL,
+        updated_at DATETIME NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_training_fee_source (fee_source)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
 function clms_safety_ensure_control_schema($conn) {
     clms_ensure_training_venue_masters($conn);
     clms_ensure_training_type_master($conn);
+    clms_safety_ensure_master_tables($conn);
 
     clms_safety_ensure_column($conn, 'training_venue_masters', 'venue_code', 'VARCHAR(30) NULL');
     clms_safety_ensure_column($conn, 'training_venue_masters', 'seats', 'INT NOT NULL DEFAULT 35');
     clms_safety_ensure_column($conn, 'training_venue_masters', 'from_date', 'DATE NULL');
     clms_safety_ensure_column($conn, 'training_venue_masters', 'to_date', "DATE NOT NULL DEFAULT '9999-12-31'");
+    clms_safety_ensure_column($conn, 'training_venue_masters', 'created_by', 'INT NULL');
+    clms_safety_ensure_column($conn, 'training_venue_masters', 'created_at', 'DATETIME NULL');
+    clms_safety_ensure_column($conn, 'training_venue_masters', 'updated_at', 'DATETIME NULL');
     @mysqli_query($conn, "UPDATE training_venue_masters SET seats = 35 WHERE seats IS NULL OR seats <= 0");
     @mysqli_query($conn, "UPDATE training_venue_masters SET venue_code = CONCAT('LOC', LPAD(id, 3, '0')) WHERE COALESCE(TRIM(venue_code), '') = ''");
     clms_safety_ensure_index($conn, 'training_venue_masters', 'uq_training_venue_code', "ALTER TABLE training_venue_masters ADD UNIQUE KEY uq_training_venue_code (venue_code)");
@@ -54,6 +157,10 @@ function clms_safety_ensure_control_schema($conn) {
     clms_safety_ensure_column($conn, 'safety_instructor_masters', 'email', 'VARCHAR(120) NULL');
     clms_safety_ensure_column($conn, 'safety_instructor_masters', 'from_date', 'DATE NULL');
     clms_safety_ensure_column($conn, 'safety_instructor_masters', 'to_date', "DATE NOT NULL DEFAULT '9999-12-31'");
+    clms_safety_ensure_column($conn, 'safety_instructor_masters', 'instructor_code', 'VARCHAR(30) NULL');
+    clms_safety_ensure_column($conn, 'safety_instructor_masters', 'created_by', 'INT NULL');
+    clms_safety_ensure_column($conn, 'safety_instructor_masters', 'created_at', 'DATETIME NULL');
+    clms_safety_ensure_column($conn, 'safety_instructor_masters', 'updated_at', 'DATETIME NULL');
     @mysqli_query($conn, "UPDATE safety_instructor_masters SET instructor_code = CONCAT('INS', LPAD(id, 3, '0')) WHERE COALESCE(TRIM(instructor_code), '') = ''");
     clms_safety_ensure_index($conn, 'safety_instructor_masters', 'uq_instructor_code', "ALTER TABLE safety_instructor_masters ADD UNIQUE KEY uq_instructor_code (instructor_code)");
     foreach (array(
@@ -108,6 +215,10 @@ function clms_safety_ensure_control_schema($conn) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     clms_safety_ensure_column($conn, 'training_language_masters', 'from_date', 'DATE NULL');
     clms_safety_ensure_column($conn, 'training_language_masters', 'to_date', "DATE NOT NULL DEFAULT '9999-12-31'");
+    clms_safety_ensure_column($conn, 'training_language_masters', 'sort_order', 'INT DEFAULT 0');
+    clms_safety_ensure_column($conn, 'training_language_masters', 'created_by', 'INT NULL');
+    clms_safety_ensure_column($conn, 'training_language_masters', 'created_at', 'DATETIME NULL');
+    clms_safety_ensure_column($conn, 'training_language_masters', 'updated_at', 'DATETIME NULL');
 
     mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_fee_masters (
         id INT NOT NULL AUTO_INCREMENT,
@@ -124,6 +235,9 @@ function clms_safety_ensure_control_schema($conn) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     clms_safety_ensure_column($conn, 'training_fee_masters', 'from_date', 'DATE NULL');
     clms_safety_ensure_column($conn, 'training_fee_masters', 'to_date', "DATE NOT NULL DEFAULT '9999-12-31'");
+    clms_safety_ensure_column($conn, 'training_fee_masters', 'created_by', 'INT NULL');
+    clms_safety_ensure_column($conn, 'training_fee_masters', 'created_at', 'DATETIME NULL');
+    clms_safety_ensure_column($conn, 'training_fee_masters', 'updated_at', 'DATETIME NULL');
 
     mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_class_batches (
         id INT NOT NULL AUTO_INCREMENT,
@@ -270,6 +384,7 @@ function clms_safety_ensure_control_schema($conn) {
     foreach (array(array('PWO', 100.00), array('PO', 0.00), array('SO', 0.00)) as $fee) {
         db_execute($conn, "INSERT IGNORE INTO training_fee_masters (fee_source, amount, status, created_at, updated_at) VALUES (?, ?, 'active', NOW(), NOW())", 'sd', array($fee[0], $fee[1]));
     }
+    clms_safety_expire_master_rows($conn);
 }
 
 function clms_safety_generate_batch_token($conn) {
@@ -380,45 +495,26 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
 
 function clms_safety_active_rows($rows) {
     $out = array();
+    $today = date('Y-m-d');
     foreach ($rows as $row) {
-        if (strtolower((string)($row['status'] ?? '')) === 'active') $out[] = $row;
+        $fromDate = trim((string)($row['from_date'] ?? ''));
+        $toDate = trim((string)($row['to_date'] ?? ''));
+        $dateActive = ($fromDate === '' || $fromDate <= $today) && ($toDate === '' || $toDate >= $today);
+        if (strtolower((string)($row['status'] ?? '')) === 'active' && $dateActive) $out[] = $row;
     }
     return $out;
 }
 
-function clms_safety_delete_batch($conn, $batchId) {
+function clms_safety_set_batch_status($conn, $batchId, $status) {
     clms_safety_ensure_control_schema($conn);
-    $batch = db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', array((int)$batchId));
-    if (!$batch) {
-        throw new RuntimeException('Batch not found.');
+    $batch = db_single($conn, "SELECT id, training_date FROM training_class_batches WHERE id = ? LIMIT 1", 'i', array((int)$batchId));
+    if (!$batch) throw new RuntimeException('Batch not found.');
+    $status = clms_safety_master_status($status);
+    if ($status === 'active' && (string)$batch['training_date'] < date('Y-m-d')) {
+        throw new RuntimeException('Previous date batch cannot be activated.');
     }
-
-    $selectedCount = db_count($conn, "SELECT COUNT(*) FROM training_batch_workers WHERE batch_id = ? AND ticked = 1", 'i', array((int)$batchId));
-    if ($selectedCount > 0) {
-        throw new RuntimeException('This batch has assigned workers. Remove/untick workers before deleting it.');
-    }
-
-    $session = db_single($conn, "SELECT id FROM training_schedule WHERE batch_number = ? LIMIT 1", 's', array((string)$batch['batch_number']));
-    if ($session) {
-        $sessionWorkers = db_count($conn, "SELECT COUNT(*) FROM training_session_workers WHERE session_id = ?", 'i', array((int)$session['id']));
-        if ($sessionWorkers > 0) {
-            throw new RuntimeException('This batch session has workers. It cannot be deleted.');
-        }
-    }
-
-    $conn->begin_transaction();
-    try {
-        db_execute($conn, "DELETE FROM training_batch_workers WHERE batch_id = ?", 'i', array((int)$batchId));
-        if ($session) {
-            db_execute($conn, "DELETE FROM training_schedule WHERE id = ?", 'i', array((int)$session['id']));
-        }
-        db_execute($conn, "DELETE FROM training_class_batches WHERE id = ?", 'i', array((int)$batchId));
-        $conn->commit();
-        return (string)$batch['batch_number'];
-    } catch (Throwable $e) {
-        $conn->rollback();
-        throw $e;
-    }
+    $storedStatus = $status === 'active' ? 'open' : 'inactive';
+    db_execute($conn, "UPDATE training_class_batches SET status = ?, updated_at = NOW() WHERE id = ?", 'si', array($storedStatus, (int)$batchId));
 }
 
 function clms_safety_create_batch($conn, $data, $userId) {
@@ -438,11 +534,15 @@ function clms_safety_create_batch($conn, $data, $userId) {
     if (!$trainingDate || !$venueId || !$languageId || !$typeId) {
         throw new RuntimeException('Training date, location, language and type are required.');
     }
+    if ($trainingDate < date('Y-m-d')) {
+        throw new RuntimeException('Previous training date is not allowed. Select today or a future date.');
+    }
 
-    $venue = db_single($conn, "SELECT id, venue_name, COALESCE(seats, 35) seats FROM training_venue_masters WHERE id = ? LIMIT 1", 'i', array($venueId));
-    $language = db_single($conn, "SELECT id, language_name FROM training_language_masters WHERE id = ? LIMIT 1", 'i', array($languageId));
-    $type = db_single($conn, "SELECT id, type_name FROM master_training_types WHERE id = ? LIMIT 1", 'i', array($typeId));
-    $instructor = $instructorId ? db_single($conn, "SELECT id, instructor_name FROM safety_instructor_masters WHERE id = ? LIMIT 1", 'i', array($instructorId)) : null;
+    $today = date('Y-m-d');
+    $venue = db_single($conn, "SELECT id, venue_name, COALESCE(seats, 35) seats FROM training_venue_masters WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', array($venueId, $today, $today));
+    $language = db_single($conn, "SELECT id, language_name FROM training_language_masters WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', array($languageId, $today, $today));
+    $type = db_single($conn, "SELECT id, type_name FROM master_training_types WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', array($typeId, $today, $today));
+    $instructor = $instructorId ? db_single($conn, "SELECT id, instructor_name FROM safety_instructor_masters WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', array($instructorId, $today, $today)) : null;
     if (!$venue || !$language || !$type) throw new RuntimeException('Invalid master selection.');
 
     $regularSeats = max(1, (int)$venue['seats']);
@@ -525,10 +625,14 @@ function clms_safety_reschedule_batch($conn, $batchId, array $data, $userId = 0)
     if (!$trainingDate || !$venueId || !in_array($sessionName, array('FN', 'AN'), true)) {
         throw new RuntimeException('New date, location and session are required.');
     }
+    if ($trainingDate < date('Y-m-d')) {
+        throw new RuntimeException('Previous training date is not allowed. Select today or a future date.');
+    }
 
-    $venue = db_single($conn, "SELECT id, venue_name, COALESCE(seats, 35) seats FROM training_venue_masters WHERE id = ? LIMIT 1", 'i', array($venueId));
+    $today = date('Y-m-d');
+    $venue = db_single($conn, "SELECT id, venue_name, COALESCE(seats, 35) seats FROM training_venue_masters WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', array($venueId, $today, $today));
     if (!$venue) throw new RuntimeException('Invalid training location.');
-    $instructor = $instructorId ? db_single($conn, "SELECT id, instructor_name FROM safety_instructor_masters WHERE id = ? LIMIT 1", 'i', array($instructorId)) : null;
+    $instructor = $instructorId ? db_single($conn, "SELECT id, instructor_name FROM safety_instructor_masters WHERE id = ? AND LOWER(status) = 'active' AND (from_date IS NULL OR from_date <= ?) AND (to_date IS NULL OR to_date >= ?) LIMIT 1", 'iss', array($instructorId, $today, $today)) : null;
 
     $emergencySeats = max(0, (int)($batch['emergency_seats'] ?? 0));
     $newCapacity = max(1, (int)$venue['seats']) + $emergencySeats;

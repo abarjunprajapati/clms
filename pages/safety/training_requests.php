@@ -123,6 +123,12 @@ function safety_training_page_seed_pending_requests($conn) {
     if (safety_training_page_column_exists($conn, 'workmen', 'temp_id')) {
         $where[] = "COALESCE(w.temp_id, '') <> ''";
     }
+    if (safety_training_page_column_exists($conn, 'workmen', 'execution_training_status')) {
+        $where[] = "LOWER(COALESCE(w.execution_training_status, '')) = 'approved'";
+    }
+    if (safety_training_page_column_exists($conn, 'workmen', 'safety_enrollment_status')) {
+        $where[] = "LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'";
+    }
 
     $sql = "
         INSERT INTO training_requests (workman_id, contractor_id, requested_date, preferred_date, preferred_shift, status, created_at, updated_at)
@@ -164,7 +170,8 @@ function safety_training_page_sync_request_statuses($conn) {
         UPDATE training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         SET tr.status = 'scheduled', tr.updated_at = NOW()
-        WHERE tr.status IN ('pending', 'welfare_pending')
+        WHERE tr.status = 'pending'
+          AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
           AND tr.scheduled_date IS NOT NULL
           AND (
               UPPER(TRIM(COALESCE(w.training_status, ''))) IN ('SCHEDULED', 'TRAINING_SCHEDULED')
@@ -320,7 +327,7 @@ function renderContent() {
     )";
 
     $stats = [
-        'pending'    => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status IN ('pending','welfare_pending') AND $latestRequestWhere AND $contractorRequestWhere")['c'],
+        'pending'    => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr JOIN workmen sw ON sw.id = tr.workman_id WHERE tr.status = 'pending' AND LOWER(COALESCE(sw.safety_enrollment_status, 'pending')) = 'approved' AND $latestRequestWhere AND $contractorRequestWhere")['c'],
         'upcoming'   => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status IN ('scheduled','contractor_confirmed') AND tr.scheduled_date >= CURDATE() AND $contractorRequestWhere")['c'],
         'total_pass' => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'passed' AND $contractorRequestWhere")['c'],
         'total_fail' => db_single($conn, "SELECT COUNT(*) c FROM training_requests tr WHERE tr.status = 'failed' AND $contractorRequestWhere")['c']
@@ -333,7 +340,8 @@ function renderContent() {
         FROM training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
         LEFT JOIN contractors c ON tr.contractor_id = c.id
-        WHERE tr.status IN ('pending', 'welfare_pending')
+        WHERE tr.status = 'pending'
+          AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
           AND $latestRequestWhere
           AND $contractorRequestWhere
         ORDER BY tr.updated_at DESC, tr.id DESC

@@ -29,6 +29,12 @@ if (defined('CLMS_CONFIG_ONLY')) {
     return;
 }
 
+// If DB helper functions are already defined by another config file, skip rest.
+if (function_exists('db_execute')) {
+    error_log('[CLMS] DB helpers already defined; skipping config.live.php helpers.');
+    return;
+}
+
 if (!function_exists('clms_has_open_mysqli_connection')) {
     function clms_has_open_mysqli_connection($connection) {
         if (!$connection instanceof mysqli) {
