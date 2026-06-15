@@ -309,9 +309,9 @@ function renderContent() {
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <?php if ($docUrl): ?>
                     <a class="btn btn-sm btn-outline" href="<?= htmlspecialchars($docUrl) ?>" target="_blank"><i class="fas fa-eye"></i> View</a>
+                  <?php else: ?>
+                    <span style="font-size:12px;color:var(--text-muted);">None</span>
                   <?php endif; ?>
-                  <button class="btn btn-sm btn-success" type="button" onclick="reviewTraining(<?= (int)$r['id'] ?>, 'approve')"><i class="fas fa-check"></i> Approve</button>
-                  <button class="btn btn-sm btn-danger" type="button" onclick="reviewTraining(<?= (int)$r['id'] ?>, 'reject')"><i class="fas fa-times"></i> Reject</button>
                 </div>
               </td>
             </tr>

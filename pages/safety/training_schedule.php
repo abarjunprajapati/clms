@@ -59,11 +59,29 @@ function renderContent() {
         LIMIT 100
     ");
 
-    $selectedBatchId = (int)($_GET['batch_id'] ?? ($batches[0]['id'] ?? 0));
+    $forceRequestId = (int)($_GET['request_id'] ?? 0);
+    $selectedBatchId = (int)($_GET['batch_id'] ?? 0);
+
+    if (!$selectedBatchId && $forceRequestId > 0) {
+        $reqWorker = db_single($conn, "SELECT COALESCE(NULLIF(TRIM(w.safety_language), ''), '') as lang FROM training_requests tr JOIN workmen w ON w.id = tr.workman_id WHERE tr.id = ?", 'i', array($forceRequestId));
+        if ($reqWorker && $reqWorker['lang'] !== '') {
+            $reqLang = strtolower($reqWorker['lang']);
+            foreach ($batches as $b) {
+                if (strtolower(trim($b['language_name'])) === $reqLang) {
+                    $selectedBatchId = (int)$b['id'];
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!$selectedBatchId) {
+        $selectedBatchId = (int)($batches[0]['id'] ?? 0);
+    }
+
     $batch = $selectedBatchId
         ? db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', array($selectedBatchId))
         : null;
-    $forceRequestId = (int)($_GET['request_id'] ?? 0);
     $workers = $batch ? clms_safety_batch_candidates($conn, (int)$batch['id'], $forceRequestId) : array();
     $alreadyScheduled = false;
     foreach ($workers as $worker) {

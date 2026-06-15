@@ -46,7 +46,7 @@ foreach(['action'=>'VARCHAR(100)','module'=>'VARCHAR(100)','user_id'=>'INT DEFAU
 $c=$conn->query("SHOW COLUMNS FROM document_verifications LIKE 'status'");
 if(!$c||$c->num_rows===0) $conn->query("ALTER TABLE document_verifications ADD COLUMN status VARCHAR(50) DEFAULT 'pending'");
 
-$pc=ws($conn,"SELECT COUNT(*)c FROM contractor_annexure2a WHERE status IN ('submitted', 'under_review', 'pending')");
+$pc=ws($conn,"SELECT COUNT(*)c FROM annexure2a WHERE status IN ('submitted', 'under_review', 'pending')");
 $pw=ws($conn,"SELECT COUNT(*)c FROM workmen WHERE status='pending'");
 $sc=ws($conn,"SELECT COUNT(*)c FROM workmen WHERE training_status='pending'");
 $pg=ws($conn,"SELECT COUNT(*)c FROM gate_pass_request_workers WHERE status='approved'");
@@ -67,7 +67,7 @@ $re=ws($conn,"SELECT COUNT(*)c FROM gate_passes WHERE status='active' AND valid_
 
 $gpl=wr($conn,"SELECT gp.pass_number,gp.pass_type,gp.status,w.name wn,c.contractor_name cn FROM gate_passes gp LEFT JOIN workmen w ON gp.workman_id=w.id LEFT JOIN contractors c ON w.contractor_id=c.id WHERE gp.status='pending' ORDER BY gp.created_at DESC LIMIT 5");
 $pwl=wr($conn,"SELECT w.name,w.status,c.contractor_name FROM workmen w LEFT JOIN contractors c ON w.contractor_id=c.id WHERE w.training_status='pending' ORDER BY w.created_at DESC LIMIT 5");
-$pcl=wr($conn,"SELECT vendor_name as contractor_name, vendor_code, status, created_at FROM contractor_annexure2a WHERE status IN ('submitted', 'under_review', 'pending') ORDER BY created_at DESC LIMIT 5");
+$pcl=wr($conn,"SELECT contractor_name, contractor_id as vendor_code, status, created_at FROM annexure2a WHERE status IN ('submitted', 'under_review', 'pending') ORDER BY created_at DESC LIMIT 5");
 $al=wr($conn,"SELECT l.action,l.module,l.created_at,u.name FROM audit_logs l LEFT JOIN users u ON l.user_id=u.id ORDER BY l.created_at DESC LIMIT 8");
 } catch(Throwable $e) {
     $pc=$pw=$sc=$pg=$ta=$aa=$ed=$bw=$cp=$ab=$pd=$cdp=$np=$ar=$pa=$sf=$sd=$re=0;
@@ -90,7 +90,7 @@ $al=wr($conn,"SELECT l.action,l.module,l.created_at,u.name FROM audit_logs l LEF
 <div class="wu-kpi-grid">
   <?php $cards=[
     ['Pending Contractors',$pc,'fa-building','#f59e0b','approve_contractors.php'],
-    ['Worker Verifications',$pw,'fa-user-plus','#6366f1','enrollment_monitor.php'],
+    ['Pending for verification',$pw,'fa-user-plus','#6366f1','enrollment_monitor.php'],
     ['Safety Clearances',$sc,'fa-graduation-cap','#ec4899','training_monitor.php'],
     ['Pending Pass Requests',$pg,'fa-id-card-clip','#3b82f6','pending_requests.php'],
     ['Temporary Pass Issue',$ta,'fa-clock','#10b981','pending_requests.php'],
@@ -172,7 +172,7 @@ $al=wr($conn,"SELECT l.action,l.module,l.created_at,u.name FROM audit_logs l LEF
   <div class="wu-desk">
     <div class="wu-desk-head" style="background:linear-gradient(135deg,#667eea,#764ba2)"><i class="fas fa-id-card"></i> Registration & Enrollment</div>
     <div class="wu-desk-body">
-      <a class="wu-desk-item" href="approve_contractors.php"><span><i class="fas fa-building-circle-check"></i> Contractor Verification (2A)</span><span class="wu-badge"><?=$pc?></span></a>
+      <a class="wu-desk-item" href="approve_contractors.php"><span><i class="fas fa-building-circle-check"></i> Pending CLMS Approval</span><span class="wu-badge"><?=$pc?></span></a>
       <a class="wu-desk-item" href="enrollment_monitor.php"><span><i class="fas fa-users"></i> Worker Enrollment (4A)</span><span class="wu-badge"><?=$pw?></span></a>
       <a class="wu-desk-item" href="verify_documents.php"><span><i class="fas fa-file-shield"></i> Document Verification</span><span class="wu-badge"><?=$pd?></span></a>
       <a class="wu-desk-item" href="verify_documents.php#contractor-documents"><span><i class="fas fa-building-shield"></i> Contractor Uploaded Docs</span><span class="wu-badge"><?=$cdp?></span></a>
@@ -250,7 +250,7 @@ $al=wr($conn,"SELECT l.action,l.module,l.created_at,u.name FROM audit_logs l LEF
 
   <!-- Pending Contractors -->
   <div class="card glass">
-    <div class="card-header"><div class="card-title"><i class="fas fa-building"></i> Pending Contractor Verification</div>
+    <div class="card-header"><div class="card-title"><i class="fas fa-building"></i> Pending CLMS Approval</div>
       <a href="approve_contractors.php" class="btn btn-sm btn-primary">View All</a></div>
     <div class="card-body" style="padding:0">
       <table class="data-table"><thead><tr><th>Contractor</th><th>Vendor Code</th><th>Date</th><th>Action</th></tr></thead>

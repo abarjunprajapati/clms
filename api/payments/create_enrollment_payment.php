@@ -87,6 +87,27 @@ try {
         );
     }
     if (!$request) {
+        // Fallback: Find ANY existing payment request for this worker (e.g. from another contractor or status)
+        $request = db_single(
+            $conn,
+            "SELECT pr.*
+             FROM training_payment_requests pr
+             JOIN training_payment_request_workers pw ON pw.payment_request_id = pr.id
+             WHERE pw.workman_id = ?
+             ORDER BY pr.id DESC
+             LIMIT 1",
+            'i',
+            [$workerId]
+        );
+        if ($request && $request['status'] === 'paid') {
+            enrollmentPaymentJson([
+                'success' => true,
+                'message' => 'Safety fee payment is already completed.',
+                'already_paid' => true,
+            ]);
+        }
+    }
+    if (!$request) {
         enrollmentPaymentJson(['success' => false, 'message' => 'Payment request generate nahi ho pa raha. Please retry.'], 500);
     }
 

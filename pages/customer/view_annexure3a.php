@@ -16,7 +16,7 @@ if (empty($annexure_id)) {
 }
 
 // 1. Fetch Annexure Data with Joins
-$sql = "SELECT a.*, c.customer_name, v.vendor_name, v.gst_no, v.pf_no, v.esi_no, v.address as vendor_address,
+$sql = "SELECT a.*, c.customer_name, v.vendor_name, v.address as vendor_address,
                wo.project_name, wo.department
         FROM contractor_annexure3a a
         JOIN sap_customer_master c ON c.customer_code = a.customer_code
@@ -112,20 +112,6 @@ function renderContent() {
             <div class="data-item">
                 <label>Vendor Code</label>
                 <div><?= $data['vendor_code'] ?></div>
-            </div>
-        </div>
-        <div class="data-row">
-            <div class="data-item">
-                <label>GST Number</label>
-                <div><?= $data['gst_no'] ?: 'N/A' ?></div>
-            </div>
-            <div class="data-item">
-                <label>PF Code</label>
-                <div><?= $data['pf_no'] ?: 'N/A' ?></div>
-            </div>
-            <div class="data-item">
-                <label>ESI Code</label>
-                <div><?= $data['esi_no'] ?: 'N/A' ?></div>
             </div>
         </div>
     </div>

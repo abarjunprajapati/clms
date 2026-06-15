@@ -63,18 +63,6 @@ function renderContent() {
                 <div class="fw-bold"><?= $vendor['vendor_code'] ?></div>
             </div>
             <div class="mb-3">
-                <label class="text-muted small fw-bold">GST NUMBER</label>
-                <div class="fw-bold"><?= $vendor['gst_no'] ?: 'N/A' ?></div>
-            </div>
-            <div class="mb-3">
-                <label class="text-muted small fw-bold">PF REGISTRATION</label>
-                <div class="fw-bold"><?= $vendor['pf_no'] ?: 'N/A' ?></div>
-            </div>
-            <div class="mb-3">
-                <label class="text-muted small fw-bold">ESI REGISTRATION</label>
-                <div class="fw-bold"><?= $vendor['esi_no'] ?: 'N/A' ?></div>
-            </div>
-            <div class="mb-3">
                 <label class="text-muted small fw-bold">ADDRESS</label>
                 <div class="small"><?= nl2br(htmlspecialchars($vendor['address'] ?? 'N/A')) ?></div>
             </div>

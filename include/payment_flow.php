@@ -784,7 +784,7 @@ function clms_release_workers_after_training_payment($conn, $paymentRequestId, $
             continue;
         }
 
-        if (!in_array($executionStatus, ['', 'pending', 'pending_payment', 'link_sent'], true)) {
+        if (!in_array($executionStatus, ['', 'pending', 'pending_payment', 'link_sent', 'pending_booking'], true)) {
             continue;
         }
         $hasTrainingRequest = db_single(
@@ -792,7 +792,7 @@ function clms_release_workers_after_training_payment($conn, $paymentRequestId, $
             "SELECT id
              FROM training_requests
              WHERE workman_id = ?
-               AND LOWER(COALESCE(status, 'pending')) IN ('pending_eo','pending','scheduled','contractor_confirmed','passed')
+               AND LOWER(COALESCE(status, 'pending')) IN ('pending_eo','pending_safety','pending','scheduled','contractor_confirmed','passed')
              ORDER BY id DESC
              LIMIT 1",
             'i',

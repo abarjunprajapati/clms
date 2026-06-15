@@ -23,9 +23,9 @@ if (strlen($password) < 6) {
 if ($type === 'customer') {
     $sap = db_single($conn, "SELECT * FROM sap_customer_master WHERE customer_code = ?", 's', [$code]);
     $name = $sap['customer_name'] ?? 'Project/Customer';
-    $email = $sap['email'] ?? ($code . '@sap-customer.com');
-    $mobile = $sap['mobile'] ?? '';
-    $address = $sap['address'] ?? '';
+    $email = $sap['EMAIL_ADDRESS'] ?? ($code . '@sap-customer.com');
+    $mobile = $sap['Customer_MOB1'] ?? '';
+    $address = $sap['Address'] ?? '';
 } else {
     $sap = db_single($conn, "SELECT * FROM sap_vendor_master WHERE vendor_code = ?", 's', [$code]);
     $name = $sap['vendor_name'] ?? $sap['contractor_name'] ?? 'Contractor';
@@ -38,8 +38,8 @@ if ($type === 'customer') {
 $hashed_password = password_hash($password, PASSWORD_DEFAULT);
 
 $success = db_execute($conn, 
-    "INSERT INTO users (contractor_id, password, name, role, email, mobile, status) VALUES (?, ?, ?, 'contractor', ?, ?, 'active')",
-    'sssss', [$code, $hashed_password, $name, $email, $mobile]
+    "INSERT INTO users (contractor_id, password, name, role, email, mobile, status) VALUES (?, ?, ?, ?, ?, ?, 'active')",
+    'ssssss', [$code, $hashed_password, $name, $type === 'customer' ? 'customer' : 'contractor', $email, $mobile]
 );
 
 if ($success) {

@@ -90,26 +90,7 @@ try {
         // --- CHECK SAP CUSTOMER MASTER (5 or 7 digits) ---
         $sap_cust = db_single($conn, "SELECT * FROM sap_customer_master WHERE customer_code = ?", 's', [$username]);
         if ($sap_cust) {
-            if (empty($sap_cust['is_password_created'])) {
-                apiError('Account not activated. Please use the "Activate Account" option first.', 401);
-            }
-            
-            // If they HAVE created a password in SAP table but aren't in users table yet
-            if (password_verify($password, $sap_cust['login_password'])) {
-                 $user_data = [
-                    'id' => $sap_cust['id'],
-                    'customer_code' => $sap_cust['customer_code'],
-                    'customer_name' => $sap_cust['customer_name'],
-                    'name' => $sap_cust['customer_name'],
-                    'role' => 'customer',
-                    'email' => $sap_cust['EMAIL_ADDRESS'] ?: ($sap_cust['email'] ?? ''),
-                    'mobile' => $sap_cust['Customer_MOB1'] ?? $sap_cust['mobile'] ?? '',
-                    'contractor_id' => null
-                ];
-                $auth_source = 'sap_customer';
-            } else {
-                apiError('Invalid credentials', 401);
-            }
+            apiError('Account not activated. Please use the "Activate Account" option first.', 401);
         } else {
             // --- CHECK SAP VENDOR MASTER ---
             $sap_vendor = db_single($conn, "SELECT * FROM sap_vendor_master WHERE vendor_code = ?", 's', [$username]);

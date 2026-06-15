@@ -25,7 +25,6 @@ try {
         apiError('New password must be at least 6 characters', 400);
     }
 
-    $is_customer = false;
     $user = null;
     $table = '';
     $id_col = '';
@@ -39,13 +38,10 @@ try {
         $id_col = 'contractor_id';
         $pass_col = 'password';
     } else {
-        // Priority 2: Check sap_customer_master
-        $user = db_single($conn, "SELECT customer_code as id, reset_token, reset_expiry, reset_attempts, status FROM sap_customer_master WHERE customer_code = ?", 's', [$id]);
-        if ($user) {
-            $is_customer = true;
-            $table = 'sap_customer_master';
-            $id_col = 'customer_code';
-            $pass_col = 'login_password';
+        // SAP customer master has no password/reset columns. Customers must be activated into users first.
+        $sapCustomer = db_single($conn, "SELECT customer_code FROM sap_customer_master WHERE customer_code = ? LIMIT 1", 's', [$id]);
+        if ($sapCustomer) {
+            apiError('Customer account is not activated. Please activate the account first.', 403);
         }
     }
 
@@ -79,12 +75,6 @@ try {
 
     $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
     $sql = "UPDATE $table SET $pass_col = ?, reset_token = NULL, reset_expiry = NULL, reset_attempts = 0 WHERE $id_col = ?";
-    
-    // For customers, also mark password as created
-    if ($is_customer) {
-        $sql = "UPDATE $table SET $pass_col = ?, reset_token = NULL, reset_expiry = NULL, reset_attempts = 0, is_password_created = 1 WHERE $id_col = ?";
-    }
-
     db_execute($conn, $sql, 'ss', [$hashedPassword, $id]);
 
     apiSuccess([], 'Password reset successfully');

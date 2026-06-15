@@ -1035,8 +1035,17 @@ worker4a_ensure_schema($conn);
 
     if ($existing_workman) {
         $existingExecutionStatus = strtolower(trim((string)($existing_workman['execution_training_status'] ?? '')));
-        if ($action !== 'draft' && $existingExecutionStatus === 'rejected' && empty($new_uploaded_files['training_approval_doc'])) {
-            throw new Exception("Executing Officer ne request reject ki hai. Corrected Training Approval document dobara upload karein.");
+        // If EO rejected and contractor is resubmitting, reset status to pending_eo regardless of doc upload
+        // (existing doc is preserved via file_map below; contractor may have corrected details only)
+        if ($action !== 'draft' && $existingExecutionStatus === 'rejected') {
+            $workman_row['execution_training_status']  = 'pending_eo';
+            $workman_row['execution_training_remarks'] = 'Resubmitted by contractor after Executing Officer rejection. Awaiting re-review.';
+            $workman_row['execution_training_reviewed_by']  = null;
+            $workman_row['execution_training_reviewed_at']  = null;
+            $workman_row['safety_enrollment_status']        = 'pending';
+            $workman_row['safety_enrollment_remarks']       = null;
+            $workman_row['safety_enrollment_reviewed_by']   = null;
+            $workman_row['safety_enrollment_reviewed_at']   = null;
         }
 
         $file_map = [
@@ -1072,25 +1081,27 @@ worker4a_ensure_schema($conn);
     $workman_row['signature_doc'] = $uploaded_files['signature'];
     $workman_row['training_approval_doc'] = $uploaded_files['training_approval_doc'];
     if ($action !== 'draft') {
-        $nonPwoBookedNow = !$isPwoWorkOrder && ($data['training_booking_choice'] ?? 'not_now') === 'book_now';
-        $pwoBookedAfterPayment = $isPwoWorkOrder && $pwoPaymentAlreadyPaid && ($data['training_booking_choice'] ?? 'not_now') === 'book_now';
+        $hasAttachment = !empty($uploaded_files['training_approval_doc']);
+        $nonPwoBookedNow = !$isPwoWorkOrder && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
+        $pwoBookedAfterPayment = $isPwoWorkOrder && $pwoPaymentAlreadyPaid && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
         $workman_row['execution_training_status'] = $isPwoWorkOrder
             ? ($pwoBookedAfterPayment ? 'pending_eo' : 'pending_payment')
             : ($nonPwoBookedNow ? 'pending_eo' : 'pending_booking');
+        
         $workman_row['execution_training_remarks'] = $isPwoWorkOrder
-            ? ($pwoBookedAfterPayment ? 'Safety fee payment completed. Safety seat booking submitted. Waiting for Executing Officer approval.' : 'Waiting for Safety fee payment verification.')
-            : ($nonPwoBookedNow ? 'Safety seat booking submitted. Waiting for Executing Officer approval.' : 'Enrollment completed. Waiting for Safety Training & Seat Booking.');
+            ? ($pwoBookedAfterPayment 
+                ? ($hasAttachment ? 'Safety fee payment completed. Training approval attachment uploaded. Waiting for Executing Officer approval.' : 'Safety fee payment completed. Safety seat booking submitted. Waiting for Executing Officer approval.') 
+                : 'Waiting for Safety fee payment verification.')
+            : ($nonPwoBookedNow 
+                ? ($hasAttachment ? 'Training approval attachment uploaded. Waiting for Executing Officer approval.' : 'Safety seat booking submitted. Waiting for Executing Officer approval.') 
+                : 'Enrollment completed. Waiting for Safety Training & Seat Booking.');
+                
         $workman_row['execution_training_reviewed_by'] = null;
         $workman_row['execution_training_reviewed_at'] = null;
         $workman_row['safety_enrollment_status'] = 'pending';
         $workman_row['safety_enrollment_remarks'] = null;
         $workman_row['safety_enrollment_reviewed_by'] = null;
         $workman_row['safety_enrollment_reviewed_at'] = null;
-    }
-    if (!empty($new_uploaded_files['training_approval_doc'])) {
-        $workman_row['execution_training_remarks'] = $isPwoWorkOrder
-            ? ($pwoPaymentAlreadyPaid ? 'Safety fee payment completed. Training approval attachment uploaded.' : 'Waiting for Safety fee payment verification.')
-            : 'Training approval attachment uploaded. Waiting for Safety Training & Seat Booking.';
     }
 
     if ($existing_workman) {
@@ -1126,7 +1137,7 @@ worker4a_ensure_schema($conn);
                 throw new Exception('Payment link generate nahi ho pa raha. Safety Fee Payment settings check karein.');
             }
         }
-        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid) && ($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
+        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid) && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment)) {
             $trainingData = $data;
             $trainingData['initial_training_status'] = 'pending_eo';
             worker4a_ensure_training_request($conn, $workman_id_new, $contractor_id, (int)($_SESSION['user_id'] ?? 0), $trainingData);
@@ -1192,13 +1203,21 @@ worker4a_ensure_schema($conn);
             $contractorUser = db_single($conn, "SELECT name, email, mobile FROM users WHERE id = ? LIMIT 1", 'i', [(int)$_SESSION['user_id']]);
         }
         $workerName = trim((string)($data['name'] ?? 'Worker'));
-        $subject = 'CLMS Worker Enrolment Submitted';
-        $message = "Dear User,\n\n"
-            . "Worker enrolment has been submitted successfully.\n"
-            . "Worker: $workerName\n"
-            . "Application: $application_no\n"
-            . "Temporary ID: $temp_id\n\n"
-            . "This is an automated message.";
+        $subject = 'CLMS Workforce Enrolment - Confirmation of Submission';
+        $message = "Dear $workerName,\n\n"
+            . "We are pleased to inform you that your enrolment request for the Contractor Labour Management System (CLMS) has been successfully submitted.\n\n"
+            . "Enrolment Details:\n"
+            . "----------------------------------------\n"
+            . "Worker Name:    $workerName\n"
+            . "Application No: $application_no\n"
+            . "Temporary ID:   $temp_id\n"
+            . "Submission Date: " . date('d-M-Y H:i:s') . "\n"
+            . "----------------------------------------\n\n"
+            . "Next Steps:\n"
+            . "Your application is currently under review by the respective departments. You will receive updates as the workflow progresses.\n\n"
+            . "Regards,\n"
+            . "Contractor Labour Management System (CLMS)\n\n"
+            . "This is an automated system-generated email. Please do not reply directly to this address.";
 
         $workerMobile = trim((string)($data['mobile'] ?? ''));
         $workerEmail = trim((string)($data['email'] ?? ($data['contact_email'] ?? '')));

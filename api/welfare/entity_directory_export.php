@@ -6,8 +6,8 @@ require_role(['welfare_admin', 'super_admin', 'welfare_user', 'pass_user']);
 
 function directoryExportStatus($type, $row) {
     if ($type === 'customer') {
-        if (strtoupper((string)($row['status'] ?? '')) === 'INACTIVE') return 'rejected';
-        return ((int)($row['is_password_created'] ?? 0)) ? 'approved' : 'pending';
+        if (strtoupper((string)($row['ACTIVE_IND'] ?? 'A')) !== 'A') return 'rejected';
+        return !empty($row['user_id']) && strtolower((string)($row['user_status'] ?? '')) === 'active' ? 'approved' : 'pending';
     }
     $status = strtolower((string)($row['status'] ?? 'pending'));
     if (in_array($status, ['approved', 'active'], true)) return 'approved';
@@ -44,22 +44,23 @@ function directoryExportRows($conn) {
     }
 
     $customers = db_fetch_all($conn, "
-        SELECT id, customer_code, customer_name, Customer_MOB1, customer_MOB2,
-               EMAIL_ADDRESS, email, mobile, Address, PIN, ACTIVE_IND, status,
-               is_password_created, created_at
-        FROM sap_customer_master
-        ORDER BY created_at DESC
+        SELECT s.id, s.customer_code, s.customer_name, s.Customer_MOB1, s.customer_MOB2,
+               s.EMAIL_ADDRESS, s.Address, s.PIN, s.ACTIVE_IND, s.created_at,
+               u.id AS user_id, u.status AS user_status
+        FROM sap_customer_master s
+        LEFT JOIN users u ON u.contractor_id = s.customer_code AND u.role = 'customer'
+        ORDER BY s.created_at DESC
     ");
     foreach ($customers as $c) {
         $rows[] = [
             'type' => 'customer',
             'code' => $c['customer_code'] ?? '',
             'name' => $c['customer_name'] ?? '',
-            'mobile' => $c['Customer_MOB1'] ?: ($c['mobile'] ?? ''),
-            'email' => $c['EMAIL_ADDRESS'] ?: ($c['email'] ?? ''),
+            'mobile' => $c['Customer_MOB1'] ?? '',
+            'email' => $c['EMAIL_ADDRESS'] ?? '',
             'address' => $c['Address'] ?? '',
             'status' => directoryExportStatus('customer', $c),
-            'raw_status' => $c['status'] ?? $c['ACTIVE_IND'] ?? '',
+            'raw_status' => $c['ACTIVE_IND'] ?? '',
             'pan' => '',
             'gst' => '',
             'work_order' => '',

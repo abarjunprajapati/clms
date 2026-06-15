@@ -134,8 +134,9 @@ function renderContent() {
     $representatives = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND " . contractorWorkerTypeWhere('representative'));
     $supervisors = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND " . contractorWorkerTypeWhere('supervisor'));
     $blockedWorkers = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND is_blocked=1");
-    $activePWOs = $vendor_code ? contractorSafeScalar($conn, "SELECT COUNT(*) c FROM sap_pwo_master p JOIN sap_po_master po ON p.po_number = po.po_number WHERE po.vendor_code = '{$vendor_code}'") : 0;
-    $activeSalesOrders = $vendor_code ? contractorSafeScalar($conn, "SELECT COUNT(*) c FROM sap_sales_order_master WHERE vendor_code = '{$vendor_code}'") : 0;
+    $safeVendorCode = mysqli_real_escape_string($conn, $vendor_code);
+    $activePWOs = $vendor_code ? contractorSafeScalar($conn, "SELECT COUNT(*) c FROM sap_pwo_master WHERE vendor_code = '{$safeVendorCode}'") : 0;
+    $activeSalesOrders = $vendor_code ? contractorSafeScalar($conn, "SELECT COUNT(*) c FROM sap_sale_order_master WHERE customer_code = '{$safeVendorCode}'") : 0;
     $activeACCCards = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND status IN ('acc_generated', 'permanent_active')");
     $temporaryPasses = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND status = 'temporary_issued'");
 

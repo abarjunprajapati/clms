@@ -40,11 +40,8 @@ try {
         if (!$sap) throw new Exception('SAP Customer data missing.');
 
         $name = $sap['customer_name'] ?? 'N/A';
-        $email = $sap['EMAIL_ADDRESS'] ?: ($sap['email'] ?? '');
-        $mobile = $sap['Customer_MOB1'] ?: ($sap['mobile'] ?? '');
-
-        // Update SAP Master
-        db_execute($conn, "UPDATE sap_customer_master SET login_password = ?, is_password_created = 1, password_updated_at = NOW(), status = 'ACTIVE' WHERE customer_code = ?", 'ss', [$hashed_password, $code]);
+        $email = $sap['EMAIL_ADDRESS'] ?? '';
+        $mobile = $sap['Customer_MOB1'] ?? '';
 
         // Sync with users table
         $user = db_single($conn, "SELECT id FROM users WHERE contractor_id = ?", 's', [$code]);

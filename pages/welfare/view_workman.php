@@ -38,6 +38,29 @@ function renderContent() {
       <p class="page-subtitle">Welfare Department - Approve Enrollment and Safety Training</p>
     </div>
 
+    <style>
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    .info-table th {
+      background: var(--gray-50);
+      color: var(--gray-700);
+      font-weight: 600;
+      text-align: left;
+      padding: 10px 12px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--gray-200);
+      width: 35%;
+    }
+    .info-table td {
+      padding: 10px 12px;
+      font-size: 13px;
+      color: var(--gray-800);
+      border-bottom: 1px solid var(--gray-200);
+    }
+    </style>
     <div style="display:grid;grid-template-columns:1.25fr 0.75fr;gap:24px;">
         <!-- Details Card -->
         <div class="card glass">
@@ -46,7 +69,7 @@ function renderContent() {
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
                     <div>
                         <h4 style="font-size:13px;color:var(--gray-500);margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px;">Personal Information</h4>
-                        <table class="data-table">
+                        <table class="info-table">
                             <tr><th>Name</th><td><?= htmlspecialchars($data['name'] ?? 'N/A') ?></td></tr>
                             <tr><th>Father's Name</th><td><?= htmlspecialchars($data['father_name'] ?? 'N/A') ?></td></tr>
                             <tr><th>Gender / DOB</th><td><?= htmlspecialchars($data['gender'] ?? 'N/A') ?> / <?= htmlspecialchars($data['dob'] ?? 'N/A') ?></td></tr>
@@ -57,7 +80,7 @@ function renderContent() {
                     </div>
                     <div>
                         <h4 style="font-size:13px;color:var(--gray-500);margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px;">Employment & Statutory</h4>
-                        <table class="data-table">
+                        <table class="info-table">
                             <tr><th>Contractor</th><td><?= htmlspecialchars($data['contractor_name'] ?? 'N/A') ?></td></tr>
                             <tr><th>Trade / Skill</th><td><?= htmlspecialchars($data['trade'] ?? 'N/A') ?> / <?= htmlspecialchars($data['skill'] ?? 'N/A') ?></td></tr>
                             <tr><th>PF No / UAN</th><td><?= htmlspecialchars($data['pf_no'] ?: 'N/A') ?> / <?= htmlspecialchars($data['uan_number'] ?: 'N/A') ?></td></tr>
@@ -140,36 +163,6 @@ function renderContent() {
                             <?= strtoupper($data['training_status'] ?: 'Pending') ?>
                         </span>
                     </div>
-                </div>
-            </div>
-
-            <!-- Enrollment Approval -->
-            <div class="card glass" style="margin-bottom:24px;">
-                <div class="card-header"><div class="card-title"><i class="fas fa-clipboard-check"></i> Enrollment Action</div></div>
-                <div class="card-body">
-                    <p style="margin-bottom:15px;font-size:13px;color:var(--gray-600)">Verify that all documents are uploaded and details match the PDF requirements.</p>
-                    <form method="POST" action="update_enrollment.php">
-                        <input type="hidden" name="worker_id" value="<?= $data['id'] ?>">
-                        <div style="display:flex;gap:10px;">
-                            <button class="btn btn-success" style="flex:1" name="action" value="approve"><i class="fas fa-check"></i> Approve</button>
-                            <button class="btn btn-danger" style="flex:1" name="action" value="reject"><i class="fas fa-times"></i> Reject</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- Training Approval -->
-            <div class="card glass">
-                <div class="card-header"><div class="card-title"><i class="fas fa-hard-hat"></i> Training Action</div></div>
-                <div class="card-body">
-                    <p style="margin-bottom:15px;font-size:13px;color:var(--gray-600)">Mark results after safety orientation is completed by the Safety User.</p>
-                    <form method="POST" action="update_training.php">
-                        <input type="hidden" name="worker_id" value="<?= $data['id'] ?>">
-                        <div style="display:flex;gap:10px;">
-                            <button class="btn btn-success" style="flex:1" name="action" value="pass"><i class="fas fa-certificate"></i> Pass</button>
-                            <button class="btn btn-danger" style="flex:1" name="action" value="fail"><i class="fas fa-ban"></i> Fail</button>
-                        </div>
-                    </form>
                 </div>
             </div>
         </div>

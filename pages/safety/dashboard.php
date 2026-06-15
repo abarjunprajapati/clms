@@ -816,68 +816,6 @@ function renderContent() {
       </div>
     </div>
 
-    <div class="card glass safety-approval-card" id="enrollment-approval-inbox">
-      <div class="card-header">
-        <div>
-          <div class="card-title"><i class="fas fa-user-check"></i> Safety Department Enrollment Approval Inbox</div>
-          <div class="approval-subtitle">EO-approved enrollments must be approved here before Safety training scheduling.</div>
-        </div>
-        <span class="badge badge-warning"><?= $safetyApprovalPending ?> Pending</span>
-      </div>
-      <div class="card-body" style="padding:0">
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Worker</th>
-                <th>Contractor / Work</th>
-                <th>Executing Officer</th>
-                <th>Submission</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($safetyApprovalRequests as $approval): ?>
-              <tr id="safety-approval-row-<?= (int)$approval['workman_id'] ?>">
-                <td>
-                  <strong><?= htmlspecialchars($approval['worker_name'] ?? '') ?></strong>
-                  <div class="approval-meta"><code><?= htmlspecialchars($approval['temp_id'] ?: ('W-' . $approval['workman_id'])) ?></code></div>
-                  <div class="approval-meta">Aadhaar: <?= htmlspecialchars($approval['aadhaar'] ?? '-') ?></div>
-                </td>
-                <td>
-                  <strong><?= htmlspecialchars($approval['contractor_name'] ?? 'N/A') ?></strong>
-                  <div class="approval-meta"><?= htmlspecialchars($approval['department'] ?? '-') ?> / <?= htmlspecialchars($approval['nature_of_work'] ?? '-') ?></div>
-                  <div class="approval-meta">Language: <?= htmlspecialchars($approval['safety_language'] ?? '-') ?></div>
-                </td>
-                <td>
-                  <code><?= htmlspecialchars($approval['executing_officer_code'] ?? '-') ?></code>
-                  <div class="approval-meta"><?= htmlspecialchars($approval['executing_officer_name'] ?? '') ?></div>
-                  <span class="badge badge-success">EO Approved</span>
-                </td>
-                <td>
-                  <span class="badge badge-warning">Safety Approval Pending</span>
-                  <div class="approval-meta"><?= htmlspecialchars(ucwords(str_replace('_', ' ', (string)($approval['source'] ?? 'enrolment')))) ?></div>
-                  <?php if (!empty($approval['training_approval_doc'])): ?>
-                    <a class="btn btn-sm btn-outline approval-doc-link" target="_blank" href="../../uploads/workers/<?= rawurlencode(basename((string)$approval['training_approval_doc'])) ?>"><i class="fas fa-file-pdf"></i> View Attachment</a>
-                  <?php endif; ?>
-                </td>
-                <td>
-                  <div class="approval-actions">
-                    <button class="btn btn-sm btn-success" type="button" onclick="reviewSafetyEnrollment(<?= (int)$approval['workman_id'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>
-                    <button class="btn btn-sm btn-danger" type="button" onclick="reviewSafetyEnrollment(<?= (int)$approval['workman_id'] ?>, 'rejected')"><i class="fas fa-times"></i> Reject</button>
-                  </div>
-                </td>
-              </tr>
-              <?php endforeach; ?>
-              <?php if (empty($safetyApprovalRequests)): ?>
-              <tr><td colspan="5" style="text-align:center;padding:26px;color:var(--text-muted)">No enrollment is waiting for Safety Department approval.</td></tr>
-              <?php endif; ?>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
     <div class="activity-flow glass">
       <div class="activity-flow-head">
         <div>
@@ -990,6 +928,7 @@ function renderContent() {
     </div>
 
     <div class="quick-grid">
+      <a href="enrollment_approval.php" class="quick-link"><i class="fas fa-user-check"></i><strong>Enrollment Approval Inbox</strong><span>Review and approve workmen enrollment applications.</span></a>
       <a href="training_class_master.php" class="quick-link"><i class="fas fa-calendar-plus"></i><strong>Training Class Master</strong><span>Create date, venue, language, session, trainer and batch token.</span></a>
       <a href="training_location_master.php" class="quick-link"><i class="fas fa-location-dot"></i><strong>Location Master</strong><span>Maintain training hall code, name, seats and status.</span></a>
       <a href="instructor_master.php" class="quick-link"><i class="fas fa-person-chalkboard"></i><strong>Instructor Master</strong><span>Maintain safety trainer code, name and active status.</span></a>

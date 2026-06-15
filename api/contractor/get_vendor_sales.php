@@ -13,11 +13,15 @@ if (empty($vendor_code)) {
     exit;
 }
 
-$sales = db_fetch_all($conn, 
-    "SELECT sale_order_no, customer_code, customer_name, amount, currency, 
-            doc_date, sales_organization, department, description
-     FROM sap_sale_order_master WHERE vendor_code = ? OR customer_code = ? ORDER BY doc_date DESC", 
-    'ss', [$vendor_code, $vendor_code]
+$sales = db_fetch_all(
+    $conn,
+    "SELECT sale_order_no, customer_code, customer_name, amount, currency,
+            doc_date, sales_organization, '' AS department, description
+     FROM sap_sale_order_master
+     WHERE customer_code = ?
+     ORDER BY doc_date DESC",
+    's',
+    [$vendor_code]
 );
 
 echo json_encode([

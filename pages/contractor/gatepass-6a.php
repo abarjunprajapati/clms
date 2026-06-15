@@ -69,7 +69,9 @@ function renderContent() {
         [$contractorId]
     ) : [];
     $availableWorkerCount = count(array_filter($workers, function($worker) {
-        return trim((string)($worker['gate_pass_request_status'] ?? '')) === '';
+      $s = trim((string)($worker['gate_pass_request_status'] ?? ''));
+      // consider only workers with no existing request as available
+      return $s === '';
     }));
 ?>
 <div class="content-header">
@@ -116,32 +118,45 @@ function renderContent() {
       <?php endif; ?>
       <?php foreach ($workers as $workerIndex => $worker):
         $category = $worker['worker_type'] ?: ($worker['role_type'] ?: ($worker['skill'] ?: 'Worker'));
-        $hasRequest = trim((string)$worker['gate_pass_request_status']) !== '';
+        $requestStatus = strtolower(trim((string)($worker['gate_pass_request_status'] ?? '')));
+        $isDraft = $requestStatus === 'draft';
+        // only block selection when there is an active (non-draft) request
+        $hasActiveRequest = $requestStatus !== '' && !$isDraft;
       ?>
         <tr data-name="<?= htmlspecialchars(strtolower((string)$worker['name'])) ?>" data-aadhaar="<?= htmlspecialchars(strtolower((string)$worker['aadhaar'])) ?>">
-          <td><input type="checkbox" class="worker-checkbox" value="<?= (int)$worker['id'] ?>" <?= $hasRequest ? 'disabled' : '' ?>></td>
+          <td><input type="checkbox" class="worker-checkbox" value="<?= (int)$worker['id'] ?>" <?= $hasActiveRequest ? 'disabled' : '' ?>></td>
           <td><?= $workerIndex + 1 ?></td>
           <td><?= htmlspecialchars($worker['aadhaar'] ?: '-') ?></td>
           <td><strong><?= htmlspecialchars($worker['name']) ?></strong><small><?= htmlspecialchars($worker['temp_id'] ?: 'No Temp ID') ?></small></td>
           <td><?= htmlspecialchars($category) ?></td>
           <td>
-            <?php if ($hasRequest): ?>
-              <span class="status-pill warning"><?= htmlspecialchars(strtoupper(str_replace('_', ' ', $worker['gate_pass_request_status']))) ?></span>
+            <?php if ($requestStatus !== ''): ?>
+              <span class="status-pill warning"><?= htmlspecialchars(strtoupper(str_replace('_', ' ', $requestStatus))) ?></span>
             <?php else: ?>
               <span class="status-pill success"><i class="fas fa-check"></i> Approved</span>
             <?php endif; ?>
           </td>
           <td>
-          <?php if ($hasRequest): ?>
+          <?php if ($hasActiveRequest): ?>
             <a class="btn btn-sm btn-outline" href="pass_status.php"><i class="fas fa-eye"></i> View Status</a>
           <?php else: ?>
-            <button type="button" class="btn btn-sm btn-primary select-worker" data-worker='<?= htmlspecialchars(json_encode([
-              'id' => (int)$worker['id'],
-              'name' => $worker['name'],
-              'aadhaar' => $worker['aadhaar'],
-              'category' => $category,
-              'temp_id' => $worker['temp_id'],
-            ]), ENT_QUOTES, 'UTF-8') ?>'><i class="fas fa-arrow-right"></i> Submit</button>
+            <?php if ($isDraft): ?>
+              <button type="button" class="btn btn-sm btn-primary select-worker" data-worker='<?= htmlspecialchars(json_encode([
+                'id' => (int)$worker['id'],
+                'name' => $worker['name'],
+                'aadhaar' => $worker['aadhaar'],
+                'category' => $category,
+                'temp_id' => $worker['temp_id'],
+              ]), ENT_QUOTES, 'UTF-8') ?>'><i class="fas fa-edit"></i> Continue Draft</button>
+            <?php else: ?>
+              <button type="button" class="btn btn-sm btn-primary select-worker" data-worker='<?= htmlspecialchars(json_encode([
+                'id' => (int)$worker['id'],
+                'name' => $worker['name'],
+                'aadhaar' => $worker['aadhaar'],
+                'category' => $category,
+                'temp_id' => $worker['temp_id'],
+              ]), ENT_QUOTES, 'UTF-8') ?>'><i class="fas fa-arrow-right"></i> Submit</button>
+            <?php endif; ?>
           <?php endif; ?>
           </td>
         </tr>
@@ -207,9 +222,56 @@ function renderContent() {
 </section>
 
 <style>
-.hidden{display:none!important}.flow-steps{display:flex;align-items:center;margin:0 0 18px;padding:14px 16px;border:1px solid var(--border-color);background:var(--card-bg,#fff);border-radius:8px}.flow-step{display:flex;align-items:center;gap:9px;color:var(--text-muted);min-width:180px}.flow-step>span{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#e2e8f0;color:#475569;font-weight:800}.flow-step div{display:flex;flex-direction:column}.flow-step strong{font-size:13px}.flow-step small{font-size:11px}.flow-step.active{color:#1d4ed8}.flow-step.active>span{background:#2563eb;color:#fff}.flow-step.done>span{background:#16a34a;color:#fff}.flow-line{height:1px;background:var(--border-color);flex:1;margin:0 12px}.workflow-panel{border:1px solid var(--border-color);background:var(--card-bg,#fff);border-radius:8px;margin-bottom:18px;overflow:hidden}.panel-heading{padding:15px 18px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;gap:12px}.panel-heading h3{font-size:16px;margin:0}.panel-heading p{font-size:12px;color:var(--text-muted);margin:3px 0 0}.eligible-count{font-weight:800;color:#1d4ed8;background:#eff6ff;padding:6px 9px;border-radius:6px}.search-strip{display:flex;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border-color)}.search-field{position:relative;flex:1}.search-field i{position:absolute;left:12px;top:11px;color:#64748b}.search-field input{width:100%;padding:9px 12px 9px 34px;border:1px solid var(--border-color);border-radius:6px;background:var(--input-bg,#fff);color:var(--text-primary)}.table-wrap{overflow:auto}.employee-table td:first-child,.employee-table th:first-child{text-align:center;width:60px}.worker-checkbox{width:16px;height:16px;cursor:pointer}.data-table td small{display:block;color:var(--text-muted);font-size:11px;margin-top:3px}.status-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:5px;font-size:10px;font-weight:800;white-space:nowrap}.status-pill.success{background:#dcfce7;color:#166534}.status-pill.warning{background:#fef3c7;color:#92400e}.status-pill.neutral{background:#e2e8f0;color:#475569}.employee-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border-color);border-bottom:1px solid var(--border-color)}.employee-summary>div{background:var(--card-bg,#fff);padding:12px 16px}.employee-summary span{display:block;font-size:10px;text-transform:uppercase;color:var(--text-muted);font-weight:800;margin-bottom:3px}.employee-summary strong{font-size:13px}.document-list{padding:14px 18px}.document-row{display:grid;grid-template-columns:28px minmax(220px,1fr) 105px 110px 130px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-color)}.document-number{font-weight:800;color:#64748b}.document-info{display:flex;flex-direction:column}.document-info strong{font-size:13px}.document-info small{font-size:11px;color:var(--text-muted);margin-top:3px}.gate-doc-input{position:absolute;width:1px;height:1px;opacity:0}.file-state{font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-state.uploaded{color:#15803d;font-weight:700}.remarks-field{padding:0 18px}.form-actions{display:flex;justify-content:flex-end;gap:10px;padding:14px 18px;border-top:1px solid var(--border-color)}.empty-state{display:flex;flex-direction:column;align-items:center;gap:5px;padding:30px;color:var(--text-muted)}.empty-state i{font-size:28px}.muted-cell{text-align:center;color:var(--text-muted);padding:24px!important}.request-panel{margin-top:8px}@media(max-width:900px){.flow-step{min-width:0}.flow-step small{display:none}.employee-summary{grid-template-columns:1fr 1fr}.document-row{grid-template-columns:28px 1fr 90px}.document-row .status-pill{display:none}.upload-control{grid-column:2}.file-state{grid-column:3}.panel-heading{align-items:flex-start}.search-strip{flex-direction:column}}
-</style>
+.hidden{display:none!important}
+.flow-steps{display:flex;align-items:center;margin:0 0 18px;padding:14px 16px;border:1px solid var(--border-color);background:var(--card-bg,#fff);border-radius:8px}
+.flow-step{display:flex;align-items:center;gap:9px;color:var(--text-muted);min-width:180px}
+.flow-step>span{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#e2e8f0;color:#475569;font-weight:800}
+.flow-step div{display:flex;flex-direction:column}
+.flow-step strong{font-size:13px}
+.flow-step small{font-size:11px}
+.flow-step.active{color:#1d4ed8}
+.flow-step.active>span{background:#2563eb;color:#fff}
+.flow-step.done>span{background:#16a34a;color:#fff}
+.flow-line{height:1px;background:var(--border-color);flex:1;margin:0 12px}
+.workflow-panel{border:1px solid var(--border-color);background:var(--card-bg,#fff);border-radius:8px;margin-bottom:18px;overflow:hidden}
+.panel-heading{padding:15px 18px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.panel-heading h3{font-size:16px;margin:0}
+.panel-heading p{font-size:12px;color:var(--text-muted);margin:3px 0 0}
+.eligible-count{font-weight:800;color:#1d4ed8;background:#eff6ff;padding:6px 9px;border-radius:6px}
+.search-strip{display:flex;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border-color)}
+.search-field{position:relative;flex:1}
+.search-field i{position:absolute;left:12px;top:11px;color:#64748b}
+.search-field input{width:100%;padding:9px 12px 9px 34px;border:1px solid var(--border-color);border-radius:6px;background:var(--input-bg,#fff);color:var(--text-primary)}
+.table-wrap{overflow:auto}
+.employee-table td:first-child,.employee-table th:first-child{text-align:center;width:60px}
+.worker-checkbox{width:16px;height:16px;cursor:pointer}
+.data-table td small{display:block;color:var(--text-muted);font-size:11px;margin-top:3px}
+.status-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:5px;font-size:10px}
+.status-pill.success{background:#ecfdf5;color:#065f46}
+.status-pill.warning{background:#fffbeb;color:#92400e}
+.status-pill.neutral{background:#f1f5f9;color:#334155}
 
+/* Document upload list styles */
+.document-list{display:flex;flex-direction:column;gap:10px;padding:16px}
+.document-row{display:flex;align-items:center;gap:12px;padding:10px;border:1px solid var(--border-color);border-radius:6px;background:var(--card-bg,#fff);flex-wrap:wrap}
+.document-number{width:28px;height:28px;border-radius:50%;background:#eef2ff;color:#1e40af;display:grid;place-items:center;font-weight:700}
+.document-info{flex:1;min-width:220px}
+.document-info strong{display:block}
+.document-info small{color:var(--text-muted);font-size:12px}
+.download-format,.upload-control{white-space:nowrap}
+.gate-doc-input{display:none}
+.file-state{min-width:140px;text-align:right;color:var(--text-muted);font-size:12px}
+.file-state.uploaded{color:#065f46;font-weight:700}
+
+.form-actions{display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;border-top:1px solid var(--border-color);background:var(--card-bg,#fff)}
+.remarks-field .form-control{min-height:48px}
+
+@media (max-width:800px){
+  .document-row{flex-direction:column;align-items:flex-start}
+  .file-state{text-align:left;width:100%}
+  .form-actions{flex-direction:column;align-items:stretch}
+}
+</style>
 <script>
 const employeeStep = document.getElementById('employeeStep');
 const documentStep = document.getElementById('documentStep');
@@ -240,7 +302,10 @@ async function selectEmployee(worker, button = null) {
     const response = await fetch('../../api/save_gate_pass_request.php', {method:'POST', body});
     const result = await response.json();
     if (!result.success) throw new Error(result.message || 'Unable to prepare Gate Pass request.');
-    document.getElementById('requestId').value = result.data?.request_id || result.request_id || '';
+    // Support environments without optional chaining
+    const reqId = (result.data && result.data.request_id) || result.request_id || '';
+    const requestIdEl = document.getElementById('requestId');
+    if (requestIdEl) requestIdEl.value = reqId;
     document.getElementById('selectedWorkerId').value = worker.id;
     document.getElementById('selectedName').textContent = worker.name || '-';
     document.getElementById('selectedAadhaar').textContent = worker.aadhaar || '-';
@@ -322,10 +387,13 @@ document.querySelectorAll('.download-format').forEach(button => {
 
 async function saveGatePass(action) {
   const button = action === 'save_draft' ? document.getElementById('saveGatePassDraft') : document.getElementById('submitGatePass');
-  const original = button.innerHTML;
-  button.disabled = true;
-  button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving';
+  const original = button ? button.innerHTML : '';
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving';
+  }
   try {
+    if (!documentForm) throw new Error('Upload form not found on the page');
     const formData = new FormData(documentForm);
     formData.set('action', action);
     const response = await fetch('../../api/save_gate_pass_request.php', {method:'POST', body:formData});
@@ -341,8 +409,10 @@ async function saveGatePass(action) {
   } catch (error) {
     fireMessage('error', action === 'save_draft' ? 'Draft Save Failed' : 'Submission Failed', error.message);
   } finally {
-    button.disabled = false;
-    button.innerHTML = original;
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = original;
+    }
   }
 }
 document.getElementById('saveGatePassDraft')?.addEventListener('click', () => saveGatePass('save_draft'));

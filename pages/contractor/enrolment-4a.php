@@ -918,6 +918,9 @@ function renderContent() {
                     $eoLabel = $eoIsApproved ? 'EO Approved' : ($eoStatus === 'rejected' ? 'EO Rejected' : 'EO Pending');
                   ?>
                   <span class="badge-status <?= $eoBadge ?>" style="margin-top:4px;display:inline-block;"><?= $eoLabel ?></span>
+                  <?php if ($eoStatus === 'rejected' && !empty($w['execution_training_remarks'])): ?>
+                    <div style="font-size:11px;color:#b91c1c;margin-top:3px;max-width:180px;line-height:1.2;">Reason: <?= htmlspecialchars($w['execution_training_remarks']) ?></div>
+                  <?php endif; ?>
                 <?php else: ?>
                   <span style="opacity:0.4;">-</span>
                 <?php endif; ?>
@@ -1276,7 +1279,7 @@ function renderContent() {
               </div>
               <div class="doc-card">
                 <label class="form-label">Training Attendance Approval by Executing Officer / Mentor</label>
-                <input type="file" class="form-control" name="training_approval_doc" accept=".pdf,application/pdf" data-max-size="5242880">
+                <input type="file" class="form-control" name="training_approval_doc" id="trainingApprovalDocInput" accept=".pdf,application/pdf" data-max-size="5242880">
                 <small class="form-hint">PDF only, max 5 MB.</small>
               </div>
             </div>
@@ -1311,7 +1314,7 @@ function renderContent() {
               </label>
               <label class="choice-row" id="trainingLaterChoiceRow">
                 <input type="radio" name="training_booking_choice" value="not_now">
-                <span id="trainingLaterChoiceText">Save as draft and book Safety Training later</span>
+                <span id="trainingLaterChoiceText">I don't need to book now</span>
               </label>
             </div>
             <div id="trainingBookingForm" class="training-booking-form hidden">
@@ -1342,7 +1345,7 @@ function renderContent() {
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Session</label>
-                  <select class="form-control" name="training_booking_session" id="trainingBookingSession">
+                  <select class="form-control" name="training_booking_session" id="trainingBookingSession" style="pointer-events: none; background-color: #e9ecef;" tabindex="-1">
                     <option value="">Select session</option>
                     <option value="FN">FN</option>
                     <option value="AN">AN</option>
@@ -1362,7 +1365,7 @@ function renderContent() {
               <button type="button" class="btn btn-outline" id="btnPrevTab">Previous</button>
               <button type="button" class="btn btn-primary-soft" id="btnNextTab">Next</button>
               <button type="button" class="btn btn-primary-soft" id="btnSaveDraft" style="display:none;">Save Draft</button>
-              <button type="button" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit Entitlement</button>
+              <button type="button" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit</button>
             </div>
           </div>
         </form>
@@ -1391,7 +1394,7 @@ function renderContent() {
           <div class="preview-question">Are you sure to submit?</div>
           <label class="choice-row" style="margin-top:16px;">
             <input type="checkbox" id="submitVerifiedCheckbox">
-            <span>I verified the information.</span>
+            <span>I hereby verify that all the information provided is true and correct in all respects.</span>
           </label>
           <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px;">
             <button type="button" class="btn btn-outline" onclick="closeSubmitPreview()">No, Back</button>
@@ -1903,7 +1906,7 @@ function renderContent() {
           submitBtn.style.display = (index === visibleTabs.length - 1 && !(tabId === 'payment' && isPwo && !canBookPwoTrainingInline())) ? 'inline-flex' : 'none';
           submitBtn.innerText = tabId === 'payment' && isPwo
             ? (isPwoPayLater() ? 'Complete Enrollment' : 'Pay Now')
-            : 'Submit Entitlement';
+            : 'Submit';
           if (tabId === 'payment') refreshWorkflowPaymentState(false);
           if (tabId === 'training') refreshTrainingBookingFields();
         }
@@ -2481,15 +2484,61 @@ function renderContent() {
           const trainingApprovalInput = form.querySelector('[name="training_approval_doc"]');
           const rejectedByEO = String(worker.execution_training_status || '').toLowerCase() === 'rejected';
           const rejectedBySafety = String(worker.safety_enrollment_status || '').toLowerCase() === 'rejected';
-          if (trainingApprovalInput && rejectedByEO) {
-            trainingApprovalInput.setAttribute('required', 'true');
-            notify('Document Required', 'Executing Officer ne request reject ki hai. Corrected Training Approval document dobara upload karein.', 'warning');
+          if (rejectedByEO) {
+            const eoRemarks = worker.execution_training_remarks || 'No remarks provided by the Executing Officer.';
+            Swal.fire({
+              icon: 'warning',
+              title: '<span style="color:#b45309;font-size:18px;font-weight:700;">&#9888; Enrollment Returned for Correction</span>',
+              html: `
+                <div style="text-align:left;font-size:14px;line-height:1.7;">
+                  <p style="margin:0 0 10px;color:#374151;">Your enrollment request has been <strong style="color:#dc2626;">returned by the Executing Officer</strong> and requires correction before it can proceed.</p>
+                  <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+                    <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">&#128221; Reason / Remarks</div>
+                    <div style="color:#78350f;font-weight:500;">${eoRemarks}</div>
+                  </div>
+                  <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 14px;">
+                    <div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">&#10003; Steps to Resolve</div>
+                    <ol style="margin:0;padding-left:18px;color:#15803d;">
+                      <li>Review the remarks mentioned above carefully.</li>
+                      <li>Correct the required details or re-upload the document.</li>
+                      <li>Click <strong>Submit</strong> to resubmit for review.</li>
+                    </ol>
+                  </div>
+                </div>`,
+              confirmButtonText: '&#10003; Got it, I will correct',
+              confirmButtonColor: '#b45309',
+              customClass: { popup: 'swal-wide-popup' },
+              width: 520
+            });
+            if (trainingApprovalInput && worker.training_approval_doc) {
+              trainingApprovalInput.setAttribute('required', 'true');
+            }
           } else if (rejectedBySafety) {
-            notify(
-              'Safety Correction Required',
-              worker.safety_enrollment_remarks || 'Safety Department ne enrollment correction ke liye return kiya hai. Details correct karke resubmit karein.',
-              'warning'
-            );
+            const safetyRemarks = worker.safety_enrollment_remarks || 'No remarks provided by the Safety Department.';
+            Swal.fire({
+              icon: 'warning',
+              title: '<span style="color:#1e40af;font-size:18px;font-weight:700;">&#128196; Safety Department Review Required</span>',
+              html: `
+                <div style="text-align:left;font-size:14px;line-height:1.7;">
+                  <p style="margin:0 0 10px;color:#374151;">Your enrollment has been <strong style="color:#dc2626;">returned by the Safety Department</strong> for correction. Please review the remarks and resubmit.</p>
+                  <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+                    <div style="font-size:12px;font-weight:700;color:#1e40af;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">&#128221; Safety Department Remarks</div>
+                    <div style="color:#1e3a8a;font-weight:500;">${safetyRemarks}</div>
+                  </div>
+                  <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 14px;">
+                    <div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">&#10003; Steps to Resolve</div>
+                    <ol style="margin:0;padding-left:18px;color:#15803d;">
+                      <li>Read the Safety Department remarks above.</li>
+                      <li>Update the relevant details in this form.</li>
+                      <li>Click <strong>Submit</strong> to resubmit for Safety approval.</li>
+                    </ol>
+                  </div>
+                </div>`,
+              confirmButtonText: '&#10003; Understood, I will correct',
+              confirmButtonColor: '#1e40af',
+              customClass: { popup: 'swal-wide-popup' },
+              width: 520
+            });
           }
           syncWorkFlowFromFields();
           syncWorkOrderFields(values.work_order_no || '');
@@ -2705,7 +2754,7 @@ function renderContent() {
           const bookNowInput = form.querySelector('[name="training_booking_choice"][value="book_now"]');
           if (paymentBox) paymentBox.style.display = isPwo ? 'grid' : 'none';
           if (nonPwoPaymentNote) nonPwoPaymentNote.style.display = isPwo ? 'none' : 'block';
-          if (laterRow) laterRow.style.display = isPwo ? '' : 'none';
+          if (laterRow) laterRow.style.display = ''; // Always show both options
           if (paymentRequiredNote) {
             paymentRequiredNote.style.display = isPwo ? 'block' : 'none';
             paymentRequiredNote.textContent = canBookPwoTrainingInline()
@@ -2732,7 +2781,7 @@ function renderContent() {
             bookNowInput.disabled = isPwo && !canBookPwoTrainingInline();
           }
           if (laterInput) laterInput.disabled = false;
-          if (!isPwo && bookNowInput) bookNowInput.checked = true;
+          // Do NOT force book_now for non-PWO — let the user choose freely
           const activeTab = document.querySelector('.square-tab.active')?.dataset.tab || '';
           const submitBtn = document.getElementById('btnSubmit');
           const nextBtn = document.getElementById('btnNextTab');
@@ -2741,6 +2790,17 @@ function renderContent() {
             if (submitBtn) {
               submitBtn.style.display = 'none';
               submitBtn.innerText = isPwoPayLater() ? 'Complete Enrollment' : 'Pay Now';
+            }
+          }
+          const trainingApprovalInput = form.querySelector('[name="training_approval_doc"]');
+          if (trainingApprovalInput) {
+            const hasExisting = !!trainingApprovalInput.dataset.existing;
+            if (!isPwo && !hasExisting) {
+              trainingApprovalInput.setAttribute('required', 'true');
+              trainingApprovalInput.closest('.doc-card')?.querySelector('.form-label')?.classList.add('required');
+            } else {
+              trainingApprovalInput.removeAttribute('required');
+              trainingApprovalInput.closest('.doc-card')?.querySelector('.form-label')?.classList.remove('required');
             }
           }
           if (syncBooking) refreshTrainingBookingFields();
@@ -2767,11 +2827,7 @@ function renderContent() {
           const hint = document.getElementById('trainingDateHint');
           if (!dateSelect) return;
           const current = dateSelect.value;
-          let rows = scheduledTrainingSessions.filter(row => {
-            const rowLanguage = String(row.language_name || '').trim().toLowerCase();
-            const selectedLanguage = String(language || '').trim().toLowerCase();
-            return !selectedLanguage || rowLanguage === selectedLanguage || selectedLanguage === 'others';
-          });
+          let rows = scheduledTrainingSessions;
           const hasScheduledRows = rows.length > 0;
           if (!hasScheduledRows) {
             rows = fallbackTrainingDates();
@@ -2780,7 +2836,7 @@ function renderContent() {
             const session = row.session_name || '';
             const label = row.manual
               ? `${row.training_date} - preferred booking`
-              : `${row.training_date} - ${session} (${row.batch_number || 'Batch'})`;
+              : `${row.training_date} - ${session} (${row.batch_number || 'Batch'} - ${row.language_name || 'English'})`;
             return `<option value="${row.training_date}" data-batch-id="${row.id || ''}" data-session="${session}">${label}</option>`;
           }).join('');
           if (current && Array.from(dateSelect.options).some(option => option.value === current)) {
@@ -3233,10 +3289,7 @@ function renderContent() {
               if (result.success) {
                 const draftId = result.worker_id || result.workman_id || '';
                 if (draftId) document.getElementById('workerEditId').value = draftId;
-                const choice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
-                const msg = choice === 'book_now'
-                  ? 'Your information has been saved as draft only. This is not submitted for processing.'
-                  : 'The information has been saved as draft only. Please complete safety training booking before submitting.';
+                const msg = 'Your submission has been saved as a draft only. Please click the Submit button to proceed with processing';
                 notify('Draft Saved', msg, 'success');
               } else {
                 const detail = result.message || responseText || `Draft save failed. HTTP ${res.status}`;
@@ -3353,7 +3406,13 @@ function renderContent() {
                 startInlineSafetyPayment(result.payment, result.worker_id || result.workman_id || '');
                 return;
               }
-              let successMessage = result.message + '\nTemp ID: ' + result.temp_id;
+              let successMessage = 'Worker enrolled successfully.\n';
+              if (bookingChoice === 'book_now') {
+                successMessage += 'Safety Training booking submitted.';
+              } else {
+                successMessage += 'Safety Training not booked.';
+              }
+              successMessage += '\nTemp ID: ' + result.temp_id;
               if (result.payment && result.payment.payment_link) {
                 successMessage += '\nPayment Ref: ' + result.payment.payment_ref + '\nAmount: Rs. ' + result.payment.amount;
               }
@@ -3370,7 +3429,7 @@ function renderContent() {
               notify('Error', result.message || `Enrollment failed. HTTP ${res.status}`, 'error');
             }
           } catch (err) { notify('Error', err.message || 'Server error.', 'error'); }
-          finally { btn.disabled = false; btn.innerText = 'Submit Entitlement'; }
+          finally { btn.disabled = false; btn.innerText = 'Submit'; }
         }
 
         const saveDraftButton = document.getElementById('btnSaveDraft');
@@ -3401,14 +3460,14 @@ function renderContent() {
               Swal.fire({
                 icon: 'warning',
                 title: 'Verification Required',
-                text: 'Please tick "I verified the information" before proceeding.',
+                text: 'Please tick "I hereby verify that all the information provided is true and correct in all respects" before proceeding.',
                 confirmButtonText: 'OK',
                 confirmButtonColor: '#1e3a8a'
               }).then(() => {
                 showSubmitPreview();
               });
             } else {
-              notify('Verification Required', 'Please tick "I verified the information" before proceeding.', 'warning').then(() => {
+              notify('Verification Required', 'Please tick "I hereby verify that all the information provided is true and correct in all respects" before proceeding.', 'warning').then(() => {
                 showSubmitPreview();
               });
             }

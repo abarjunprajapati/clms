@@ -468,7 +468,7 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
         WHERE (
               (
                   tr.id = ?
-                  AND LOWER(TRIM(COALESCE(w.safety_language, ?))) = LOWER(TRIM(?))
+                  AND LOWER(TRIM(COALESCE(NULLIF(TRIM(w.safety_language), ''), ?))) = LOWER(TRIM(?))
               )
               OR (
                   (
@@ -477,7 +477,7 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
                   )
                   AND (
                       tbw.id IS NOT NULL
-                      OR LOWER(TRIM(COALESCE(w.safety_language, ?))) = LOWER(TRIM(?))
+                      OR LOWER(TRIM(COALESCE(NULLIF(TRIM(w.safety_language), ''), ?))) = LOWER(TRIM(?))
                   )
               )
           )

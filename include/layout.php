@@ -398,7 +398,6 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'payment_gateway.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment Gateway / QR</a>';
             echo '<a href="'.$wb.'temp_pass_control.php" class="sidebar-item"><i class="fas fa-clock"></i> Temp Pass Control</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Monitoring & Oversight</div>';
-            echo '<a href="'.$wb.'approve_contractors.php" class="sidebar-item"><i class="fas fa-building"></i> Contractor Verification</a>';
             echo '<a href="'.$wb.'entity_directory.php" class="sidebar-item"><i class="fas fa-address-book"></i> Contractor / Customer Data</a>';
             echo '<a href="'.$wb.'approve_3a.php" class="sidebar-item"><i class="fas fa-file-contract"></i> Contractor Info Verification </a>';
             echo '<a href="'.$wb.'enrollment_monitor.php" class="sidebar-item"><i class="fas fa-users-viewfinder"></i> Worker Monitor</a>';
@@ -422,7 +421,7 @@ function renderSidebar($role) {
         case 'welfare':
             $wb = BASE_URL . 'pages/welfare/';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Verification Desk</div>';
-            echo '<a href="'.$wb.'approve_contractors.php" class="sidebar-item"><i class="fas fa-building-circle-check"></i> Contractor Verification (2A)</a>';
+            echo '<a href="'.$wb.'approve_contractors.php" class="sidebar-item"><i class="fas fa-building-circle-check"></i> Pending CLMS Approval</a>';
             echo '<a href="'.$wb.'entity_directory.php" class="sidebar-item"><i class="fas fa-address-book"></i> Contractor / Customer Data</a>';
             echo '<a href="'.$wb.'approve_3a.php" class="sidebar-item"><i class="fas fa-file-contract"></i> Contractor Info Verification (3A)</a>';
             echo '<a href="'.$wb.'enrollment_monitor.php" class="sidebar-item"><i class="fas fa-users-viewfinder"></i> Enrollment Verification</a>';
@@ -454,7 +453,7 @@ function renderSidebar($role) {
             $onboardingComplete = clms_onboarding_is_complete($conn, 'contractor', $sap_code, $user_id);
 
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Contractor Lifecycle</div>';
-            echo '<a href="annexure-2a.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Contractor Registration</a>';
+            echo '<a href="annexure-2a.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> CLMS Enrolment Request</a>';
             echo '<a href="welfare-actions.php" class="sidebar-item"><i class="fas fa-clock-rotate-left"></i> Welfare Action History</a>';
             
             if ($onboardingComplete) {
@@ -462,7 +461,7 @@ function renderSidebar($role) {
                 echo '<a href="profile.php" class="sidebar-item"><i class="fas fa-id-card"></i> Basic Details</a>';
                 
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Management</div>';
-                echo '<a href="enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Worker Management</a>';
+                echo '<a href="enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Enrolment for Entry Pass</a>';
                 echo '<a href="training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
                 echo '<a href="book_safety_training.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Book Safety Training</a>';
                 echo '<a href="payment.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Pending Fee Payment</a>';
@@ -536,7 +535,7 @@ function renderSidebar($role) {
             echo '<a href="'.$cb.'profile.php" class="sidebar-item"><i class="fas fa-id-card"></i> Basic Details</a>';
             
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Monitoring</div>';
-            echo '<a href="'.$cp.'enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Worker Management</a>';
+            echo '<a href="'.$cp.'enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Enrolment for Entry Pass</a>';
             echo '<a href="'.$cp.'training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
             echo '<a href="'.$cp.'book_safety_training.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Book Safety Training</a>';
             echo '<a href="'.$cp.'payment.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment</a>';
@@ -554,6 +553,7 @@ function renderSidebar($role) {
         case 'safety':
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Training Engine</div>';
             echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
+            echo '<a href="enrollment_approval.php" class="sidebar-item"><i class="fas fa-user-check"></i> Enrollment Approval Inbox</a>';
             echo '<a href="training_class_master.php" class="sidebar-item"><i class="fas fa-calendar-plus"></i> Training Class Master</a>';
             echo '<a href="training_requests.php" class="sidebar-item"><i class="fas fa-envelope-open-text"></i> Training Requests</a>';
             echo '<a href="training_schedule.php" class="sidebar-item"><i class="fas fa-calendar-alt"></i> Training Schedule</a>';
@@ -576,7 +576,7 @@ function renderSidebar($role) {
             $eb = BASE_URL . 'pages/execution/';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Supervision Command</div>';
             echo '<a href="'.$eb.'dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Command Center</a>';
-            echo '<a href="'.$eb.'training_attendance.php" class="sidebar-item"><i class="fas fa-file-signature"></i> Training Attendance Approval</a>';
+            echo '<a href="'.$eb.'training_attendance.php" class="sidebar-item"><i class="fas fa-file-signature"></i> Workmen Enrollment Approval</a>';
             echo '<a href="'.$eb.'contractors.php" class="sidebar-item"><i class="fas fa-building"></i> Assigned Contractors</a>';
             echo '<a href="'.$eb.'work_orders.php" class="sidebar-item"><i class="fas fa-handshake"></i> Work Order Tracking</a>';
             

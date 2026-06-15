@@ -14,8 +14,8 @@ if (!in_array($type, ['contractor', 'customer'], true) || $id <= 0) {
 
 function entityPdfStatus($type, $row) {
     if ($type === 'customer') {
-        if (strtoupper((string)($row['status'] ?? '')) === 'INACTIVE') return 'REJECTED';
-        return ((int)($row['is_password_created'] ?? 0)) ? 'APPROVED' : 'PENDING';
+        if (strtoupper((string)($row['ACTIVE_IND'] ?? 'A')) !== 'A') return 'REJECTED';
+        return !empty($row['user_id']) && strtolower((string)($row['user_status'] ?? '')) === 'active' ? 'APPROVED' : 'PENDING';
     }
     $status = strtolower((string)($row['status'] ?? 'pending'));
     if (in_array($status, ['approved', 'active'], true)) return 'APPROVED';
@@ -33,7 +33,12 @@ if ($type === 'contractor') {
     $code = $row['vendor_code'] ?? '';
     $displayName = $row['contractor_name'] ?: ($row['vendor_name'] ?? '');
 } else {
-    $row = db_single($conn, "SELECT * FROM sap_customer_master WHERE id = ?", 'i', [$id]);
+    $row = db_single($conn, "
+        SELECT s.*, u.id AS user_id, u.status AS user_status, u.last_login AS user_last_login
+        FROM sap_customer_master s
+        LEFT JOIN users u ON u.contractor_id = s.customer_code AND u.role = 'customer'
+        WHERE s.id = ?
+    ", 'i', [$id]);
     $title = 'Customer Details';
     $code = $row['customer_code'] ?? '';
     $displayName = $row['customer_name'] ?? '';
@@ -47,7 +52,7 @@ if (!$row) {
 $status = entityPdfStatus($type, $row);
 $rowsHtml = '';
 foreach ($row as $key => $value) {
-    if (in_array($key, ['login_password', 'reset_token'], true)) continue;
+    if (in_array($key, ['password', 'login_password', 'reset_token'], true)) continue;
     $label = ucwords(str_replace('_', ' ', $key));
     $rowsHtml .= '<tr><th>' . h($label) . '</th><td>' . nl2br(h($value ?: '-')) . '</td></tr>';
 }

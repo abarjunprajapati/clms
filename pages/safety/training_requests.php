@@ -335,7 +335,7 @@ function renderContent() {
 
     // 1. Pending Requests (Needs Scheduling)
     $pending = db_fetch_all($conn, "
-        SELECT tr.id as request_id, tr.*, w.name as worker_name, w.temp_id as worker_code, w.trade, w.aadhaar, w.training_approval_doc,
+        SELECT tr.id as request_id, tr.*, w.name as worker_name, w.temp_id as worker_code, w.trade, w.aadhaar, w.training_approval_doc, w.safety_language,
                $contractorNameExpr AS contractor_name, $workOrderExpr AS work_order_no
         FROM training_requests tr
         JOIN workmen w ON tr.workman_id = w.id
@@ -508,7 +508,7 @@ function renderContent() {
                    <tr>
                      <td>
                        <a href="worker_history.php?id=<?= $r['workman_id'] ?>" style="font-weight:700; color:var(--primary); text-decoration:none;"><?= htmlspecialchars($r['worker_name']) ?></a>
-                       <div style="font-size:11px; color:var(--text-muted);"><?= htmlspecialchars($r['trade']) ?> | <?= htmlspecialchars($r['aadhaar']) ?></div>
+                       <div style="font-size:11px; color:var(--text-muted);"><?= htmlspecialchars($r['trade']) ?> | <?= htmlspecialchars($r['aadhaar']) ?> | Lang: <strong style="color:var(--primary);"><?= htmlspecialchars($r['safety_language'] ?: 'Not Set') ?></strong></div>
                      </td>
                      <td>
                        <div style="font-weight:600;"><?= htmlspecialchars($r['contractor_name']) ?></div>

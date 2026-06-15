@@ -47,6 +47,7 @@ function renderContent() {
     global $conn, $officerId, $userId;
     clms_training_ensure_schema($conn);
     clms_ensure_payment_flow($conn);
+    clms_release_all_paid_training_payments($conn, (int)($userId ?? 0));
     $ctx = executionTrainingDeskContext($conn, $officerId, $userId);
 
     $autoApproveRows = db_fetch_all($conn, "
@@ -90,7 +91,7 @@ function renderContent() {
               SELECT 1
               FROM training_requests tr_submit
               WHERE tr_submit.workman_id = w.id
-                AND tr_submit.status IN ('pending_eo','welfare_pending','pending','scheduled','contractor_confirmed','passed')
+                AND tr_submit.status IN ('pending_eo','pending_safety','welfare_pending','pending','scheduled','contractor_confirmed','passed')
           )
           AND (
             UPPER(COALESCE(w.work_order_source, '')) <> 'PWO'
@@ -142,7 +143,9 @@ function renderContent() {
               <?php
                 $docUrl = executionTrainingDocUrl($r['training_approval_doc'] ?? '');
                 $hasDoc = $docUrl !== '';
-                $approved = strtolower((string)($r['execution_training_status'] ?? '')) === 'approved';
+                $reviewedBy = (int)($r['execution_training_reviewed_by'] ?? 0);
+                $statusApproved = strtolower((string)($r['execution_training_status'] ?? '')) === 'approved';
+                $approved = $statusApproved;
               ?>
               <tr id="training-row-<?= (int)$r['id'] ?>">
                 <td>

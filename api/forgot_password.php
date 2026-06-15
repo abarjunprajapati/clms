@@ -16,7 +16,6 @@ try {
         apiError('Contractor / Customer ID is required', 400);
     }
 
-    $is_customer = false;
     $user = null;
     $table = '';
     $id_col = '';
@@ -43,17 +42,25 @@ try {
                 $user['email'] = $user['email'] ?: ($sapVendor['email_address'] ?? '');
                 $user['name'] = $user['name'] ?: ($sapVendor['vendor_name'] ?? '');
             }
+            if (empty($user['mobile'])) {
+                $sapCustomer = db_single(
+                    $conn,
+                    "SELECT Customer_MOB1, EMAIL_ADDRESS, customer_name FROM sap_customer_master WHERE customer_code = ? LIMIT 1",
+                    's',
+                    [$user['id']]
+                );
+                if ($sapCustomer) {
+                    $user['mobile'] = $sapCustomer['Customer_MOB1'] ?? '';
+                    $user['email'] = $user['email'] ?: ($sapCustomer['EMAIL_ADDRESS'] ?? '');
+                    $user['name'] = $user['name'] ?: ($sapCustomer['customer_name'] ?? '');
+                }
+            }
         }
     } else {
-        // Priority 2: Check sap_customer_master
-        $user = db_single($conn, "SELECT customer_code as id, Customer_MOB1 as mobile, EMAIL_ADDRESS as email, customer_name as name, status FROM sap_customer_master WHERE customer_code = ?", 's', [$id]);
-        if ($user) {
-            $is_customer = true;
-            $table = 'sap_customer_master';
-            $id_col = 'customer_code';
-            if (strtolower($user['status']) !== 'active') {
-                apiError('Customer account is inactive', 403);
-            }
+        // SAP customer master is only a master-data source. Password reset requires an activated users row.
+        $sapCustomer = db_single($conn, "SELECT customer_code FROM sap_customer_master WHERE customer_code = ? LIMIT 1", 's', [$id]);
+        if ($sapCustomer) {
+            apiError('Customer account is not activated. Please activate the account first.', 403);
         }
     }
 

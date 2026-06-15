@@ -479,6 +479,18 @@ function sendEmailNotification($to, $subject, $message, $type = 'general', $reci
 
     if ($mailer === 'smtp') {
         $result = sendEmailViaSmtp($to, $subject, $message, $from, $fromName);
+        if (!$result['success']) {
+            // Resilient fallback to PHP mail()
+            $headers = [
+                'MIME-Version: 1.0',
+                'Content-Type: text/plain; charset=UTF-8',
+                'From: ' . sprintf('%s <%s>', $fromName, $from)
+            ];
+            $ok = @mail($to, $subject, $message, implode("\r\n", $headers));
+            if ($ok) {
+                $result = [ 'success' => true, 'message' => 'Email sent via fallback mail()' ];
+            }
+        }
         notificationLog($conn ?? null, $to, 'email', $type, $subject, $message, !empty($result['success']) ? 'sent' : 'failed', !empty($result['success']) ? '' : ($result['message'] ?? 'SMTP failed'), $recipientName);
         return $result;
     }

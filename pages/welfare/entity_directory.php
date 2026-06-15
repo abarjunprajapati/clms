@@ -9,10 +9,9 @@ $name = $_SESSION['name'] ?? 'Welfare User';
 
 function entityDirectoryStatus($type, $row) {
     if ($type === 'customer') {
-        $status = strtoupper(trim((string)($row['status'] ?? '')));
-        $passwordCreated = (int)($row['is_password_created'] ?? 0);
-        if ($status === 'INACTIVE') return 'rejected';
-        return $passwordCreated ? 'approved' : 'pending';
+        $activeInd = strtoupper(trim((string)($row['ACTIVE_IND'] ?? 'A')));
+        if ($activeInd !== 'A') return 'rejected';
+        return !empty($row['user_id']) && strtolower((string)($row['user_status'] ?? '')) === 'active' ? 'approved' : 'pending';
     }
 
     $status = strtolower(trim((string)($row['status'] ?? 'pending')));
@@ -29,16 +28,11 @@ function entityDirectoryRows($conn) {
                pwo_number, sales_order_number, nature_of_work, work_location, status,
                approval_reason, compliance_status, created_at, last_action_at
         FROM contractors
+        WHERE LOWER(status) IN ('approved', 'active')
         ORDER BY created_at DESC
     ");
 
-    $customers = db_fetch_all($conn, "
-        SELECT id, customer_code, customer_name, Customer_MOB1, customer_MOB2, EMAIL_ADDRESS,
-               email, mobile, Address, PIN, ACTIVE_IND, status, is_password_created,
-               created_at, last_login, password_updated_at
-        FROM sap_customer_master
-        ORDER BY created_at DESC
-    ");
+    $customers = [];
 
     $rows = [];
     foreach ($contractors as $c) {
@@ -63,11 +57,11 @@ function entityDirectoryRows($conn) {
             'id' => (int)$c['id'],
             'code' => $c['customer_code'] ?? '',
             'name' => $c['customer_name'] ?? '',
-            'mobile' => $c['Customer_MOB1'] ?: ($c['mobile'] ?? ''),
-            'email' => $c['EMAIL_ADDRESS'] ?: ($c['email'] ?? ''),
+            'mobile' => $c['Customer_MOB1'] ?? '',
+            'email' => $c['EMAIL_ADDRESS'] ?? '',
             'address' => $c['Address'] ?? '',
             'status' => entityDirectoryStatus('customer', $c),
-            'raw_status' => $c['status'] ?? $c['ACTIVE_IND'] ?? '',
+            'raw_status' => $c['ACTIVE_IND'] ?? '',
             'created_at' => $c['created_at'] ?? '',
             'payload' => $c
         ];
@@ -87,7 +81,7 @@ function renderContent() {
 ?>
 <div class="content-header">
     <div>
-        <h2 class="page-title"><i class="fas fa-address-book" style="color:#6366f1;margin-right:10px;"></i>Contractor & Customer Directory</h2>
+        <h2 class="page-title"><i class="fas fa-address-book" style="color:#6366f1;margin-right:10px;"></i>Approved Contractors</h2>
     </div>
     <a href="../../api/welfare/entity_directory_export.php" id="exportLink" class="btn btn-primary">
         <i class="fas fa-file-excel"></i> Download Excel
@@ -236,7 +230,7 @@ function viewEntityDetails(row) {
 
     html += `<div class="detail-section">All Available Data</div>`;
     Object.keys(p).forEach(key => {
-        if (['login_password', 'reset_token'].includes(key)) return;
+        if (['password', 'login_password', 'reset_token'].includes(key)) return;
         html += renderDetailItem(labelize(key), p[key]);
     });
     html += `</div>`;
