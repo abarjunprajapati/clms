@@ -102,12 +102,27 @@ function renderContent() {
     $contractor = db_single($conn, "SELECT id, contractor_name FROM contractors WHERE user_id = ?", 'i', [$user_id]);
     $c_id = $contractor['id'] ?? null;
     repairPrematureTrainingConfirmations($conn, $c_id);
-    $latestPayment = $c_id ? db_single(
+    $paymentRequests = $c_id ? db_fetch_all(
         $conn,
-        "SELECT * FROM training_payment_requests WHERE contractor_id = ? ORDER BY id DESC LIMIT 1",
+        "SELECT * FROM training_payment_requests WHERE contractor_id = ? ORDER BY id DESC",
         'i',
         [(int)$c_id]
-    ) : null;
+    ) : [];
+
+    $paymentWorkersMap = [];
+    if ($c_id && !empty($paymentRequests)) {
+        $pwRows = db_fetch_all($conn,
+            "SELECT pw.payment_request_id, w.name, w.temp_id
+             FROM training_payment_request_workers pw
+             JOIN workmen w ON pw.workman_id = w.id
+             JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+             WHERE pr.contractor_id = ?",
+            'i', [(int)$c_id]
+        );
+        foreach ($pwRows as $row) {
+            $paymentWorkersMap[$row['payment_request_id']][] = htmlspecialchars($row['name']) . ($row['temp_id'] ? " (" . htmlspecialchars($row['temp_id']) . ")" : "");
+        }
+    }
 
     // Eligible workers (pending training)
     $eligible_workers = $c_id ? db_fetch_all($conn,
@@ -175,9 +190,18 @@ function renderContent() {
                 $workerTrainingValidExpr AS training_valid_till,
                 COALESCE(w.execution_training_status, 'pending') AS execution_training_status,
                 COALESCE(w.execution_training_reviewed_by, 0) AS execution_training_reviewed_by,
+                pr.status AS payment_status,
+                pr.payment_ref,
+                pr.payment_token,
                 $resultSelect
          FROM training_requests tr
          JOIN workmen w ON tr.workman_id = w.id
+         LEFT JOIN (
+             SELECT pw1.training_request_id, pw1.workman_id, MAX(pw1.payment_request_id) AS max_pay_id
+             FROM training_payment_request_workers pw1
+             GROUP BY pw1.training_request_id, pw1.workman_id
+         ) pw ON (pw.training_request_id = tr.id OR (COALESCE(pw.training_request_id, 0) = 0 AND pw.workman_id = tr.workman_id))
+         LEFT JOIN training_payment_requests pr ON pr.id = pw.max_pay_id
          $resultJoin
          WHERE tr.contractor_id = ?
            AND tr.id = (
@@ -195,57 +219,25 @@ function renderContent() {
     $need_confirm = array_filter($my_requests, function($r) { return $r['status'] === 'scheduled'; });
     ?>
 
-    <div class="content-header">
+    <div class="content-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
       <div>
         <h2 class="page-title"><i class="fas fa-graduation-cap" style="color:#8b5cf6;margin-right:10px;"></i> Safety Training Request</h2>
-        <!-- <p class="page-subtitle">Submit training requests for enrolled workmen. Gate Pass requires training clearance.</p> -->
       </div>
-      <?php if (!empty($need_confirm)): ?>
-      <div>
-        <span class="badge badge-warning" style="font-size:13px; padding:8px 14px; animation: pulse 2s infinite;">
-          <i class="fas fa-bell"></i> <?= count($need_confirm) ?> Schedule(s) Need Confirmation
-        </span>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <?php if (!empty($need_confirm)): ?>
+          <span class="badge badge-warning" style="font-size:13px; padding:8px 14px; animation: pulse 2s infinite; margin: 0;">
+            <i class="fas fa-bell"></i> <?= count($need_confirm) ?> Schedule(s) Need Confirmation
+          </span>
+        <?php endif; ?>
+        <a class="btn btn-outline" href="training_payments.php">
+          <i class="fas fa-history"></i> Safety Payments History
+        </a>
       </div>
-      <?php endif; ?>
     </div>
 
     <?php if (!$c_id): ?>
     <div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i><div>Complete <a href="annexure-2a.php">Contractor Registration</a> first.</div></div>
     <?php return; endif; ?>
-
-    <?php if ($latestPayment): ?>
-    <?php
-      $payStatus = strtolower((string)$latestPayment['status']);
-      $payExpired = !empty($latestPayment['link_expires_at']) && strtotime($latestPayment['link_expires_at']) < time() && $payStatus !== 'paid';
-      $payBadge = $payExpired ? 'badge-danger' : ($payStatus === 'paid' ? 'badge-success' : 'badge-warning');
-      $payText = $payExpired ? 'EXPIRED' : strtoupper(str_replace('_', ' ', $payStatus));
-    ?>
-    <div class="card glass" style="margin-bottom:18px;">
-      <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:12px;color:var(--text-muted);font-weight:700;text-transform:uppercase;">Latest Safety Training Payment</div>
-          <div style="font-size:22px;font-weight:800;margin-top:4px;">
-            Rs. <?= number_format((float)$latestPayment['total_amount'], 2) ?>
-            <span class="badge <?= $payBadge ?>" style="vertical-align:middle;margin-left:8px;"><?= htmlspecialchars($payText) ?></span>
-          </div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
-            Ref: <?= htmlspecialchars($latestPayment['payment_ref']) ?>
-            <?php if (!empty($latestPayment['link_expires_at'])): ?>
-              | Valid till <?= htmlspecialchars(date('d M Y h:i A', strtotime($latestPayment['link_expires_at']))) ?>
-            <?php endif; ?>
-          </div>
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <a class="btn btn-primary" href="payment.php?token=<?= urlencode($latestPayment['payment_token']) ?>">
-            <i class="fas fa-credit-card"></i> <?= $payStatus === 'paid' ? 'View Payment' : 'Pay Fee' ?>
-          </a>
-          <a class="btn btn-outline" href="../payments/download_training_invoice.php?token=<?= urlencode($latestPayment['payment_token']) ?>">
-            <i class="fas fa-file-invoice"></i> GST Invoice
-          </a>
-        </div>
-      </div>
-    </div>
-    <?php endif; ?>
 
     <!-- Confirm Modal -->
     <div id="confirmModal" class="modal-backdrop hidden">
@@ -368,6 +360,7 @@ function renderContent() {
               <tr>
                 <th>Worker</th>
                 <th>Training Type</th>
+                <th>Payment</th>
                 <th>Preferred</th>
                 <th>Scheduled By Safety</th>
                 <th>Status</th>
@@ -411,6 +404,21 @@ function renderContent() {
                 <div style="font-size:10px;color:var(--text-muted);">Req #<?= (int)$r['id'] ?></div>
               </td>
               <td><?= htmlspecialchars($r['training_type'] ?? '—') ?></td>
+              <td>
+                <?php if ($r['payment_status'] === 'paid'): ?>
+                  <span class="badge badge-success"><i class="fas fa-check-circle"></i> Paid</span>
+                  <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Ref: <?= htmlspecialchars($r['payment_ref']) ?></div>
+                <?php elseif ($r['payment_status'] === 'link_sent'): ?>
+                  <span class="badge badge-warning"><i class="fas fa-clock"></i> Unpaid</span>
+                  <div style="margin-top:4px;">
+                    <a class="btn btn-sm btn-primary" style="padding: 2px 6px; font-size: 10px; line-height: 1.2;" href="payment.php?token=<?= urlencode($r['payment_token']) ?>">
+                      Pay Fee
+                    </a>
+                  </div>
+                <?php else: ?>
+                  <span class="badge badge-gray">Not Generated</span>
+                <?php endif; ?>
+              </td>
               <td>
                 <?= $r['preferred_date'] ? date('d M Y', strtotime($r['preferred_date'])) : '—' ?>
                 <?php if ($r['preferred_shift']): ?>

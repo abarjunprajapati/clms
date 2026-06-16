@@ -902,7 +902,7 @@ worker4a_ensure_schema($conn);
         if (!preg_match('/^[0-9]{10}$/', $whatsappNo)) {
             throw new Exception("Please enter a valid 10 digit WhatsApp Number.");
         }
-        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid) && ($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
+        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && ($data['training_booking_choice'] ?? 'not_now') === 'book_now') {
             if (trim((string)($data['training_booking_date'] ?? '')) === '' || trim((string)($data['training_booking_session'] ?? '')) === '') {
                 throw new Exception('Please select safety training date and session before submitting enrollment.');
             }
@@ -1083,7 +1083,7 @@ worker4a_ensure_schema($conn);
     if ($action !== 'draft') {
         $hasAttachment = !empty($uploaded_files['training_approval_doc']);
         $nonPwoBookedNow = !$isPwoWorkOrder && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
-        $pwoBookedAfterPayment = $isPwoWorkOrder && $pwoPaymentAlreadyPaid && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
+        $pwoBookedAfterPayment = $isPwoWorkOrder && ($pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
         $workman_row['execution_training_status'] = $isPwoWorkOrder
             ? ($pwoBookedAfterPayment ? 'pending_eo' : 'pending_payment')
             : ($nonPwoBookedNow ? 'pending_eo' : 'pending_booking');
@@ -1137,7 +1137,7 @@ worker4a_ensure_schema($conn);
                 throw new Exception('Payment link generate nahi ho pa raha. Safety Fee Payment settings check karein.');
             }
         }
-        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid) && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment)) {
+        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment)) {
             $trainingData = $data;
             $trainingData['initial_training_status'] = 'pending_eo';
             worker4a_ensure_training_request($conn, $workman_id_new, $contractor_id, (int)($_SESSION['user_id'] ?? 0), $trainingData);

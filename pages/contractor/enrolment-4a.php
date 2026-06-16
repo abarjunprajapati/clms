@@ -33,6 +33,20 @@ $educationFlow = clms_get_education_flow($conn);
 $minimumCertifiedWage = clms_get_minimum_certified_wage($conn);
 $activeCertifiedWages = clms_get_active_certified_wage_map($conn);
 $activeAgeRange = clms_get_active_age_range($conn);
+$trainingLanguages = db_fetch_all($conn, "SELECT id, language_name FROM training_language_masters WHERE LOWER(status) = 'active' ORDER BY sort_order ASC, language_name ASC");
+if (empty($trainingLanguages)) {
+    $trainingLanguages = db_fetch_all($conn, "SELECT id, language_name FROM training_language_masters ORDER BY sort_order ASC, language_name ASC");
+}
+if (empty($trainingLanguages)) {
+    $trainingLanguages = [
+        ['id' => 1, 'language_name' => 'Malayalam'],
+        ['id' => 2, 'language_name' => 'English'],
+        ['id' => 3, 'language_name' => 'Hindi'],
+        ['id' => 4, 'language_name' => 'Tamil'],
+        ['id' => 5, 'language_name' => 'Kannada'],
+    ];
+}
+
 
 function enrolment_table_exists($conn, $table) {
     $table = mysqli_real_escape_string($conn, $table);
@@ -303,7 +317,7 @@ function enrolment_get_customer_portal_contractor($conn) {
 }
 
 function renderContent() {
-    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages, $activeAgeRange;
+    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages, $activeAgeRange, $trainingLanguages;
     $nationalityOptions = clms_get_nationality_options($conn);
     $religionOptions = clms_get_religion_options($conn);
     $stateDistrictMap = clms_get_state_district_map($conn);
@@ -1041,8 +1055,8 @@ function renderContent() {
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label required">Date of Joining</label>
-                <input type="date" class="form-control" name="registration_date" value="<?= date('Y-m-d') ?>" required>
+                <label class="form-label required">Date of Registration</label>
+                <input type="date" class="form-control" name="registration_date" value="<?= date('Y-m-d') ?>" min="<?= date('Y-m-d') ?>" required>
               </div>
               <div class="form-group">
                 <label class="form-label required">Aadhaar Number <span id="aadhaarStatus" class="badge-status" style="display:none; margin-left:10px;"></span></label>
@@ -1331,9 +1345,13 @@ function renderContent() {
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Language of Training</label>
-                  <input type="text" class="form-control" id="trainingBookingLanguageDisplay" readonly>
-                  <input type="hidden" name="training_booking_language" id="trainingBookingLanguage" value="Malayalam">
-                  <small class="form-hint">Auto fetched from Safety Language.</small>
+                  <select class="form-control" name="training_booking_language" id="trainingBookingLanguage">
+                    <option value="">Select Language</option>
+                    <?php foreach($trainingLanguages as $lang): ?>
+                      <option value="<?= htmlspecialchars($lang['language_name']) ?>"><?= htmlspecialchars($lang['language_name']) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                  <small class="form-hint">Auto fetched from Safety Language, but you can change it.</small>
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Select Training Date</label>
@@ -1590,6 +1608,12 @@ function renderContent() {
         const requestedPassLabel = <?= json_encode($selectedType['label']) ?>;
         const prefillAadhaar = <?= json_encode($prefillAadhaar) ?>;
         const currentContractorId = <?= $c_id ? (int)$c_id : 0 ?>;
+        
+        // Enforce min registration date as today client-side
+        const regDateInput = document.querySelector('input[name="registration_date"]');
+        if (regDateInput) {
+            regDateInput.setAttribute('min', new Date().toISOString().slice(0, 10));
+        }
         const dobInput = document.getElementById('dobInput');
         const minAllowedAge = <?= json_encode((int)$minAge) ?>;
         const maxAllowedAge = <?= json_encode((int)$maxAge) ?>;
@@ -1900,11 +1924,19 @@ function renderContent() {
           const nextBtn = document.getElementById('btnNextTab');
           const submitBtn = document.getElementById('btnSubmit');
           document.getElementById('btnPrevTab').style.visibility = index <= 0 ? 'hidden' : 'visible';
-          nextBtn.style.display = (index === visibleTabs.length - 1 || (tabId === 'payment' && isPwo && !canBookPwoTrainingInline())) ? 'none' : 'inline-flex';
+          const isLastTab = index === visibleTabs.length - 1;
+          const isPaymentTab = tabId === 'payment';
+          let showSubmit = isLastTab;
+          let showNext = !isLastTab;
+          if (isPaymentTab && isPwo && !canBookPwoTrainingInline() && !isPwoPayLater()) {
+            showNext = false;
+            showSubmit = false;
+          }
+          nextBtn.style.display = showNext ? 'inline-flex' : 'none';
           const draftBtn = document.getElementById('btnSaveDraft');
-          if (draftBtn) draftBtn.style.display = index === visibleTabs.length - 1 ? 'inline-flex' : 'none';
-          submitBtn.style.display = (index === visibleTabs.length - 1 && !(tabId === 'payment' && isPwo && !canBookPwoTrainingInline())) ? 'inline-flex' : 'none';
-          submitBtn.innerText = tabId === 'payment' && isPwo
+          if (draftBtn) draftBtn.style.display = isLastTab ? 'inline-flex' : 'none';
+          submitBtn.style.display = showSubmit ? 'inline-flex' : 'none';
+          submitBtn.innerText = isPaymentTab && isPwo
             ? (isPwoPayLater() ? 'Complete Enrollment' : 'Pay Now')
             : 'Submit';
           if (tabId === 'payment') refreshWorkflowPaymentState(false);
@@ -1923,7 +1955,7 @@ function renderContent() {
         };
         document.getElementById('btnNextTab').onclick = () => {
           const current = document.querySelector('.square-tab.active')?.dataset.tab || 'basic';
-          if (current === 'payment' && isPwoWorkOrder() && !canBookPwoTrainingInline()) return;
+          if (current === 'payment' && isPwoWorkOrder() && !canBookPwoTrainingInline() && !isPwoPayLater()) return;
           const tabs = visibleTabOrder();
           const index = Math.min(tabs.length - 1, tabs.indexOf(current) + 1);
           activateTab(tabs[index]);
@@ -2411,7 +2443,13 @@ function renderContent() {
             work_order_no: worker.work_order_no,
             project_name: worker.project_name || <?= json_encode($project_name ?: 'General Project') ?>,
             pass_type: passTypeFromWorker(worker),
-            registration_date: worker.registration_date || new Date().toISOString().slice(0, 10),
+            registration_date: (() => {
+              const todayStr = new Date().toISOString().slice(0, 10);
+              if (worker.registration_date && worker.registration_date >= todayStr) {
+                return worker.registration_date;
+              }
+              return todayStr;
+            })(),
             aadhaar: worker.aadhaar,
             name: worker.name,
             father_name: worker.father_name,
@@ -2511,7 +2549,7 @@ function renderContent() {
               width: 520
             });
             if (trainingApprovalInput && worker.training_approval_doc) {
-              trainingApprovalInput.setAttribute('required', 'true');
+              trainingApprovalInput.removeAttribute('required');
             }
           } else if (rejectedBySafety) {
             const safetyRemarks = worker.safety_enrollment_remarks || 'No remarks provided by the Safety Department.';
@@ -2615,7 +2653,7 @@ function renderContent() {
           const isPwo = isPwoWorkOrder();
           const choice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
           const bookingBox = document.getElementById('trainingBookingForm');
-          const isBookingNow = (!isPwo || canBookPwoTrainingInline()) && choice === 'book_now';
+          const isBookingNow = (!isPwo || canBookPwoTrainingInline() || isPwoPayLater()) && choice === 'book_now';
           bookingBox?.classList.toggle('hidden', !isBookingNow);
           document.querySelectorAll('.choice-row').forEach(row => {
             const input = row.querySelector('[name="training_booking_choice"]');
@@ -2628,14 +2666,12 @@ function renderContent() {
           const aadhaarDisplay = document.getElementById('trainingAadhaarDisplay');
           const nameDisplay = document.getElementById('trainingNameDisplay');
           const languageSelect = document.getElementById('trainingBookingLanguage');
-          const languageDisplay = document.getElementById('trainingBookingLanguageDisplay');
           const dateSelect = document.getElementById('trainingBookingDate');
           const sessionSelect = document.getElementById('trainingBookingSession');
           const submitBtn = document.getElementById('btnSubmit');
           if (aadhaarDisplay) aadhaarDisplay.value = aadhaarValue;
           if (nameDisplay) nameDisplay.value = nameValue;
-          if (languageSelect) languageSelect.value = safetyLanguage || 'Malayalam';
-          if (languageDisplay) languageDisplay.value = safetyLanguage || 'Malayalam';
+          if (languageSelect && !languageSelect.value) languageSelect.value = safetyLanguage || 'Malayalam';
           [dateSelect, sessionSelect].forEach(field => {
             if (field) field.disabled = !isBookingNow;
           });
@@ -2776,9 +2812,9 @@ function renderContent() {
               ? 'Enrollment Complete. Please do safety payment for proceeding further.'
               : 'Book Safety Training later from the Book Safety Training menu';
           }
-          if (isPwo && laterInput && !canBookPwoTrainingInline()) laterInput.checked = true;
+          if (isPwo && laterInput && !canBookPwoTrainingInline() && !isPwoPayLater()) laterInput.checked = true;
           if (bookNowInput) {
-            bookNowInput.disabled = isPwo && !canBookPwoTrainingInline();
+            bookNowInput.disabled = isPwo && !canBookPwoTrainingInline() && !isPwoPayLater();
           }
           if (laterInput) laterInput.disabled = false;
           // Do NOT force book_now for non-PWO — let the user choose freely
@@ -2786,7 +2822,9 @@ function renderContent() {
           const submitBtn = document.getElementById('btnSubmit');
           const nextBtn = document.getElementById('btnNextTab');
           if (activeTab === 'payment') {
-            if (nextBtn) nextBtn.style.display = isPwo && !canBookPwoTrainingInline() ? 'none' : 'inline-flex';
+            if (nextBtn) {
+              nextBtn.style.display = (isPwo && !canBookPwoTrainingInline() && !isPwoPayLater()) ? 'none' : 'inline-flex';
+            }
             if (submitBtn) {
               submitBtn.style.display = 'none';
               submitBtn.innerText = isPwoPayLater() ? 'Complete Enrollment' : 'Pay Now';
@@ -2794,14 +2832,8 @@ function renderContent() {
           }
           const trainingApprovalInput = form.querySelector('[name="training_approval_doc"]');
           if (trainingApprovalInput) {
-            const hasExisting = !!trainingApprovalInput.dataset.existing;
-            if (!isPwo && !hasExisting) {
-              trainingApprovalInput.setAttribute('required', 'true');
-              trainingApprovalInput.closest('.doc-card')?.querySelector('.form-label')?.classList.add('required');
-            } else {
-              trainingApprovalInput.removeAttribute('required');
-              trainingApprovalInput.closest('.doc-card')?.querySelector('.form-label')?.classList.remove('required');
-            }
+            trainingApprovalInput.removeAttribute('required');
+            trainingApprovalInput.closest('.doc-card')?.querySelector('.form-label')?.classList.remove('required');
           }
           if (syncBooking) refreshTrainingBookingFields();
         }
@@ -2828,6 +2860,9 @@ function renderContent() {
           if (!dateSelect) return;
           const current = dateSelect.value;
           let rows = scheduledTrainingSessions;
+          if (language) {
+            rows = rows.filter(row => String(row.language_name || 'English').trim().toLowerCase() === language.trim().toLowerCase());
+          }
           const hasScheduledRows = rows.length > 0;
           if (!hasScheduledRows) {
             rows = fallbackTrainingDates();
@@ -2874,6 +2909,9 @@ function renderContent() {
           const batchIdInput = document.getElementById('trainingBookingBatchId');
           if (sessionSelect) sessionSelect.value = session || sessionSelect.value || 'FN';
           if (batchIdInput) batchIdInput.value = selectedOption?.dataset.batchId || '';
+        });
+        document.getElementById('trainingBookingLanguage')?.addEventListener('change', () => {
+          populateTrainingDateOptions();
         });
         ['aadhaar', 'name', 'safety_language'].forEach(name => {
           form.querySelector(`[name="${name}"]`)?.addEventListener('input', refreshTrainingBookingFields);
@@ -3330,17 +3368,7 @@ function renderContent() {
           }
 
           const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
-          if (canBookPwoTrainingInline() && bookingChoice === 'book_now' && (!previewValue('training_booking_date') || !previewValue('training_booking_session'))) {
-            activateTab('training');
-            notify('Training Booking Required', 'Please select safety training date and session.', 'warning');
-            return;
-          }
-          if (!isPwoWorkOrder() && bookingChoice !== 'book_now') {
-            activateTab('training');
-            notify('Safety Training Booking Required', 'Please complete Safety Training seat booking before submitting enrollment.', 'warning');
-            return;
-          }
-          if (!isPwoWorkOrder() && (!previewValue('training_booking_date') || !previewValue('training_booking_session'))) {
+          if (bookingChoice === 'book_now' && (!previewValue('training_booking_date') || !previewValue('training_booking_session'))) {
             activateTab('training');
             notify('Training Booking Required', 'Please select safety training date and session.', 'warning');
             return;

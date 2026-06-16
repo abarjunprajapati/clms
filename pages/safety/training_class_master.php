@@ -9,6 +9,14 @@ $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Safety Officer';
 clms_safety_ensure_control_schema($conn);
 
+if (isset($_GET['action']) && $_GET['action'] === 'get_reschedule_history') {
+    $batch_id = (int)$_GET['batch_id'];
+    $history = db_fetch_all($conn, "SELECT * FROM batch_reschedule_history WHERE batch_id = ? ORDER BY rescheduled_at DESC", 'i', [$batch_id]);
+    header('Content-Type: application/json');
+    echo json_encode($history);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (($_POST['batch_action'] ?? '') === 'set_status') {
@@ -95,7 +103,7 @@ function renderContent() {
       $fillPct = min(100, max(0, round(($assigned / $capacity) * 100)));
       $active = in_array(strtolower((string)$b['status']), array('open', 'scheduled', 'active'), true) && $b['training_date'] >= date('Y-m-d');
       $assignUrl = 'training_schedule.php?batch_id=' . (int)$b['id'] . ($prefillRequestId ? '&request_id=' . (int)$prefillRequestId : '');
-    ?><tr><td><strong><?= htmlspecialchars($b['batch_number']) ?></strong><div style="font-size:11px;color:var(--text-muted)">Token: <?= htmlspecialchars($b['batch_token']) ?></div></td><td><?= date('d M Y', strtotime($b['training_date'])) ?></td><td><?= htmlspecialchars($b['venue_name']) ?></td><td><?= htmlspecialchars($b['language_name']) ?></td><td><div class="worker-capacity"><div class="worker-capacity-top"><strong><?= $assigned ?></strong><span>of <?= $capacity ?> assigned</span><em><?= $available ?> open</em></div><div class="worker-capacity-bar"><span style="width:<?= $fillPct ?>%"></span></div><div class="worker-capacity-split"><span><?= $regular ?> regular</span><span><?= $emg ?> emergency</span></div></div></td><td><span class="badge <?= $active ? 'badge-success' : 'badge-gray' ?>"><?= $active ? 'Active' : 'Inactive' ?></span></td><td><div class="row-actions"><?php if ($active): ?><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars($assignUrl) ?>">Assign Workers</a><?php endif; ?><a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a><form method="post" style="margin:0"><input type="hidden" name="batch_action" value="set_status"><input type="hidden" name="batch_id" value="<?= (int)$b['id'] ?>"><input type="hidden" name="status" value="<?= $active ? 'inactive' : 'active' ?>"><button class="btn btn-sm <?= $active ? 'btn-warning' : 'btn-success' ?>" type="submit" <?= !$active && $b['training_date'] < date('Y-m-d') ? 'disabled title="Previous date batch cannot be activated"' : '' ?>><?= $active ? 'Inactive' : 'Active' ?></button></form></div></td></tr><?php endforeach; ?>
+    ?><tr><td><strong><?= htmlspecialchars($b['batch_number']) ?></strong><div style="font-size:11px;color:var(--text-muted)">Token: <?= htmlspecialchars($b['batch_token']) ?></div></td><td><?= date('d M Y', strtotime($b['training_date'])) ?></td><td><?= htmlspecialchars($b['venue_name']) ?></td><td><?= htmlspecialchars($b['language_name']) ?></td><td><div class="worker-capacity"><div class="worker-capacity-top"><strong><?= $assigned ?></strong><span>of <?= $capacity ?> assigned</span><em><?= $available ?> open</em></div><div class="worker-capacity-bar"><span style="width:<?= $fillPct ?>%"></span></div><div class="worker-capacity-split"><span><?= $regular ?> regular</span><span><?= $emg ?> emergency</span></div></div></td><td><span class="badge <?= $active ? 'badge-success' : 'badge-gray' ?>"><?= $active ? 'Active' : 'Inactive' ?></span></td><td><div class="row-actions"><?php if ($active): ?><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars($assignUrl) ?>">Assign Workers</a><?php endif; ?><a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a><button type="button" class="btn btn-sm btn-outline" onclick="viewRescheduleHistory(<?= (int)$b['id'] ?>, '<?= htmlspecialchars($b['batch_number']) ?>')">History</button><form method="post" style="margin:0"><input type="hidden" name="batch_action" value="set_status"><input type="hidden" name="batch_id" value="<?= (int)$b['id'] ?>"><input type="hidden" name="status" value="<?= $active ? 'inactive' : 'active' ?>"><button class="btn btn-sm <?= $active ? 'btn-warning' : 'btn-success' ?>" type="submit" <?= !$active && $b['training_date'] < date('Y-m-d') ? 'disabled title="Previous date batch cannot be activated"' : '' ?>><?= $active ? 'Inactive' : 'Active' ?></button></form></div></td></tr><?php endforeach; ?>
     </tbody></table>
   </div>
 </section>
@@ -188,6 +196,43 @@ function syncExistingBatch() {
 
 updateSeats();
 syncExistingBatch();
+
+async function viewRescheduleHistory(batchId, batchNumber) {
+  try {
+    const res = await fetch('training_class_master.php?action=get_reschedule_history&batch_id=' + batchId);
+    const data = await res.json();
+    if (!data || data.length === 0) {
+      Swal.fire({
+        icon: 'info',
+        title: 'No History',
+        text: 'Reschedule history not found for Batch ' + batchNumber
+      });
+      return;
+    }
+    
+    let html = '<div style="max-height: 400px; overflow-y: auto;"><table class="table" style="width:100%;font-size:12px;border-collapse:collapse;margin-top:10px;">';
+    html += '<thead><tr style="background:#f1f5f9;"><th style="padding:8px;border-bottom:2px solid #cbd5e1;text-align:left;">From Details</th><th style="padding:8px;border-bottom:2px solid #cbd5e1;text-align:left;">To Details</th><th style="padding:8px;border-bottom:2px solid #cbd5e1;text-align:left;">Rescheduled At</th></tr></thead><tbody>';
+    data.forEach(h => {
+        const formattedAt = new Date(h.rescheduled_at).toLocaleString();
+        html += `<tr>
+          <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;line-height:1.4;">Date: <strong>${h.original_date}</strong><br><small style="color:#64748b;">Loc: ${h.original_venue_name || 'N/A'}</small><br><small style="color:#64748b;">Session: ${h.original_session || 'FN'}</small></td>
+          <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;line-height:1.4;">Date: <strong class="text-success">${h.rescheduled_date}</strong><br><small style="color:#64748b;">Loc: ${h.rescheduled_venue_name || 'N/A'}</small><br><small style="color:#64748b;">Session: ${h.rescheduled_session || 'FN'}</small></td>
+          <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:11px;color:#64748b;">${formattedAt}</td>
+        </tr>`;
+    });
+    html += '</tbody></table></div>';
+    
+    Swal.fire({
+      title: 'Reschedule History: ' + batchNumber,
+      html: html,
+      width: '650px',
+      confirmButtonText: 'Close',
+      confirmButtonColor: '#4f46e5'
+    });
+  } catch(e) {
+    Swal.fire('Error', 'Unable to fetch reschedule history.', 'error');
+  }
+}
 </script>
 <?php }
 renderLayout('Training Class Master', 'renderContent', $role, $name);

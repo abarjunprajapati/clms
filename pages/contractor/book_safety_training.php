@@ -77,18 +77,25 @@ function renderContent() {
             $workerIds = [(int)$_POST['worker_id']];
         }
         $batchId = (int)($_POST['batch_id'] ?? 0);
+        $manualDate = trim((string)($_POST['manual_date'] ?? ''));
+        $manualSession = trim((string)($_POST['manual_session'] ?? 'morning'));
+        $selectedLanguage = trim((string)($_POST['language'] ?? 'English'));
 
-        $batch = db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', [$batchId]);
-        $preferredShift = $batch ? contractorBookNormalizeShift($batch['session_name'] ?? 'morning') : 'morning';
+        $batch = null;
+        if ($batchId > 0) {
+            $batch = db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', [$batchId]);
+        }
+
+        $preferredShift = $batch ? contractorBookNormalizeShift($batch['session_name'] ?? 'morning') : contractorBookNormalizeShift($manualSession);
         $selectedCount = count($workerIds);
-        $capacityInfo = $batch ? clms_safety_batch_capacity_summary($conn, $batch) : ['total' => 0];
+        $capacityInfo = $batch ? clms_safety_batch_capacity_summary($conn, $batch) : ['total' => 99999];
         $alreadySelected = $batch ? db_count($conn, "SELECT COUNT(*) FROM training_batch_workers WHERE batch_id = ? AND ticked = 1", 'i', [$batchId]) : 0;
-        $remainingSeats = $batch ? max(0, (int)$capacityInfo['total'] - (int)$alreadySelected) : 0;
+        $remainingSeats = $batch ? max(0, (int)$capacityInfo['total'] - (int)$alreadySelected) : 99999;
 
         if ($messageType === 'error' && $message) {
             // keep the form visible below
-        } elseif (!$contractorId || !$batch || !$workerIds) {
-            $message = 'Please select a valid training batch and at least one worker.';
+        } elseif (!$contractorId || (!$batch && $manualDate === '') || !$workerIds) {
+            $message = 'Please select a valid training date/batch and at least one worker.';
             $messageType = 'error';
         } elseif ($selectedCount > $remainingSeats) {
             $message = 'Maximum seat limit exceeded. Only ' . $remainingSeats . ' seat(s) are available in this batch.';
@@ -97,6 +104,7 @@ function renderContent() {
             $saved = 0;
             $skippedPayment = 0;
             $requestIds = [];
+            $unpaidWorkerIds = [];
             foreach ($workerIds as $workerId) {
                 $worker = db_single(
                     $conn,
@@ -105,24 +113,30 @@ function renderContent() {
                     [$workerId, $contractorId]
                 );
                 if (!$worker) continue;
-                if (strtoupper(trim((string)($worker['work_order_source'] ?? ''))) === 'PWO') {
+
+                $isPwo = strtoupper(trim((string)($worker['work_order_source'] ?? ''))) === 'PWO';
+                $isPaid = false;
+                if ($isPwo) {
                     $paid = db_single(
                         $conn,
                         "SELECT pr.id
-                         FROM training_payment_request_workers pw
-                         JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
-                         WHERE pw.workman_id = ?
-                           AND pr.status = 'paid'
-                         LIMIT 1",
+                          FROM training_payment_request_workers pw
+                          JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                          WHERE pw.workman_id = ?
+                            AND pr.status = 'paid'
+                          LIMIT 1",
                         'i',
                         [$workerId]
                     );
-                    if (!$paid) {
-                        $skippedPayment++;
-                        continue;
+                    if ($paid) {
+                        $isPaid = true;
+                    } else {
+                        $unpaidWorkerIds[] = $workerId;
                     }
                 }
-                if (strtolower(trim((string)($worker['safety_language'] ?: $batch['language_name']))) !== strtolower(trim((string)$batch['language_name']))) {
+
+                $targetLang = $batch ? $batch['language_name'] : $selectedLanguage;
+                if (strtolower(trim((string)($worker['safety_language'] ?: $targetLang))) !== strtolower(trim((string)$targetLang))) {
                     continue;
                 }
                 $workerTrainingStatus = strtolower((string)($worker['training_status'] ?? ''));
@@ -142,18 +156,20 @@ function renderContent() {
                     'i',
                     [$workerId]
                 );
+                $trainingType = $batch ? (string)$batch['training_type'] : 'Safety Induction';
+                $trainingDate = $batch ? (string)$batch['training_date'] : $manualDate;
                 if ($active) {
                     db_execute(
                         $conn,
                         "UPDATE training_requests
-                         SET training_type = ?, preferred_date = ?, preferred_shift = ?, remarks = ?, source = 'contractor_later_booking', updated_at = NOW()
-                         WHERE id = ?",
+                          SET training_type = ?, preferred_date = ?, preferred_shift = ?, remarks = ?, source = 'contractor_later_booking', updated_at = NOW()
+                          WHERE id = ?",
                         'ssssi',
                         [
-                            (string)$batch['training_type'],
-                            (string)$batch['training_date'],
+                            $trainingType,
+                            $trainingDate,
                             $preferredShift,
-                            'Contractor selected this scheduled safety training batch from Book Safety Training.',
+                            $batch ? 'Contractor selected this scheduled safety training batch from Book Safety Training.' : 'Contractor selected a preferred safety training date from Book Safety Training.',
                             (int)$active['id']
                         ]
                     );
@@ -162,37 +178,62 @@ function renderContent() {
                     db_execute(
                         $conn,
                         "INSERT INTO training_requests
-                         (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
-                         VALUES (?, ?, ?, CURDATE(), ?, ?, ?, 'contractor_later_booking', ?, 'pending', NOW(), NOW())",
+                          (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
+                          VALUES (?, ?, ?, CURDATE(), ?, ?, ?, 'contractor_later_booking', ?, 'pending', NOW(), NOW())",
                         'iissssi',
                         [
                             $workerId,
                             $contractorId,
-                            (string)$batch['training_type'],
-                            (string)$batch['training_date'],
+                            $trainingType,
+                            $trainingDate,
                             $preferredShift,
-                            'Contractor selected this scheduled safety training batch from Book Safety Training.',
+                            $batch ? 'Contractor selected this scheduled safety training batch from Book Safety Training.' : 'Contractor selected a preferred safety training date from Book Safety Training.',
                             $user_id
                         ]
                     );
                     $requestIds[] = (int)mysqli_insert_id($conn);
                 }
+
+                $newExecutionStatus = $isPwo && !$isPaid ? 'pending_payment' : 'pending_eo';
+                $newExecutionRemarks = $isPwo && !$isPaid 
+                    ? 'Waiting for Safety fee payment verification.' 
+                    : 'Safety seat booking submitted. Waiting for Executing Officer approval.';
+
                 db_execute(
                     $conn,
                     "UPDATE workmen
                      SET training_status = 'pending', safety_training_status = 'PENDING_TRAINING',
                          safety_language = COALESCE(NULLIF(safety_language, ''), ?),
-                         execution_training_status = 'pending_eo',
-                         execution_training_remarks = 'Safety seat booking submitted. Waiting for Executing Officer approval.'
+                         execution_training_status = ?,
+                         execution_training_remarks = ?
                      WHERE id = ?",
-                    'si',
-                    [(string)$batch['language_name'], $workerId]
+                    'sssi',
+                    [$batch ? (string)$batch['language_name'] : $selectedLanguage, $newExecutionStatus, $newExecutionRemarks, $workerId]
                 );
                 $saved++;
             }
+
+            if (!empty($unpaidWorkerIds)) {
+                $paymentRequest = clms_create_training_payment_request(
+                    $conn,
+                    $contractorId,
+                    $unpaidWorkerIds,
+                    $user_id,
+                    'book_safety_training_payment'
+                );
+                if ($paymentRequest) {
+                    header("Location: ../payment.php?token=" . urlencode($paymentRequest['payment_token']));
+                    exit;
+                }
+            }
+
             if ($requestIds) {
-                $bookingResult = clms_safety_add_requests_to_batch($conn, $batchId, $requestIds, $user_id);
-                $message = 'Safety training booked for ' . $saved . ' worker(s) in batch ' . $bookingResult['batch_number'] . '.';
+                if ($batch) {
+                    $bookingResult = clms_safety_add_requests_to_batch($conn, $batchId, $requestIds, $user_id);
+                    $message = 'Safety training booked for ' . $saved . ' worker(s) in batch ' . $bookingResult['batch_number'] . '.';
+                } else {
+                    $message = 'Safety training appointment requested for ' . $saved . ' worker(s) on preferred date: ' . htmlspecialchars($manualDate) . '.';
+                }
             } else {
                 $message = $skippedPayment > 0
                     ? 'Please complete Safety Fee Payment before Safety Training & Seat Booking for PWO worker(s).'
@@ -295,6 +336,20 @@ function renderContent() {
     $batchLanguages = array_values(array_unique(array_filter(array_map(function($batch) {
         return trim((string)($batch['language_name'] ?? ''));
     }, $batches))));
+    $workerLanguages = array_unique(array_filter(array_map(function($w) {
+        return trim((string)($w['safety_language'] ?? ''));
+    }, $workers)));
+    $batchLanguages = array_values(array_unique(array_merge($batchLanguages, $workerLanguages)));
+
+    $preselectLanguage = '';
+    if ($preselectWorkerId > 0) {
+        foreach ($workers as $w) {
+            if ((int)$w['id'] === $preselectWorkerId) {
+                $preselectLanguage = trim((string)$w['safety_language']);
+                break;
+            }
+        }
+    }
     ?>
     <style>
       .safety-book-page{display:grid;gap:14px}
@@ -316,7 +371,8 @@ function renderContent() {
       .worker-picker-table input[type="checkbox"]{width:17px;height:17px}
       .selection-note{font-size:12px;color:#92400e;line-height:1.45;margin-top:10px}
       .payment-required-note{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid #fbbf24;background:#fffbeb;color:#92400e;border-radius:8px;padding:12px 14px;margin:0 0 14px;font-size:13px;font-weight:800;flex-wrap:wrap}
-      .worker-payment-lock{display:inline-flex;align-items:center;gap:6px;color:#92400e;font-weight:800;font-size:12px}
+      .worker-payment-lock{display:inline-flex;align-items:center;gap:6px;color:#92400e;font-weight:800;font-size:12px;text-decoration:none}
+      .worker-payment-lock:hover{text-decoration:underline;color:#7c2d12}
       .seat-chip{display:inline-flex;align-items:center;justify-content:center;min-width:38px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:6px;padding:8px 10px;font-weight:800}
       @media(max-width:1100px){.booking-top-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.search-grid{grid-template-columns:1fr}}
       @media(max-width:680px){.booking-top-grid{grid-template-columns:1fr}}
@@ -379,14 +435,16 @@ function renderContent() {
     <div class="safety-book-page">
       <form method="POST" id="bookSafetyForm" class="safety-book-card">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
-        <input type="hidden" name="batch_id" id="batchSelect" required>
+        <input type="hidden" name="batch_id" id="batchSelect">
+        <input type="hidden" name="manual_date" id="manualDate">
+        <input type="hidden" name="manual_session" id="manualSession">
 
         <h3 class="booking-title"><i class="fas fa-calendar-check"></i> Book Safety Training</h3>
 
         <div class="booking-top-grid">
           <div>
             <label class="form-label">Lang</label>
-            <select id="languageSelect" class="form-control" required>
+            <select id="languageSelect" name="language" class="form-control" required>
               <option value="">Select</option>
               <?php foreach ($batchLanguages as $language): ?>
                 <option value="<?= htmlspecialchars($language, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($language) ?></option>
@@ -478,16 +536,15 @@ function renderContent() {
                     <td><?= htmlspecialchars($worker['name'] ?? '') ?></td>
                     <td><code><?= htmlspecialchars($entitlement) ?></code></td>
                     <td>
+                      <input type="checkbox"
+                             class="worker-check"
+                             name="worker_ids[]"
+                             value="<?= (int)$worker['id'] ?>"
+                             data-worker-name="<?= htmlspecialchars($worker['name'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                             data-worker-aadhaar="<?= htmlspecialchars($worker['aadhaar'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                             <?= $checked ? 'checked' : '' ?>>
                       <?php if ($paymentPending): ?>
-                        <span class="worker-payment-lock"><i class="fas fa-lock"></i> Pay Safety Fee first</span>
-                      <?php else: ?>
-                        <input type="checkbox"
-                               class="worker-check"
-                               name="worker_ids[]"
-                               value="<?= (int)$worker['id'] ?>"
-                               data-worker-name="<?= htmlspecialchars($worker['name'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
-                               data-worker-aadhaar="<?= htmlspecialchars($worker['aadhaar'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
-                               <?= $checked ? 'checked' : '' ?>>
+                        <span class="worker-payment-lock" style="margin-left: 8px; color: #b45309;"><i class="fas fa-coins"></i> Fee Pending</span>
                       <?php endif; ?>
                     </td>
                   </tr>
@@ -526,16 +583,37 @@ function renderContent() {
         return Math.max(0, Number(batch?.seats_available ?? (Number(batch?.capacity || 0) - Number(batch?.selected_count || 0))));
       }
 
+      function fallbackTrainingDates() {
+        const dates = [];
+        const cursor = new Date();
+        for (let i = 1; i <= 30; i++) {
+          const d = new Date(cursor);
+          d.setDate(cursor.getDate() + i);
+          const day = d.getDay();
+          if (day === 0) continue;
+          const value = d.toISOString().slice(0, 10);
+          dates.push({ id: 'manual_' + value, training_date: value, session_name: 'FN', batch_number: 'Preferred date', manual: true });
+          if (dates.length >= 12) break;
+        }
+        return dates;
+      }
+
       function matchingBatches() {
         const language = norm(languageSelect.value);
         return batches.filter(batch => !language || norm(batch.language_name) === language);
       }
 
       function populateDates() {
-        const rows = matchingBatches();
+        let rows = matchingBatches();
+        const hasScheduledRows = rows.length > 0;
+        if (!hasScheduledRows) {
+          rows = fallbackTrainingDates();
+        }
         trainingDateSelect.innerHTML = '<option value="">Select</option>' + rows.map(batch => {
-          const label = `${batch.training_date || ''}${batch.session_name ? ' - ' + batch.session_name : ''}`;
-          return `<option value="${batch.id}">${escapeHtml(label)}</option>`;
+          const label = batch.manual
+            ? `${batch.training_date} - preferred booking (Safety will schedule)`
+            : `${batch.training_date || ''}${batch.session_name ? ' - ' + batch.session_name : ''}`;
+          return `<option value="${batch.id}" data-manual="${batch.manual ? '1' : '0'}" data-date="${batch.training_date}" data-session="${batch.session_name || 'FN'}">${escapeHtml(label)}</option>`;
         }).join('');
         if (rows.length) {
           trainingDateSelect.value = String(rows[0].id);
@@ -549,11 +627,29 @@ function renderContent() {
       }
 
       function applySelectedBatch(autoTick) {
-        const batch = selectedBatch();
-        batchSelect.value = batch ? batch.id : '';
-        seatAvailability.textContent = batch ? remainingSeats(batch) : '0';
-        sessionDisplay.value = batch?.session_name || '';
-        batchNumberDisplay.value = batch?.batch_number || '';
+        const selectedOption = trainingDateSelect.selectedOptions[0];
+        const isManual = selectedOption?.dataset.manual === '1';
+
+        if (isManual) {
+          batchSelect.removeAttribute('required');
+          batchSelect.value = '';
+          document.getElementById('manualDate').value = selectedOption.dataset.date;
+          document.getElementById('manualSession').value = selectedOption.dataset.session;
+
+          seatAvailability.textContent = 'Unlimited';
+          sessionDisplay.value = selectedOption.dataset.session;
+          batchNumberDisplay.value = 'Preferred Date';
+        } else {
+          const batch = selectedBatch();
+          batchSelect.value = batch ? batch.id : '';
+          document.getElementById('manualDate').value = '';
+          document.getElementById('manualSession').value = '';
+
+          seatAvailability.textContent = batch ? remainingSeats(batch) : '0';
+          sessionDisplay.value = batch?.session_name || '';
+          batchNumberDisplay.value = batch?.batch_number || '';
+        }
+
         filterWorkers();
         if (autoTick) autoSelectWorkers();
         refreshSelectedWorkers();
@@ -578,8 +674,10 @@ function renderContent() {
       }
 
       function autoSelectWorkers() {
+        const selectedOption = trainingDateSelect.selectedOptions[0];
+        const isManual = selectedOption?.dataset.manual === '1';
         const batch = selectedBatch();
-        const limit = remainingSeats(batch);
+        const limit = isManual ? 99999 : remainingSeats(batch);
         const language = norm(languageSelect.value);
         const rows = Array.from(document.querySelectorAll('[data-worker-row]'))
           .filter(row => row.dataset.language === language);
@@ -587,7 +685,7 @@ function renderContent() {
           const checkbox = row.querySelector('.worker-check');
           if (checkbox) checkbox.checked = false;
         });
-        if (!batch || !limit) return;
+        if (!isManual && (!batch || !limit)) return;
         let selected = 0;
         if (preselectWorkerId) {
           const preselected = document.querySelector(`.worker-check[value="${preselectWorkerId}"]`);
@@ -645,10 +743,14 @@ function renderContent() {
         refreshSelectedWorkers();
       });
       bookSafetyForm?.addEventListener('submit', event => {
+        const selectedOption = trainingDateSelect.selectedOptions[0];
+        const isManual = selectedOption?.dataset.manual === '1';
         const batch = selectedBatch();
-        const remaining = remainingSeats(batch);
+        const remaining = isManual ? 99999 : remainingSeats(batch);
         const selected = document.querySelectorAll('.worker-check:checked').length;
-        if (!batchSelect.value) {
+        
+        const dateValue = trainingDateSelect.value;
+        if (!dateValue) {
           event.preventDefault();
           alert('Please select language, date and session.');
           return;
@@ -664,7 +766,20 @@ function renderContent() {
         }
       });
 
-      if (languageSelect && languageSelect.options.length > 1) {
+      const preselectLanguage = <?= json_encode(strtolower($preselectLanguage)) ?>;
+      if (preselectLanguage && languageSelect) {
+        let matched = false;
+        for (let i = 0; i < languageSelect.options.length; i++) {
+          if (languageSelect.options[i].value === preselectLanguage) {
+            languageSelect.selectedIndex = i;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched && languageSelect.options.length > 1) {
+          languageSelect.selectedIndex = 1;
+        }
+      } else if (languageSelect && languageSelect.options.length > 1) {
         languageSelect.selectedIndex = 1;
       }
       populateDates();

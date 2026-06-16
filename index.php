@@ -135,7 +135,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
           <div class="form-group">
             <div class="captcha-row">
               <div style="position:relative; width:100%;">
-                <input type="text" id="login-captcha" class="form-control" placeholder="Security Code" required maxlength="6" style="padding-left:16px;">
+                <input type="text" id="login-captcha" class="form-control" placeholder="Security Code" required maxlength="6" style="padding-left:16px; text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
                 <label class="form-label" for="login-captcha" style="left:12px;">Security Code</label>
               </div>
               <div class="captcha-img-container" onclick="refreshCaptcha()" title="Click to refresh security code">

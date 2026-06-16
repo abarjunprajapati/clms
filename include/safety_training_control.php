@@ -378,6 +378,21 @@ function clms_safety_ensure_control_schema($conn) {
         clms_safety_ensure_column($conn, 'training_results', $column, $definition);
     }
 
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS batch_reschedule_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        batch_id INT NOT NULL,
+        original_date DATE NOT NULL,
+        original_venue_id INT NULL,
+        original_venue_name VARCHAR(150) NULL,
+        original_session VARCHAR(10) NULL,
+        rescheduled_date DATE NOT NULL,
+        rescheduled_venue_id INT NULL,
+        rescheduled_venue_name VARCHAR(150) NULL,
+        rescheduled_session VARCHAR(10) NULL,
+        rescheduled_by INT NULL,
+        rescheduled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
     foreach (array('Malayalam', 'English', 'Kannada', 'Tamil', 'Hindi') as $idx => $language) {
         db_execute($conn, "INSERT IGNORE INTO training_language_masters (language_name, status, sort_order, created_at, updated_at) VALUES (?, 'active', ?, NOW(), NOW())", 'si', array($language, ($idx + 1) * 10));
     }
@@ -648,6 +663,16 @@ function clms_safety_reschedule_batch($conn, $batchId, array $data, $userId = 0)
 
     $conn->begin_transaction();
     try {
+        db_execute(
+            $conn,
+            "INSERT INTO batch_reschedule_history 
+             (batch_id, original_date, original_venue_id, original_venue_name, original_session,
+              rescheduled_date, rescheduled_venue_id, rescheduled_venue_name, rescheduled_session, rescheduled_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            'issssssssi',
+            array((int)$batchId, $batch['training_date'], $batch['venue_id'], $batch['venue_name'], $batch['session_name'],
+                  $trainingDate, $venueId, $venue['venue_name'], $sessionName, (int)$userId)
+        );
         db_execute(
             $conn,
             "UPDATE training_class_batches

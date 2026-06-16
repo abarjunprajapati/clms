@@ -25,12 +25,10 @@ try {
     if (empty($password)) apiError('Password is required', 400);
     if (empty($captcha)) apiError('Verification code is required', 400);
 
-    // 2. Captcha Verification
     if (session_status() !== PHP_SESSION_ACTIVE) {
         apiError('Session failed to start. Please check your PHP session configuration.', 500);
     }
-    
-    if ($captcha !== '1234' && (!isset($_SESSION['captcha']) || strcasecmp($captcha, $_SESSION['captcha']) !== 0)) {
+    if ($captcha !== '1234' && (!isset($_SESSION['captcha']) || strcmp($captcha, $_SESSION['captcha']) !== 0)) {
         $debug = [
             'received' => $captcha,
             'expected' => $_SESSION['captcha'] ?? 'NOT_SET',
