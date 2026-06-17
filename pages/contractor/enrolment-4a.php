@@ -20,6 +20,7 @@ $enrolmentTypeMap = [
     'supervisor' => ['pass' => 'Supervisor', 'label' => 'Supervisor Enrollment', 'plural' => 'Supervisors'],
     'workmen' => ['pass' => 'Workman', 'label' => 'Workmen Enrollment', 'plural' => 'Workmen'],
     'workman' => ['pass' => 'Workman', 'label' => 'Workmen Enrollment', 'plural' => 'Workmen'],
+    'retraining' => ['pass' => 'Workman', 'label' => 'Retraining Enrollment', 'plural' => 'Retraining Workmen'],
 ];
 $requestedType = strtolower(trim($_GET['type'] ?? 'workmen'));
 if (!isset($enrolmentTypeMap[$requestedType])) {
@@ -545,7 +546,13 @@ function renderContent() {
         }
         $roleTypeExpr = "COALESCE(" . implode(', ', $roleTypeFallbacks) . ") AS role_type";
         $orderExpr = enrolment_column_exists($conn, 'workmen', 'created_at') ? 'created_at DESC' : 'id DESC';
-        $typeWhere = enrolment_worker_type_condition($conn, 'workmen', $requestedType);
+        if ($requestedType === 'retraining') {
+            $typeWhere = "workmen.role_type IN ('Workman', 'WORKMAN') AND (LOWER(COALESCE(workmen.training_status, '')) IN ('fail', 'failed', 'training_failed', 'absent') OR EXISTS (
+                SELECT 1 FROM training_requests tr_fail WHERE tr_fail.workman_id = workmen.id AND LOWER(COALESCE(tr_fail.status, '')) IN ('fail', 'failed', 'absent')
+            ))";
+        } else {
+            $typeWhere = enrolment_worker_type_condition($conn, 'workmen', $requestedType);
+        }
         $nonDraftWhere = "";
         $workers = enrolment_fetch_all($conn, "
             SELECT
@@ -647,6 +654,7 @@ function renderContent() {
                       AND tr.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
                 ) AS training_attempts_30,
                 " . enrolment_expr($conn, 'workmen', 'status', 'gate_pass_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'worker_status', 'worker_status', "'active'") . ",
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
                 " . enrolment_expr($conn, 'workmen', 'is_blocked', 'is_blocked', '0') . ",
                 " . enrolment_expr($conn, 'workmen', 'blocked_source', 'blocked_source') . ",
@@ -655,6 +663,123 @@ function renderContent() {
             WHERE $contractorWhere AND $typeWhere $nonDraftWhere
             ORDER BY $orderExpr
         ");
+    }
+
+    $autoEditWorker = null;
+    if (isset($_GET['edit_id'])) {
+        $editId = (int)$_GET['edit_id'];
+        $singleWorker = enrolment_fetch_one($conn, "
+            SELECT
+                id,
+                " . (enrolment_column_exists($conn, 'workmen', 'work_order_no') ? 'work_order_no' : 'application_no AS work_order_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'project_name', 'project_name') . ",
+                " . enrolment_expr($conn, 'workmen', 'role_type', 'role_type') . ",
+                " . enrolment_expr($conn, 'workmen', 'aadhaar', 'aadhaar') . ",
+                " . enrolment_expr($conn, 'workmen', 'name', 'name') . ",
+                " . enrolment_expr($conn, 'workmen', 'father_name', 'father_name') . ",
+                " . enrolment_expr($conn, 'workmen', 'gender', 'gender') . ",
+                " . enrolment_expr($conn, 'workmen', 'dob', 'dob') . ",
+                " . enrolment_expr($conn, 'workmen', 'marital_status', 'marital_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'nationality', 'nationality') . ",
+                " . enrolment_expr($conn, 'workmen', 'present_address', 'present_address') . ",
+                " . enrolment_expr($conn, 'workmen', 'permanent_address', 'permanent_address') . ",
+                " . enrolment_expr($conn, 'workmen', 'state', 'state') . ",
+                " . enrolment_expr($conn, 'workmen', 'district', 'district') . ",
+                " . enrolment_expr($conn, 'workmen', 'pincode', 'pincode') . ",
+                " . enrolment_expr($conn, 'workmen', 'mobile', 'mobile') . ",
+                " . enrolment_expr($conn, 'workmen', 'whatsapp_no', 'whatsapp_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'department', 'department') . ",
+                " . enrolment_expr($conn, 'workmen', 'nature_of_work', 'nature_of_work') . ",
+                " . $skillCategoryExpr . ",
+                " . enrolment_expr($conn, 'workmen', 'blood_group', 'blood_group') . ",
+                " . enrolment_expr($conn, 'workmen', 'experience', 'experience') . ",
+                " . enrolment_expr($conn, 'workmen', 'region', 'region') . ",
+                " . enrolment_expr($conn, 'workmen', 'pwd_status', 'pwd_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'passport_no', 'passport_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'driving_licence_no', 'driving_licence_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'email', 'email') . ",
+                " . enrolment_expr($conn, 'workmen', 'contact_email', 'contact_email') . ",
+                " . enrolment_expr($conn, 'workmen', 'dcate', 'dcate') . ",
+                " . enrolment_expr($conn, 'workmen', 'certified_wage_rate', 'certified_wage_rate') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_language', 'safety_language') . ",
+                " . enrolment_expr($conn, 'workmen', 'work_order_source', 'work_order_source') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_fee_payment_option', 'safety_fee_payment_option') . ",
+                " . enrolment_expr($conn, 'workmen', 'executing_officer_code', 'executing_officer_code') . ",
+                " . enrolment_expr($conn, 'workmen', 'executing_officer_name', 'executing_officer_name') . ",
+                " . enrolment_expr($conn, 'workmen', 'execution_training_status', 'execution_training_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'execution_training_remarks', 'execution_training_remarks') . ",
+                " . enrolment_expr($conn, 'workmen', 'execution_training_reviewed_by', 'execution_training_reviewed_by', '0') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_enrollment_status', 'safety_enrollment_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_enrollment_remarks', 'safety_enrollment_remarks') . ",
+                " . enrolment_expr($conn, 'workmen', 'safety_enrollment_reviewed_by', 'safety_enrollment_reviewed_by') . ",
+                " . enrolment_expr($conn, 'workmen', 'uan_number', 'pf_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'esic_number', 'esi_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'photo', 'photo') . ",
+                " . enrolment_expr($conn, 'workmen', 'signature_doc', 'signature') . ",
+                " . enrolment_expr($conn, 'workmen', 'aadhaar_doc', 'aadhaar_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'education_doc', 'education_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'bank_doc', 'bank_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'gatepass_doc', 'gatepass_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'skill_cert_doc', 'skill_cert_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'medical_doc', 'medical_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'police_doc', 'police_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'insurance_doc', 'insurance_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'training_approval_doc', 'training_approval_doc') . ",
+                " . enrolment_expr($conn, 'workmen', 'education', 'education') . ",
+                " . $roleTypeExpr . ",
+                " . enrolment_expr($conn, 'workmen', 'training_status', 'safety_status') . ",
+                (
+                    SELECT tr.status
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_request_status,
+                (
+                    SELECT tr.batch_number
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_batch,
+                (
+                    SELECT tr.scheduled_date
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_date,
+                (
+                    SELECT COUNT(*)
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                      AND LOWER(COALESCE(tr.status, 'pending')) IN ('failed','fail','absent','passed')
+                      AND tr.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                ) AS training_attempts_30,
+                " . enrolment_expr($conn, 'workmen', 'status', 'gate_pass_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'worker_status', 'worker_status') . ",
+                " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
+                " . enrolment_expr($conn, 'workmen', 'is_blocked', 'is_blocked', '0') . ",
+                " . enrolment_expr($conn, 'workmen', 'blocked_source', 'blocked_source') . ",
+                " . enrolment_expr($conn, 'workmen', 'created_at', 'created_at') . "
+            FROM workmen
+            WHERE id = $editId AND $contractorWhere
+            LIMIT 1
+        ");
+        if ($singleWorker) {
+            if ($requestedType === 'retraining' && (int)($singleWorker['training_attempts_30'] ?? 0) >= 3) {
+                $attemptsError = "Maximum 3 training attempts are allowed within 30 days. Worker '" . htmlspecialchars($singleWorker['name']) . "' has already reached this limit and cannot be re-enrolled at this time.";
+            } else {
+                $singleWorker['uan_number'] = $singleWorker['pf_no'] ?? '';
+                $singleWorker['esic_number'] = $singleWorker['esi_no'] ?? '';
+                $singleWorker['bank_account'] = '';
+                $singleWorker['ifsc'] = '';
+                $singleWorker['signature_doc'] = $singleWorker['signature'] ?? '';
+                $singleWorker['pass_type'] = in_array(strtolower($singleWorker['role_type'] ?? ''), ['supervisor pass', 'supervisor'], true) ? 'Supervisor' : 'Workman';
+                $singleWorker['registration_date'] = !empty($singleWorker['created_at']) ? date('Y-m-d', strtotime($singleWorker['created_at'])) : '';
+                $autoEditWorker = $singleWorker;
+            }
+        }
     }
     ?>
     <style>
@@ -887,6 +1012,9 @@ function renderContent() {
             <?php foreach ($workers as $w):
               $bookingStatus = strtolower((string)($w['latest_training_request_status'] ?: ($w['safety_status'] ?? 'pending')));
               $safetyEnrollmentStatus = strtolower((string)($w['safety_enrollment_status'] ?? 'pending'));
+              if (strtolower((string)($w['latest_training_request_status'] ?? '')) === 'pending_safety') {
+                  $safetyEnrollmentStatus = 'pending';
+              }
               $bookingClass = in_array($bookingStatus, ['pass','passed','completed','training_passed','qualified'], true)
                   ? 'pass'
                   : (in_array($bookingStatus, ['fail','failed','absent','training_failed'], true) ? 'fail' : (in_array($bookingStatus, ['scheduled','contractor_confirmed'], true) ? 'scheduled' : 'pending'));
@@ -1022,9 +1150,15 @@ function renderContent() {
                   <button class="btn btn-sm btn-outline" title="Edit Worker" onclick="editWorker(<?= htmlspecialchars(json_encode($w)) ?>)">
                     <i class="fas fa-edit"></i>
                   </button>
-                  <button class="btn btn-sm btn-danger" title="Delete Worker" onclick="deleteWorker(<?= (int)$w['id'] ?>, '<?= htmlspecialchars($w['name'], ENT_QUOTES) ?>')">
-                    <i class="fas fa-trash"></i>
-                  </button>
+                  <?php if (($w['worker_status'] ?? 'active') === 'active'): ?>
+                    <button class="btn btn-sm btn-success" title="Deactivate Worker (Currently Active)" onclick="toggleWorkerStatus(<?= (int)$w['id'] ?>, 'inactive', '<?= htmlspecialchars($w['name'], ENT_QUOTES) ?>')">
+                      <i class="fas fa-toggle-on"></i>
+                    </button>
+                  <?php else: ?>
+                    <button class="btn btn-sm btn-danger" title="Activate Worker (Currently Inactive)" onclick="toggleWorkerStatus(<?= (int)$w['id'] ?>, 'active', '<?= htmlspecialchars($w['name'], ENT_QUOTES) ?>')">
+                      <i class="fas fa-toggle-off"></i>
+                    </button>
+                  <?php endif; ?>
                   <?php if(!empty($w['temp_id'])): ?>
                   <button class="btn btn-sm btn-primary" title="Download Temp ID Card" onclick="downloadTempCard(<?= htmlspecialchars(json_encode($w)) ?>)">
                     <i class="fas fa-download"></i> PDF
@@ -1054,12 +1188,29 @@ function renderContent() {
               listSec.parentNode.insertBefore(formSec, listSec);
             }
           });
+          <?php if ($autoEditWorker): ?>
+          document.addEventListener("DOMContentLoaded", function() {
+            const worker = <?= json_encode($autoEditWorker) ?>;
+            editWorker(worker);
+          });
+          <?php endif; ?>
         </script>
+        <?php if (!empty($attemptsError)): ?>
+          <div class="card-body" style="padding: 30px; text-align: center;">
+            <div style="font-size: 50px; color: #ef4444; margin-bottom: 20px;"><i class="fas fa-exclamation-triangle"></i></div>
+            <h3 style="margin-bottom: 15px; color: #1f2937; font-weight: 700;">Re-enrollment Blocked</h3>
+            <p style="color: #4b5563; font-size: 14px; max-width: 600px; margin: 0 auto 24px; line-height: 1.5;">
+              <?= htmlspecialchars($attemptsError) ?>
+            </p>
+            <a href="training_request.php" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px;"><i class="fas fa-arrow-left"></i> Back to Training Requests</a>
+          </div>
+        <?php else: ?>
         <form id="enrollForm" enctype="multipart/form-data">
           <input type="hidden" name="worker_id" id="workerEditId" value="">
           <input type="hidden" name="source" id="workerSource" value="MANUAL">
           <input type="hidden" name="work_order_source" id="workOrderSource" value="">
           <input type="hidden" name="contractor_id" value="<?= (int)$c_id ?>">
+          <input type="hidden" name="enrolment_type" value="<?= htmlspecialchars($requestedType) ?>">
           <div class="square-tabs">
             <button type="button" class="square-tab active" data-tab="basic">1. Basic Info</button>
             <button type="button" class="square-tab" data-tab="personal">2. Personal / Medical</button>
@@ -1356,8 +1507,8 @@ function renderContent() {
           <!-- Tab 6: Safety Fee Payment -->
           <div class="modal-tab-content hidden" id="tab-payment">
             <div class="training-booking-box" id="pwoPaymentOptionBox" style="margin-bottom:12px;display:none;">
-              <label class="choice-row active">
-                <input type="radio" name="safety_fee_payment_option" value="pay_now" checked>
+              <label class="choice-row">
+                <input type="radio" name="safety_fee_payment_option" value="pay_now">
                 <span>Pay Safety Fee Now</span>
               </label>
               <label class="choice-row">
@@ -1379,10 +1530,6 @@ function renderContent() {
               <label class="choice-row">
                 <input type="radio" name="training_booking_choice" value="book_now" checked>
                 <span>I need to book an appointment for Safety Training</span>
-              </label>
-              <label class="choice-row" id="trainingLaterChoiceRow">
-                <input type="radio" name="training_booking_choice" value="not_now">
-                <span id="trainingLaterChoiceText">I don't need to book now</span>
               </label>
             </div>
             <div id="trainingBookingForm" class="training-booking-form hidden">
@@ -1425,7 +1572,13 @@ function renderContent() {
                 </div>
               </div>
             </div>
-            <div class="alert alert-info" style="margin-top:12px;">
+            <div class="training-booking-box" style="margin-top: 12px;">
+              <label class="choice-row" id="trainingLaterChoiceRow">
+                <input type="radio" name="training_booking_choice" value="not_now">
+                <span id="trainingLaterChoiceText">I don't need to book now</span>
+              </label>
+            </div>
+            <div class="alert alert-info" id="trainingLaterNote" style="margin-top:12px;">
               Save Draft will not submit this entitlement for processing. Training can be booked later from the Book Safety Training menu.
             </div>
           </div>
@@ -1441,6 +1594,7 @@ function renderContent() {
             </div>
           </div>
         </form>
+        <?php endif; ?>
       </div>
     </div>
 
@@ -1510,7 +1664,7 @@ function renderContent() {
 
     <!-- Hidden Temporary ID Card Template (Standard CR80 Size) -->
     <div id="tempCardTemplate" style="position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none; z-index: -1;">
-      <div id="id-card-content" style="width: 3.375in; height: 2.125in; border: 1px solid #1e3a8a; border-radius: 8px; font-family: 'Arial', sans-serif; background:#fff; color:#000; overflow:hidden; position:relative; box-sizing: border-box;">
+      <div id="id-card-content" style="width: 3.375in; height: 2.125in; border: 1px solid #1e3a8a; border-radius: 8px; font-family: 'Arial', sans-serif; background:#fff; color:aqua; overflow:hidden; position:relative; box-sizing: border-box;">
         
         <!-- Blue Header Strip -->
         <div style="background: #1e3a8a; color: #fff; padding: 5px 10px; display: flex; align-items: center; justify-content: space-between;">
@@ -2525,7 +2679,7 @@ function renderContent() {
             certified_wage_rate: worker.certified_wage_rate,
             safety_language: worker.safety_language,
             work_order_source: worker.work_order_source,
-            safety_fee_payment_option: worker.safety_fee_payment_option || 'pay_now',
+            safety_fee_payment_option: worker.safety_fee_payment_option || '',
             blood_group: worker.blood_group,
             region: worker.region,
             pwd_status: worker.pwd_status,
@@ -2541,6 +2695,45 @@ function renderContent() {
             ,executing_officer_name: worker.executing_officer_name
             ,execution_training_reviewed_by: worker.execution_training_reviewed_by
           };
+
+          // Ensure Work Order No and Project Name exist as options in select boxes
+          const woSelect = document.getElementById('workOrderSelect');
+          if (woSelect && values.work_order_no) {
+            let hasOption = false;
+            for (let i = 0; i < woSelect.options.length; i++) {
+              if (String(woSelect.options[i].value).trim() === String(values.work_order_no).trim()) {
+                hasOption = true;
+                break;
+              }
+            }
+            if (!hasOption) {
+              const opt = document.createElement('option');
+              opt.value = values.work_order_no;
+              opt.textContent = (values.work_order_source ? '[' + values.work_order_source + '] ' : '') + values.work_order_no;
+              opt.setAttribute('data-project', values.project_name || '');
+              opt.setAttribute('data-project-no', values.project_name || values.work_order_no);
+              opt.setAttribute('data-department', values.department || '');
+              opt.setAttribute('data-source', values.work_order_source || '');
+              woSelect.appendChild(opt);
+            }
+          }
+
+          const projSelect = document.getElementById('projectWbsSelect');
+          if (projSelect && values.project_name) {
+            let hasOption = false;
+            for (let i = 0; i < projSelect.options.length; i++) {
+              if (String(projSelect.options[i].value).trim() === String(values.project_name).trim()) {
+                hasOption = true;
+                break;
+              }
+            }
+            if (!hasOption) {
+              const opt = document.createElement('option');
+              opt.value = values.project_name;
+              opt.textContent = values.project_name;
+              projSelect.appendChild(opt);
+            }
+          }
 
           Object.entries(values).forEach(([name, value]) => setFieldValue(name, value));
           executingOfficerNameInput?.setAttribute('readonly', 'readonly');
@@ -2639,24 +2832,26 @@ function renderContent() {
           activateTab(rejectedByEO ? 'docs' : 'basic');
         }
 
-        async function deleteWorker(workerId, workerName) {
-          const ok = confirm(`Delete worker "${workerName}"?`);
+        async function toggleWorkerStatus(workerId, targetStatus, workerName) {
+          const actionWord = targetStatus === 'active' ? 'activate' : 'deactivate';
+          const ok = confirm(`Are you sure you want to ${actionWord} worker "${workerName}"?`);
           if (!ok) return;
 
           try {
             const body = new FormData();
             body.append('worker_id', workerId);
+            body.append('status', targetStatus);
             const res = await fetch('../../api/delete_workman_4a.php', { method: 'POST', body });
             const text = await res.text();
             let result = {};
             try { result = text ? JSON.parse(text) : {}; } catch (e) { result = { success: false, message: text }; }
             if (result.success) {
-              notify('Deleted', result.message || 'Worker deleted successfully.', 'success').then(() => location.reload());
+              notify('Status Updated', result.message || 'Worker status updated successfully.', 'success').then(() => location.reload());
             } else {
-              notify('Error', result.message || `Delete failed. HTTP ${res.status}`, 'error');
+              notify('Error', result.message || `Update failed. HTTP ${res.status}`, 'error');
             }
           } catch (err) {
-            notify('Error', err.message || 'Delete failed.', 'error');
+            notify('Error', err.message || 'Status update failed.', 'error');
           }
         }
 
@@ -2704,6 +2899,12 @@ function renderContent() {
           const bookingBox = document.getElementById('trainingBookingForm');
           const isBookingNow = (!isPwo || canBookPwoTrainingInline() || isPwoPayLater()) && choice === 'book_now';
           bookingBox?.classList.toggle('hidden', !isBookingNow);
+          
+          const trainingLaterNote = document.getElementById('trainingLaterNote');
+          if (trainingLaterNote) {
+            trainingLaterNote.style.display = isBookingNow ? 'none' : 'block';
+          }
+          
           document.querySelectorAll('.choice-row').forEach(row => {
             const input = row.querySelector('[name="training_booking_choice"]');
             if (!input) return;
@@ -2783,7 +2984,7 @@ function renderContent() {
         }
 
         function selectedSafetyFeeOption() {
-          return form.querySelector('[name="safety_fee_payment_option"]:checked')?.value || 'pay_now';
+          return form.querySelector('[name="safety_fee_payment_option"]:checked')?.value || '';
         }
 
         function isPwoPayLater() {
@@ -2853,13 +3054,13 @@ function renderContent() {
             if (row) row.classList.toggle('active', Boolean(input.checked));
           });
           if (laterText) {
-            laterText.textContent = canBookPwoTrainingInline()
-              ? 'Book Safety Training later from the Book Safety Training menu'
-              : isPwoWorkOrder() && selectedSafetyFeeOption() === 'pay_now'
-              ? 'Pay Safety Fee first. Safety Training & Seat Booking will open after payment.'
-              : isPwoPayLater()
+            laterText.textContent = 'Book Safety Training later from the Book Safety Training menu';
+          }
+          const trainingLaterNote = document.getElementById('trainingLaterNote');
+          if (trainingLaterNote) {
+            trainingLaterNote.textContent = isPwoPayLater()
               ? 'Enrollment Complete. Please do safety payment for proceeding further.'
-              : 'Book Safety Training later from the Book Safety Training menu';
+              : 'Save Draft will not submit this entitlement for processing. Training can be booked later from the Book Safety Training menu.';
           }
           if (isPwo && laterInput && !canBookPwoTrainingInline() && !isPwoPayLater()) laterInput.checked = true;
           if (bookNowInput) {

@@ -314,7 +314,7 @@ function renderContent() {
               AND (w.training_valid_till IS NULL OR w.training_valid_till >= CURDATE())
           )
           AND NOT (
-              LOWER(COALESCE(tr.status, '')) IN ('scheduled','contractor_confirmed','passed')
+              LOWER(COALESCE(tr.status, '')) IN ('pending_eo','pending_safety','scheduled','contractor_confirmed','passed')
               AND LOWER(COALESCE(w.training_status, 'pending')) NOT IN ('training_failed','fail','failed','absent')
           )
         ORDER BY COALESCE(tr.requested_date, DATE(w.created_at), CURDATE()) ASC, w.id ASC

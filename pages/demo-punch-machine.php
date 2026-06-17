@@ -112,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <style>
         body { font-family: 'Inter', sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
         .machine-body { background: #1e293b; padding: 40px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); border: 2px solid #334155; width: 400px; text-align: center; }
-        .screen { background: #000; border-radius: 12px; padding: 20px; border: 4px solid #475569; margin-bottom: 25px; min-height: 100px; display: flex; flex-direction: column; justify-content: center; position: relative; overflow: hidden; }
+        .screen { background: aqua; border-radius: 12px; padding: 20px; border: 4px solid #475569; margin-bottom: 25px; min-height: 100px; display: flex; flex-direction: column; justify-content: center; position: relative; overflow: hidden; }
         .screen::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(rgba(255,255,255,0.1), transparent); pointer-events: none; }
         .status-text { font-family: monospace; font-size: 16px; color: #10b981; margin: 0; white-space: pre-wrap; word-break: break-all; }
         .status-error { color: #ef4444; }

@@ -90,82 +90,187 @@ function renderContent() {
     $emergencySeats = (int)$capacityInfo['emergency'];
     $regularCapacity = (int)$capacityInfo['regular'];
 ?>
-<div class="content-header schedule-header">
-  <div>
-    <h2 class="page-title"><i class="fas fa-calendar-alt"></i> Training Schedule</h2>
-    <p class="page-subtitle">Assign language-matching workers in enrolment-date order. The first available seats are auto-ticked.</p>
+<style>
+  /* ── Batch Info Unified Section ── */
+  .ts-batch-unified{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.04);overflow:hidden;margin-top:10px}
+  .ts-selector-inner{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#f8fafc}
+  .ts-selector-inner label{font-size:12px;font-weight:800;color:#475569;display:flex;flex-direction:column;gap:5px;flex:1;min-width:280px}
+  .ts-selector-inner select.form-control{height:40px;border:1px solid #cbd5e1;border-radius:8px;padding:0 12px;background:#fff;font-size:13px;font-weight:600;color:#1e293b;transition:.2s}
+  .ts-selector-inner select.form-control:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1);outline:none}
+
+  /* ── Batch Summary ── */
+  .ts-summary{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:0}
+  .ts-summary-card{padding:14px 16px;border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;transition:.2s;background:#fff}
+  .ts-summary-card:nth-child(4n){border-right:none}
+  .ts-summary-card:nth-child(n+5){border-bottom:none}
+  .ts-summary-card:hover{background:#f8fafc}
+  .ts-summary-card .ts-label{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+  .ts-summary-card .ts-value{font-size:15px;font-weight:800;color:#0f172a;line-height:1.2}
+  .ts-summary-card.ts-slots{background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)}
+  .ts-summary-card.ts-slots .ts-value{color:#1d4ed8;font-size:18px}
+  .ts-summary-card.ts-slots .ts-sub{font-size:11px;color:#475569;font-weight:600;margin-top:3px}
+
+  /* ── Selected Workers Panel ── */
+  .ts-selected-panel{background:#fff;border:2px solid #4f46e5;border-radius:12px;margin-bottom:16px;overflow:hidden;box-shadow:0 4px 14px rgba(79,70,229,.12);animation:fadeInDown .25s ease}
+  @keyframes fadeInDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+  .ts-selected-panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;background:linear-gradient(135deg,#4f46e5,#6366f1);color:#fff}
+  .ts-selected-panel-title{font-size:14px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .ts-selected-panel-count{background:rgba(255,255,255,.25);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:800}
+  .ts-selected-chips{display:flex;flex-wrap:wrap;gap:8px;padding:12px 18px 14px}
+  .ts-chip{display:inline-flex;align-items:center;gap:6px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;color:#3730a3;transition:.2s}
+  .ts-chip .ts-chip-remove{cursor:pointer;width:16px;height:16px;border-radius:50%;background:#c7d2fe;color:#3730a3;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;line-height:1;flex:0 0 auto;transition:.2s}
+  .ts-chip .ts-chip-remove:hover{background:#a5b4fc;color:#1e1b4b}
+  .ts-chip .ts-chip-token{background:#4f46e5;color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:800}
+
+  /* ── Workers Card ── */
+  .ts-workers-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .ts-card-header{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#f8fafc;flex-wrap:wrap}
+  .ts-card-header-left{display:flex;flex-direction:column;gap:4px}
+  .ts-card-title{font-size:16px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:8px}
+  .ts-card-title i{color:#4f46e5;font-size:15px}
+  .ts-card-desc{font-size:12px;color:#64748b;font-weight:500;max-width:600px;line-height:1.4}
+  .ts-card-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .ts-card-actions .btn{font-size:12px;padding:8px 14px;border-radius:8px;font-weight:700;display:inline-flex;align-items:center;gap:6px;transition:.2s;cursor:pointer;text-decoration:none}
+  .ts-btn-outline{background:#fff;border:1px solid #d1d5db;color:#374151}
+  .ts-btn-outline:hover{background:#f3f4f6;border-color:#9ca3af}
+  .ts-btn-finalize{background:linear-gradient(135deg,#4f46e5,#6366f1);border:none;color:#fff;padding:9px 20px!important;font-size:13px!important}
+  .ts-btn-finalize:hover{background:linear-gradient(135deg,#4338ca,#4f46e5);box-shadow:0 4px 14px rgba(79,70,229,.3)}
+
+  /* ── Table ── */
+  .ts-table-wrap{overflow-x:auto}
+  .ts-table{width:100%;border-collapse:collapse}
+  .ts-table thead{background:#f1f5f9}
+  .ts-table th{padding:11px 12px;font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.3px;text-align:left;border-bottom:2px solid #e2e8f0;white-space:nowrap}
+  .ts-table th.col-center,.ts-table td.col-center{text-align:center}
+  .ts-table td{padding:10px 12px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+  .ts-table tbody tr{transition:.15s}
+  .ts-table tbody tr:hover{background:#f8fafc}
+  .ts-table .waiting-row{background:#fffbeb}
+  .ts-table .waiting-row:hover{background:#fef9c3}
+  .ts-table .seat-disabled-row{opacity:.55;background:#f8fafc}
+  .ts-table .selected-row{background:#f0f0ff!important;border-left:3px solid #4f46e5}
+  .ts-table .worker-check,.ts-table .tick-all-check{width:18px;height:18px;cursor:pointer;accent-color:#4f46e5}
+  .ts-table .worker-name{font-weight:700;color:#0f172a}
+  .ts-table .worker-sub{font-size:11px;color:#64748b;margin-top:1px}
+  .ts-table .token-pill{display:inline-flex;min-width:58px;justify-content:center;padding:4px 10px;border-radius:999px;background:#eef2ff;color:#4338ca;font-weight:800;font-size:11px}
+  .ts-table .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800}
+  .ts-table .badge-info{background:#dbeafe;color:#1d4ed8}
+  .ts-table .badge-warning{background:#fef3c7;color:#92400e}
+  .ts-table .badge-gray{background:#f1f5f9;color:#64748b}
+  .ts-table .badge-danger{background:#fee2e2;color:#991b1b}
+  .ts-empty{text-align:center;padding:40px 20px!important;color:#94a3b8;font-size:14px}
+
+  @media(max-width:1000px){.ts-summary{grid-template-columns:repeat(2,minmax(140px,1fr))}}
+  @media(max-width:640px){.ts-summary{grid-template-columns:1fr}.ts-card-header{flex-direction:column;align-items:stretch}.ts-card-actions{justify-content:flex-end}.ts-card-actions .btn{flex:1;justify-content:center}}
+  @media print{.sidebar,.topbar,.ts-card-actions,.ts-selector-inner,.ts-selected-panel{display:none!important}.main-content{margin:0!important}.ts-batch-unified,.ts-workers-card{box-shadow:none!important;border:none!important}.ts-summary{grid-template-columns:repeat(4,1fr)}}
+</style>
+
+<!-- Unified Batch Info -->
+<div class="ts-batch-unified">
+  <form method="get" class="ts-selector-inner">
+    <label>Select Batch
+      <select class="form-control" name="batch_id" onchange="this.form.submit()">
+        <?php foreach ($batches as $item): ?>
+          <option value="<?= (int)$item['id'] ?>" <?= $batch && (int)$batch['id'] === (int)$item['id'] ? 'selected' : '' ?>>
+            <?= htmlspecialchars($item['batch_number']) ?> — <?= date('d M Y', strtotime($item['training_date'])) ?> — <?= htmlspecialchars($item['language_name']) ?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </label>
+  </form>
+
+<?php if (!$batch): ?>
+  <div class="alert alert-warning" style="margin:16px;">No batch found. Create a training batch first.</div>
+<?php else: ?>
+  <!-- Batch Summary -->
+  <div class="ts-summary">
+    <div class="ts-summary-card">
+      <div class="ts-label">Training Date</div>
+      <div class="ts-value"><?= date('d M Y', strtotime($batch['training_date'])) ?></div>
+    </div>
+    <div class="ts-summary-card">
+      <div class="ts-label">Language</div>
+      <div class="ts-value"><?= htmlspecialchars($batch['language_name']) ?></div>
+    </div>
+    <div class="ts-summary-card">
+      <div class="ts-label">Location</div>
+      <div class="ts-value"><?= htmlspecialchars($batch['venue_name']) ?></div>
+    </div>
+    <div class="ts-summary-card">
+      <div class="ts-label">Session</div>
+      <div class="ts-value"><?= htmlspecialchars($batch['session_name']) ?></div>
+    </div>
+    <div class="ts-summary-card">
+      <div class="ts-label">Time</div>
+      <div class="ts-value"><?= htmlspecialchars(substr((string)($batch['time_from'] ?: ($batch['session_name'] === 'AN' ? '14:00' : '09:00')), 0, 5)) ?> – <?= htmlspecialchars(substr((string)($batch['time_to'] ?: ''), 0, 5) ?: '-') ?></div>
+    </div>
+    <div class="ts-summary-card">
+      <div class="ts-label">Training Type</div>
+      <div class="ts-value"><?= htmlspecialchars($batch['training_type']) ?></div>
+    </div>
+    <div class="ts-summary-card">
+      <div class="ts-label">Trainer</div>
+      <div class="ts-value"><?= htmlspecialchars($batch['instructor_name'] ?: 'Not assigned') ?></div>
+    </div>
+    <div class="ts-summary-card ts-slots">
+      <div class="ts-label">Slots</div>
+      <div class="ts-value"><b id="selectedCount">0</b> / <?= $capacity ?></div>
+      <div class="ts-sub"><?= $regularCapacity ?> regular + <?= $emergencySeats ?> emergency</div>
+    </div>
   </div>
-  <div class="schedule-actions">
-    <a href="training_class_master.php" class="btn btn-outline"><i class="fas fa-calendar-plus"></i> Create Batch</a>
-    <a href="reschedule_batch.php?batch_id=<?= $batch ? $batch['id'] : '' ?>" class="btn btn-warning"><i class="fas fa-calendar-day"></i> Reschedule Batch</a>
-    <a href="training_requests.php" class="btn btn-outline"><i class="fas fa-user-plus"></i> Find/Add Requests</a>
-    <a href="reports.php" class="btn btn-outline"><i class="fas fa-list"></i> All Trainings</a>
+<?php endif; ?>
+</div>
+
+<?php if ($batch): ?>
+
+<!-- Workmen Selected For Training Panel -->
+<div class="ts-selected-panel" id="selectedWorkersPanel" style="display:none">
+  <div class="ts-selected-panel-header">
+    <div class="ts-selected-panel-title">
+      <i class="fas fa-user-check"></i>
+      Workmen Selected For Training
+      <span class="ts-selected-panel-count" id="selectedPanelCount">0</span>
+    </div>
+    <div style="font-size:12px;opacity:.85">Capacity: <?= (int)$capacity ?> slots | <span id="slotsRemaining"><?= (int)$capacity ?></span> remaining</div>
+  </div>
+  <div class="ts-selected-chips" id="selectedChipsContainer">
+    <!-- chips injected by JS -->
   </div>
 </div>
 
-<section class="card glass selector-card">
-  <div class="card-body">
-    <form method="get" class="batch-select-form">
-      <label>Batch No
-        <select class="form-control" name="batch_id" onchange="this.form.submit()">
-          <?php foreach ($batches as $item): ?>
-            <option value="<?= (int)$item['id'] ?>" <?= $batch && (int)$batch['id'] === (int)$item['id'] ? 'selected' : '' ?>>
-              <?= htmlspecialchars($item['batch_number']) ?> - <?= date('d M Y', strtotime($item['training_date'])) ?> - <?= htmlspecialchars($item['language_name']) ?>
-            </option>
-          <?php endforeach; ?>
-        </select>
-      </label>
-      <a class="btn btn-outline" href="training_batch_report.php<?= $batch ? '?batch_id=' . (int)$batch['id'] : '' ?>"><i class="fas fa-file-lines"></i> Batch Report</a>
-    </form>
-  </div>
-</section>
-
-<?php if (!$batch): ?>
-  <div class="alert alert-warning">No batch found. Create a training batch first.</div>
-<?php else: ?>
-<section class="batch-summary">
-  <div class="summary-card"><span>Training Dt</span><strong><?= date('d M Y', strtotime($batch['training_date'])) ?></strong></div>
-  <div class="summary-card"><span>Language</span><strong><?= htmlspecialchars($batch['language_name']) ?></strong></div>
-  <div class="summary-card"><span>Location</span><strong><?= htmlspecialchars($batch['venue_name']) ?></strong></div>
-  <div class="summary-card"><span>Session</span><strong><?= htmlspecialchars($batch['session_name']) ?></strong></div>
-  <div class="summary-card"><span>Time</span><strong><?= htmlspecialchars(substr((string)($batch['time_from'] ?: ($batch['session_name'] === 'AN' ? '14:00' : '09:00')), 0, 5)) ?> - <?= htmlspecialchars(substr((string)($batch['time_to'] ?: ''), 0, 5) ?: '-') ?></strong></div>
-  <div class="summary-card"><span>Training Type</span><strong><?= htmlspecialchars($batch['training_type']) ?></strong></div>
-  <div class="summary-card"><span>Trainer</span><strong><?= htmlspecialchars($batch['instructor_name'] ?: 'Not assigned') ?></strong></div>
-  <div class="summary-card capacity"><span>Slots</span><strong><b id="selectedCount">0</b> / <?= $capacity ?></strong><small><?= $regularCapacity ?> regular + <?= $emergencySeats ?> emergency</small></div>
-</section>
-
-
-
+<!-- Workers Table -->
 <form method="post" id="scheduleForm">
   <input type="hidden" name="batch_id" value="<?= (int)$batch['id'] ?>">
   <input type="hidden" name="force_request_id" value="<?= (int)$forceRequestId ?>">
-  <section class="card glass workers-card">
-    <div class="card-header schedule-table-head">
-      <div>
-        <div class="card-title"><i class="fas fa-users"></i> Assign Batch Workers</div>
-        <p>Only <?= htmlspecialchars($batch['language_name']) ?> language workers are shown, sorted by enrolment date. The first <?= $capacity ?> rows are auto-ticked; selecting row <?= $capacity + 1 ?> without unticking another row is blocked.</p>
+  <div class="ts-workers-card">
+    <div class="ts-card-header">
+      <div class="ts-card-header-left">
+        <div class="ts-card-title"><i class="fas fa-users-cog"></i> Assign Batch Workers</div>
+        <div class="ts-card-desc">Only <?= htmlspecialchars($batch['language_name']) ?> language workers shown. First <?= $capacity ?> seats auto-ticked.</div>
       </div>
-      <div class="table-actions">
-        <button type="button" class="btn btn-sm btn-outline" onclick="exportScheduleCsv()"><i class="fas fa-file-excel"></i> XL</button>
-        <button type="submit" class="btn btn-sm btn-outline" name="schedule_mode" value="draft"><i class="fas fa-file"></i> Save Draft</button>
-        <button type="submit" class="btn btn-sm btn-primary" name="schedule_mode" value="schedule"><i class="fas fa-check"></i> Schedule</button>
+      <div class="ts-card-actions">
+        <a href="reschedule_batch.php?batch_id=<?= (int)$batch['id'] ?>" class="btn ts-btn-outline"><i class="fas fa-calendar-day"></i> Reschedule Batch</a>
+        <a href="training_batch_report.php?batch_id=<?= (int)$batch['id'] ?>" class="btn ts-btn-outline"><i class="fas fa-file-lines"></i> Batch Report</a>
+        <button type="submit" class="btn ts-btn-finalize" name="schedule_mode" value="schedule"><i class="fas fa-check-double"></i> Finalize Batch</button>
+        <button type="button" class="btn ts-btn-outline" onclick="exportScheduleCsv()"><i class="fas fa-file-excel"></i> XL</button>
+        <a href="reports.php" class="btn ts-btn-outline"><i class="fas fa-chart-bar"></i> All Trainings</a>
       </div>
     </div>
-    <div class="card-body" style="padding:0">
-      <table class="data-table schedule-table" id="scheduleTable">
+    <div class="ts-table-wrap">
+      <table class="ts-table" id="scheduleTable">
         <thead>
           <tr>
-            <th>Tick</th>
-            <th>S.No</th>
+            <th class="col-center"><input type="checkbox" class="tick-all-check" id="tickAllCheck" title="Select / Deselect All"></th>
+            <th class="col-center">S.No</th>
             <th>Enrolment Dt</th>
             <th>Aadhaar</th>
             <th>Name</th>
             <th>Contractor Code</th>
             <th>Contractor Name</th>
             <th>Language</th>
-            <th>Token</th>
-            <th>Attempt</th>
-            <th>Status</th>
+            <th class="col-center">Token</th>
+            <th class="col-center">Attempt</th>
+            <th class="col-center">Status</th>
           </tr>
         </thead>
         <tbody>
@@ -178,7 +283,7 @@ function renderContent() {
             $seatBadge = $seatLabel === 'Emergency' ? 'badge-warning' : ($autoChecked ? 'badge-info' : 'badge-gray');
           ?>
           <tr class="<?= $idx >= $capacity && !$autoChecked ? 'waiting-row' : '' ?>">
-            <td>
+            <td class="col-center">
               <input
                 type="checkbox"
                 class="worker-check"
@@ -190,76 +295,112 @@ function renderContent() {
                 <?= $isBlocked ? 'disabled' : '' ?>
               >
             </td>
-            <td><?= $idx + 1 ?></td>
+            <td class="col-center"><?= $idx + 1 ?></td>
             <td><?= !empty($worker['enrolment_date']) ? date('d M Y', strtotime($worker['enrolment_date'])) : (!empty($worker['requested_date']) ? date('d M Y', strtotime($worker['requested_date'])) : date('d M Y', strtotime($worker['request_created_at']))) ?></td>
             <td><?= htmlspecialchars($worker['aadhaar'] ?? '') ?></td>
-            <td><strong><?= htmlspecialchars($worker['name'] ?? '') ?></strong><div class="muted"><?= htmlspecialchars($worker['temp_id'] ?? '') ?></div></td>
+            <td><span class="worker-name"><?= htmlspecialchars($worker['name'] ?? '') ?></span><div class="worker-sub"><?= htmlspecialchars($worker['temp_id'] ?? '') ?></div></td>
             <td><?= htmlspecialchars($worker['contractor_code'] ?? '') ?></td>
             <td><?= htmlspecialchars($worker['contractor_name'] ?? '') ?></td>
             <td><?= htmlspecialchars($worker['safety_language'] ?? $batch['language_name']) ?></td>
-            <td><span class="token-pill" id="token_<?= (int)$worker['training_request_id'] ?>"><?= htmlspecialchars($tokenPreview) ?></span></td>
-            <td>
+            <td class="col-center"><span class="token-pill" id="token_<?= (int)$worker['training_request_id'] ?>"><?= htmlspecialchars($tokenPreview) ?></span></td>
+            <td class="col-center">
               <?php if ($isBlocked): ?>
                 <span class="badge badge-danger">Max Attempt</span>
               <?php else: ?>
                 <?= (int)$worker['attempt_no'] ?>
               <?php endif; ?>
             </td>
-            <td><span class="badge <?= $seatBadge ?> row-state"><?= $seatLabel ?></span></td>
+            <td class="col-center"><span class="badge <?= $seatBadge ?> row-state"><?= $seatLabel ?></span></td>
           </tr>
           <?php endforeach; ?>
           <?php if (empty($workers)): ?>
-            <tr><td colspan="11" style="text-align:center;padding:34px;color:var(--text-muted)">No eligible <?= htmlspecialchars($batch['language_name']) ?> language workers found for scheduling.</td></tr>
+            <tr><td colspan="11" class="ts-empty"><i class="fas fa-inbox" style="font-size:24px;display:block;margin-bottom:8px;color:#cbd5e1"></i>No eligible <?= htmlspecialchars($batch['language_name']) ?> language workers found for scheduling.</td></tr>
           <?php endif; ?>
         </tbody>
       </table>
     </div>
-  </section>
+  </div>
 </form>
-<?php endif; ?>
 
-<style>
-  .schedule-header{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-bottom:16px}
-  .schedule-actions,.table-actions{display:flex;gap:8px;flex-wrap:wrap}
-  .selector-card{margin-bottom:14px}
-  .batch-select-form{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-  .batch-select-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:800;color:#475569;min-width:320px;flex:1}
-  .form-control{height:38px;border:1px solid #cbd5e1;border-radius:8px;padding:0 10px;background:#fff}
-  .batch-summary{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;margin-bottom:16px}
-  .summary-card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;min-height:70px}
-  .summary-card span{display:block;font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:6px}
-  .summary-card strong{font-size:14px;color:#111827;line-height:1.25}
-  .summary-card.capacity{border-color:#bfdbfe;background:#eff6ff}
-  .summary-card.capacity strong{color:#1d4ed8}
-  .summary-card.capacity small{display:block;margin-top:4px;color:#475569;font-size:11px;font-weight:700}
-  .reschedule-card{margin-bottom:16px;border-color:#fde68a}
-  .reschedule-card .card-header{background:#fffbeb}
-  .reschedule-form{display:grid;grid-template-columns:repeat(3,minmax(170px,1fr));gap:12px;align-items:end}
-  .reschedule-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:800;color:#475569}
-  .reschedule-actions{display:flex;justify-content:flex-end}
-  .schedule-table-head{align-items:flex-start}
-  .schedule-table-head p{margin:4px 0 0;font-size:12px;color:#64748b}
-  .workers-card{overflow:hidden}
-  .muted{font-size:11px;color:#64748b;margin-top:2px}
-  .token-pill{display:inline-flex;min-width:58px;justify-content:center;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#334155;font-weight:800;font-size:11px}
-  .waiting-row{background:#fffaf0}
-  .seat-disabled-row{opacity:.62;background:#f8fafc}
-  .worker-check{width:18px;height:18px;cursor:pointer}
-  @media(max-width:1000px){.batch-summary{grid-template-columns:repeat(2,minmax(160px,1fr))}.schedule-header{flex-direction:column;align-items:stretch}.reschedule-form{grid-template-columns:repeat(2,minmax(170px,1fr))}}
-  @media(max-width:640px){.batch-summary{grid-template-columns:1fr}.batch-select-form label{min-width:0}.schedule-actions .btn,.table-actions .btn{flex:1}.reschedule-form{grid-template-columns:1fr}.reschedule-actions .btn{width:100%}}
-  @media print{.sidebar,.topbar,.selector-card,.schedule-actions,.table-actions{display:none!important}.main-content{margin:0!important}.card{box-shadow:none!important}.batch-summary{grid-template-columns:repeat(4,1fr)}}
-</style>
 <script>
   const scheduleCapacity = <?= (int)$capacity ?>;
   const regularCapacity = <?= (int)$regularCapacity ?>;
+
+  // Build a worker info map from table data for chip labels
+  const workerInfoMap = {};
+  document.querySelectorAll('#scheduleTable tbody tr').forEach(row => {
+    const cb = row.querySelector('.worker-check');
+    if (!cb) return;
+    const cells = row.querySelectorAll('td');
+    // cells: [0]=checkbox, [1]=sno, [2]=enroldt, [3]=aadhaar, [4]=name, [5]=code, [6]=cname, [7]=lang, [8]=token, [9]=attempt, [10]=status
+    workerInfoMap[cb.value] = {
+      name: cells[4]?.querySelector('.worker-name')?.textContent?.trim() || cells[4]?.textContent?.trim() || 'Worker',
+      aadhaar: cells[3]?.textContent?.trim() || '',
+      requestId: cb.value
+    };
+  });
+
+  function refreshSelectedPanel() {
+    const allChecks = Array.from(document.querySelectorAll('.worker-check'));
+    const checked = allChecks.filter(i => i.checked);
+    const panel = document.getElementById('selectedWorkersPanel');
+    const chipsContainer = document.getElementById('selectedChipsContainer');
+    const panelCount = document.getElementById('selectedPanelCount');
+    const slotsRemaining = document.getElementById('slotsRemaining');
+
+    if (panel) panel.style.display = checked.length > 0 ? '' : 'none';
+    if (panelCount) panelCount.textContent = checked.length;
+    if (slotsRemaining) slotsRemaining.textContent = Math.max(0, scheduleCapacity - checked.length);
+
+    if (chipsContainer) {
+      chipsContainer.innerHTML = '';
+      checked.forEach((input, idx) => {
+        const info = workerInfoMap[input.value] || {};
+        const tokenNum = String(idx + 1).padStart(6, '0');
+        const chip = document.createElement('div');
+        chip.className = 'ts-chip';
+        chip.innerHTML = `
+          <span class="ts-chip-token">${tokenNum}</span>
+          <span>${(info.name || 'Worker').substring(0,22)}</span>
+          <span class="ts-chip-remove" title="Remove" data-req="${input.value}">✕</span>`;
+        chipsContainer.appendChild(chip);
+      });
+      // Attach remove listeners
+      chipsContainer.querySelectorAll('.ts-chip-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const cb = document.querySelector(`.worker-check[value="${btn.dataset.req}"]`);
+          if (cb && !cb.disabled) { cb.checked = false; refreshSelection(); }
+        });
+      });
+    }
+
+    // Move selected rows visually to top by reordering tbody
+    const tbody = document.querySelector('#scheduleTable tbody');
+    if (tbody) {
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      const selectedRows = rows.filter(r => r.querySelector('.worker-check')?.checked);
+      const otherRows   = rows.filter(r => !r.querySelector('.worker-check')?.checked);
+      selectedRows.forEach(r => { r.classList.add('selected-row'); tbody.prepend(r); });
+      otherRows.forEach(r => { r.classList.remove('selected-row'); tbody.appendChild(r); });
+    }
+  }
+
   function refreshSelection() {
-    const checks = Array.from(document.querySelectorAll('.worker-check'));
-    const checked = checks.filter(input => input.checked);
-    const selectedCount = document.getElementById('selectedCount');
-    if (selectedCount) selectedCount.textContent = checked.length;
+    const checks = Array.from(document.querySelectorAll('.worker-check:not([disabled])'));
+    const allChecks = Array.from(document.querySelectorAll('.worker-check'));
+    const checked = allChecks.filter(i => i.checked);
+    const el = document.getElementById('selectedCount');
+    if (el) el.textContent = checked.length;
     const isFull = checked.length >= scheduleCapacity;
 
-    checks.forEach(input => {
+    // Update tick-all checkbox state
+    const tickAll = document.getElementById('tickAllCheck');
+    if (tickAll) {
+      tickAll.checked = checks.length > 0 && checks.every(i => i.checked);
+      tickAll.indeterminate = checks.some(i => i.checked) && !tickAll.checked;
+    }
+
+    allChecks.forEach(input => {
       const row = input.closest('tr');
       const state = row ? row.querySelector('.row-state') : null;
       if (row) row.classList.toggle('seat-disabled-row', isFull && !input.checked && !input.dataset.maxAttempt);
@@ -279,7 +420,27 @@ function renderContent() {
         state.className = 'badge row-state badge-warning';
       }
     });
+    refreshSelectedPanel();
   }
+
+  // Tick All handler
+  document.getElementById('tickAllCheck')?.addEventListener('change', function() {
+    const checks = Array.from(document.querySelectorAll('.worker-check:not([disabled])'));
+    if (this.checked) {
+      let count = 0;
+      checks.forEach(input => {
+        if (count < scheduleCapacity) {
+          input.checked = true;
+          count++;
+        } else {
+          input.checked = false;
+        }
+      });
+    } else {
+      checks.forEach(input => input.checked = false);
+    }
+    refreshSelection();
+  });
 
   document.addEventListener('change', event => {
     if (!event.target.classList.contains('worker-check')) return;
@@ -305,7 +466,7 @@ function renderContent() {
     }
     if (selected === 0) {
       event.preventDefault();
-      alert('Please select workers to schedule.');
+      alert('Please select workers to finalize batch.');
     }
   });
 
@@ -325,8 +486,10 @@ function renderContent() {
   }
 
   refreshSelection();
+  refreshSelectedPanel();
 </script>
 <?php
+endif;
 }
 
 renderLayout('Training Schedule', 'renderContent', $role, $name);

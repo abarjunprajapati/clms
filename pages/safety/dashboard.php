@@ -134,14 +134,16 @@ function safetyDashEnsureControlSchema($conn) {
             [$language, ($idx + 1) * 10]
         );
     }
-    foreach ([['PWO', 100.00], ['PO', 0.00], ['SO', 0.00]] as $fee) {
-        db_execute(
-            $conn,
-            "INSERT IGNORE INTO training_fee_masters (fee_source, amount, status, created_at, updated_at)
-             VALUES (?, ?, 'active', NOW(), NOW())",
-            'sd',
-            [$fee[0], $fee[1]]
-        );
+    if (db_count($conn, "SELECT COUNT(*) FROM training_fee_masters") === 0) {
+        foreach ([['PWO', 100.00], ['PO', 0.00], ['SO', 0.00]] as $fee) {
+            db_execute(
+                $conn,
+                "INSERT IGNORE INTO training_fee_masters (fee_source, amount, status, created_at, updated_at)
+                 VALUES (?, ?, 'active', NOW(), NOW())",
+                'sd',
+                [$fee[0], $fee[1]]
+            );
+        }
     }
 }
 
@@ -841,50 +843,7 @@ function renderContent() {
       </div>
     </div>
 
-    <div class="grid grid-2" style="margin-top:20px;gap:20px">
-      <div class="card glass">
-        <div class="card-header">
-          <div class="card-title"><i class="fas fa-clock"></i> Upcoming / Open Sessions</div>
-          <a href="training_schedule.php" class="btn btn-sm btn-primary">Plan Session</a>
-        </div>
-        <div class="card-body" style="padding:0">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Date & Time</th>
-                <th>Venue</th>
-                <th>Workers</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($upcomingSessions as $session):
-                $assigned = (int)($session['assigned_count'] ?? 0);
-                $done = (int)($session['result_done_count'] ?? 0);
-              ?>
-              <tr>
-                <td>
-                  <strong><?= !empty($session['session_date']) ? date('d M Y', strtotime($session['session_date'])) : '-' ?></strong>
-                  <div style="font-size:11px;color:var(--text-muted)"><?= !empty($session['session_time']) ? date('H:i', strtotime($session['session_time'])) : '-' ?></div>
-                </td>
-                <td>
-                  <strong><?= htmlspecialchars($session['location'] ?? 'Training Venue') ?></strong>
-                  <div style="font-size:11px;color:var(--text-muted)"><?= htmlspecialchars(ucfirst((string)($session['training_type'] ?? 'induction'))) ?></div>
-                </td>
-                <td><?= $done ?> / <?= $assigned ?> results</td>
-                <td><span class="badge badge-info"><?= htmlspecialchars(ucfirst((string)($session['session_status'] ?? 'open'))) ?></span></td>
-                <td><a href="manage_session.php?id=<?= (int)$session['id'] ?>" class="btn btn-sm btn-outline">Manage</a></td>
-              </tr>
-              <?php endforeach; ?>
-              <?php if (empty($upcomingSessions)): ?>
-              <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">No open sessions.</td></tr>
-              <?php endif; ?>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+    <div style="margin-top:20px;">
       <div class="card glass">
         <div class="card-header">
           <div class="card-title"><i class="fas fa-envelope-open-text"></i> Requests Needing Action</div>

@@ -1080,6 +1080,22 @@ worker4a_ensure_schema($conn);
     $workman_row['aadhaar_doc'] = $uploaded_files['aadhaar_doc'];
     $workman_row['signature_doc'] = $uploaded_files['signature'];
     $workman_row['training_approval_doc'] = $uploaded_files['training_approval_doc'];
+    $isRetraining = (strtolower(trim((string)($data['enrolment_type'] ?? ''))) === 'retraining')
+        || ($existing_workman && in_array(strtolower(trim((string)($existing_workman['training_status'] ?? ''))), ['failed', 'fail', 'training_failed', 'absent'], true));
+    $isWorkOrderChanged = $existing_workman && (trim((string)($existing_workman['work_order_no'] ?? '')) !== trim((string)($data['work_order_no'] ?? '')));
+    if ($action !== 'draft' && $isRetraining && $editing_worker_id > 0) {
+        $attempts = (int)db_single($conn,
+            "SELECT COUNT(*) AS cnt FROM training_requests
+             WHERE workman_id = ?
+               AND LOWER(COALESCE(status,'pending')) IN ('failed','fail','absent','passed')
+               AND created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)",
+            'i', [$editing_worker_id]
+        )['cnt'];
+
+        if ($attempts >= 3) {
+            throw new Exception("Maximum 3 training attempts are allowed within 30 days. This worker cannot be re-enrolled yet.");
+        }
+    }
     if ($action !== 'draft') {
         $hasAttachment = !empty($uploaded_files['training_approval_doc']);
         $nonPwoBookedNow = !$isPwoWorkOrder && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
@@ -1102,6 +1118,21 @@ worker4a_ensure_schema($conn);
         $workman_row['safety_enrollment_remarks'] = null;
         $workman_row['safety_enrollment_reviewed_by'] = null;
         $workman_row['safety_enrollment_reviewed_at'] = null;
+
+        // Bypassing EO approval for retraining worker who is already EO approved and hasn't changed their Work Order
+        if ($isRetraining && !$isWorkOrderChanged) {
+            $eoWasApproved = (strtolower((string)($existing_workman['execution_training_status'] ?? '')) === 'approved'
+                           && (int)($existing_workman['execution_training_reviewed_by'] ?? 0) > 0) || !empty($existing_workman['temp_id']);
+            if ($eoWasApproved) {
+                $workman_row['execution_training_status'] = 'approved';
+                $workman_row['execution_training_reviewed_by'] = !empty($existing_workman['execution_training_reviewed_by']) ? $existing_workman['execution_training_reviewed_by'] : 1;
+                $workman_row['execution_training_reviewed_at'] = !empty($existing_workman['execution_training_reviewed_at']) ? $existing_workman['execution_training_reviewed_at'] : date('Y-m-d H:i:s');
+            }
+        }
+    }
+
+    if ($isRetraining) {
+        $workman_row['training_status'] = 'training_pending';
     }
 
     if ($existing_workman) {
@@ -1137,9 +1168,12 @@ worker4a_ensure_schema($conn);
                 throw new Exception('Payment link generate nahi ho pa raha. Safety Fee Payment settings check karein.');
             }
         }
-        if ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment)) {
+        if ($isRetraining || ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment))) {
             $trainingData = $data;
-            $trainingData['initial_training_status'] = 'pending_eo';
+            $eoApproved = ((strtolower((string)($existing_workman['execution_training_status'] ?? '')) === 'approved'
+                       && (int)($existing_workman['execution_training_reviewed_by'] ?? 0) > 0) || !empty($existing_workman['temp_id']) || $isRetraining)
+                       && !$isWorkOrderChanged;
+            $trainingData['initial_training_status'] = ($isRetraining && $eoApproved) ? 'welfare_pending' : 'pending_eo';
             worker4a_ensure_training_request($conn, $workman_id_new, $contractor_id, (int)($_SESSION['user_id'] ?? 0), $trainingData);
         }
     } else {

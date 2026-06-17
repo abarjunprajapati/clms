@@ -41,7 +41,7 @@ if ($resultTable && mysqli_num_rows($resultTable) > 0) {
         exit;
     }
     if ($firstDate && $days > 30) {
-        header("Location: ../../pages/safety/retraining.php?error=" . urlencode("Retest Period Expired"));
+        header("Location: ../../pages/safety/retraining.php?error=" . urlencode("Time period exceeded 30 days"));
         exit;
     }
 }
