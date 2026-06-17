@@ -564,7 +564,12 @@ $demoDetails = clms_demo_payment_details($conn, $request);
     <div class="modal-form">
       <div style="text-align:center;">
         <div class="qr-box" id="qrBox">
-          <?php if (!empty($demoDetails['qr_url'])): ?>
+          <?php if (!empty($demoDetails['upi_id'])): 
+            $upiString = "upi://pay?pa=" . urlencode($demoDetails['upi_id']) . "&pn=" . urlencode($demoDetails['merchant_name'] ?: 'CLMS') . "&am=" . number_format((float)$request['total_amount'], 2, '.', '') . "&cu=INR";
+            $dynamicQrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=" . urlencode($upiString);
+          ?>
+            <img src="<?= htmlspecialchars($dynamicQrUrl) ?>" alt="Payment QR">
+          <?php elseif (!empty($demoDetails['qr_url'])): ?>
             <img src="<?= htmlspecialchars($demoDetails['qr_url']) ?>" alt="Payment QR">
           <?php else: ?>
             <div class="qr-placeholder" title="Payment QR"></div>
@@ -721,9 +726,15 @@ function openDemoPay(details) {
   if (!modal) return;
   if (details.merchant_name) document.getElementById('demoMerchant').textContent = details.merchant_name;
   if (details.upi_id) document.getElementById('demoUpi').textContent = details.upi_id;
-  if (details.qr_url) {
+  
+  if (details.upi_id && details.amount) {
+    const upiUri = `upi://pay?pa=${encodeURIComponent(details.upi_id)}&pn=${encodeURIComponent(details.merchant_name || 'CLMS')}&am=${Number(details.amount).toFixed(2)}&cu=INR`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUri)}`;
+    document.getElementById('qrBox').innerHTML = `<img src="${qrCodeUrl}" alt="Payment QR">`;
+  } else if (details.qr_url) {
     document.getElementById('qrBox').innerHTML = `<img src="${details.qr_url}" alt="Payment QR">`;
   }
+  
   modal.classList.add('is-open');
   modal.setAttribute('aria-hidden', 'false');
 }

@@ -96,6 +96,12 @@ function clms_training_ensure_schema($conn) {
                         AND LOWER(COALESCE(tr.status, '')) IN ('scheduled', 'contractor_confirmed', 'passed', 'failed', 'absent')
                   )
               )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM training_requests tr_active
+                  WHERE tr_active.workman_id = w.id
+                    AND LOWER(COALESCE(tr_active.status, '')) IN ('pending_eo', 'pending_safety', 'welfare_pending', 'pending')
+              )
         ");
     }
 }

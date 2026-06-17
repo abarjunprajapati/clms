@@ -39,15 +39,23 @@ try {
         throw new Exception('Worker not found or not allowed to delete.');
     }
 
-    db_execute($conn, "DELETE FROM documents WHERE workman_id = ?", 'i', [$worker_id]);
-    $deleted = db_execute($conn, "DELETE FROM workmen WHERE $where", $types, $params);
-    if (!$deleted) {
-        throw new Exception('Unable to delete worker.');
+    $status = $_POST['status'] ?? '';
+    if ($status !== 'active' && $status !== 'inactive') {
+        $current = db_single($conn, "SELECT worker_status FROM workmen WHERE $where LIMIT 1", $types, $params);
+        $status = ($current && $current['worker_status'] === 'active') ? 'inactive' : 'active';
+    }
+
+    $updateTypes = 's' . $types;
+    $updateParams = array_merge([$status], $params);
+
+    $updated = db_execute($conn, "UPDATE workmen SET worker_status = ? WHERE $where", $updateTypes, $updateParams);
+    if (!$updated) {
+        throw new Exception('Unable to update worker status.');
     }
 
     echo json_encode([
         'success' => true,
-        'message' => 'Worker deleted successfully.'
+        'message' => 'Worker status updated successfully to ' . $status . '.'
     ]);
 } catch (Throwable $e) {
     error_log('[DELETE_WORKMAN_4A] ' . $e->getMessage());

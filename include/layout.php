@@ -45,7 +45,7 @@ function renderLayout($page_title, $content_callback, $role, $name) {
     })();
   </script>
   <title><?= $page_title ?> – CLMS</title>
-  <link rel="stylesheet" href="../../css/style.css" />
+  <link rel="stylesheet" href="<?= BASE_URL ?>css/style.css?v=<?= filemtime(dirname(__DIR__) . '/css/style.css') ?>" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   
@@ -536,6 +536,7 @@ function renderSidebar($role) {
             
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Monitoring</div>';
             echo '<a href="'.$cp.'enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Enrolment for Entry Pass</a>';
+            echo '<a href="'.$cp.'enrolment-4a.php?type=retraining" class="sidebar-item"><i class="fas fa-arrows-rotate"></i> Re-Training Workmen</a>';
             echo '<a href="'.$cp.'training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
             echo '<a href="'.$cp.'book_safety_training.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Book Safety Training</a>';
             echo '<a href="'.$cp.'payment.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment</a>';
@@ -553,6 +554,7 @@ function renderSidebar($role) {
         case 'safety':
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Training Engine</div>';
             echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
+            echo '<a href="upcoming_sessions.php" class="sidebar-item"><i class="fas fa-clock"></i> Upcoming Sessions</a>';
             echo '<a href="enrollment_approval.php" class="sidebar-item"><i class="fas fa-user-check"></i> Enrollment Approval Inbox</a>';
             echo '<a href="training_class_master.php" class="sidebar-item"><i class="fas fa-calendar-plus"></i> Training Class Master</a>';
             echo '<a href="training_requests.php" class="sidebar-item"><i class="fas fa-envelope-open-text"></i> Training Requests</a>';

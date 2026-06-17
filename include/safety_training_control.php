@@ -418,7 +418,23 @@ function clms_safety_generate_batch_number($conn, $trainingDate) {
 }
 
 function clms_safety_generate_training_token($trainingDate, $counter) {
+    global $conn;
     $year = date('Y', strtotime($trainingDate ?: 'now'));
+    
+    // Generate a random 5-digit token and ensure uniqueness
+    for ($i = 0; $i < 100; $i++) {
+        $randNo = rand(10000, 99999);
+        $token = 'TRN' . $year . $randNo;
+        
+        if ($conn) {
+            $check = db_single($conn, "SELECT COUNT(*) AS c FROM training_batch_workers WHERE training_token = ?", 's', array($token));
+            if ((int)($check['c'] ?? 0) === 0) {
+                return $token;
+            }
+        } else {
+            return $token;
+        }
+    }
     return 'TRN' . $year . str_pad((string)max(1, (int)$counter), 5, '0', STR_PAD_LEFT);
 }
 
@@ -503,6 +519,14 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
                 AND used.batch_id <> ?
                 AND used.ticked = 1
                 AND LOWER(COALESCE(used.status, 'scheduled')) IN ('draft', 'scheduled', 'completed')
+          )
+          AND (
+              tbw.id IS NOT NULL
+              OR tr.id = (
+                  SELECT MAX(tr2.id)
+                  FROM training_requests tr2
+                  WHERE tr2.workman_id = tr.workman_id
+              )
           )
         ORDER BY COALESCE(DATE($workerCreatedExpr), tr.requested_date, DATE(tr.created_at)) ASC, tr.id ASC
     ", 'siissssi', array($batch['training_date'], $batchId, (int)$forceRequestId, $batch['language_name'], $batch['language_name'], $batch['language_name'], $batch['language_name'], $batchId));

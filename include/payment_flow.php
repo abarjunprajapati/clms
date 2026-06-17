@@ -134,6 +134,37 @@ function clms_ensure_payment_flow($conn) {
         clms_payment_ensure_column($conn, 'system_settings', $column, $definition);
     }
 
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS payment_qr_history (
+        id INT NOT NULL AUTO_INCREMENT,
+        qr_path VARCHAR(255) NOT NULL,
+        uploaded_by INT NULL,
+        uploaded_at DATETIME NULL,
+        is_active TINYINT(1) DEFAULT 0,
+        PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    foreach ([
+        'qr_path' => 'VARCHAR(255) NOT NULL',
+        'uploaded_by' => 'INT NULL',
+        'uploaded_at' => 'DATETIME NULL',
+        'is_active' => 'TINYINT(1) DEFAULT 0',
+    ] as $column => $definition) {
+        clms_payment_ensure_column($conn, 'payment_qr_history', $column, $definition);
+    }
+
+    // Backfill current QR to history if history is empty
+    $historyCount = db_count($conn, "SELECT COUNT(*) FROM payment_qr_history");
+    if ($historyCount == 0) {
+        $currentQr = db_single($conn, "SELECT setting_value FROM system_settings WHERE setting_key = 'payment_demo_qr_path' LIMIT 1");
+        if ($currentQr && !empty($currentQr['setting_value'])) {
+            db_execute(
+                $conn,
+                "INSERT INTO payment_qr_history (qr_path, uploaded_by, uploaded_at, is_active) VALUES (?, 0, NOW(), 1)",
+                's',
+                [$currentQr['setting_value']]
+            );
+        }
+    }
+
     $defaults = [
         ['training_fee_per_worker', '1000', 'payment', 'Safety fee per worker'],
         ['training_payment_gst_percent', '0', 'payment', 'GST percentage for safety induction fee'],
@@ -156,22 +187,7 @@ function clms_ensure_payment_flow($conn) {
             $setting
         );
     }
-    db_execute(
-        $conn,
-        "UPDATE system_settings
-         SET setting_value = '1000', updated_at = NOW()
-         WHERE setting_key = 'training_fee_per_worker'
-           AND (setting_value IS NULL OR setting_value = '' OR setting_value = '500')
-           AND (updated_by IS NULL OR updated_by = 0)"
-    );
-    db_execute(
-        $conn,
-        "UPDATE system_settings
-         SET setting_value = '0', updated_at = NOW()
-         WHERE setting_key = 'training_payment_gst_percent'
-           AND (setting_value IS NULL OR setting_value = '' OR setting_value = '18')
-           AND (updated_by IS NULL OR updated_by = 0)"
-    );
+    // Removed legacy development auto-reset queries that override user-saved amounts.
 
     if (clms_payment_table_exists($conn, 'workmen')) {
         foreach ([
@@ -225,28 +241,70 @@ function clms_set_payment_setting($conn, $key, $value, $userId = 0) {
     clms_ensure_payment_flow($conn);
     $exists = db_count($conn, "SELECT COUNT(*) FROM system_settings WHERE setting_key = ?", 's', [$key]);
     if ($exists > 0) {
-        db_execute(
-            $conn,
-            "UPDATE system_settings
-             SET setting_value = ?, setting_group = 'payment', description = 'Payment setting', updated_by = ?, updated_at = NOW()
-             WHERE setting_key = ?",
-            'sis',
-            [(string)$value, (int)$userId, $key]
-        );
+        $ok = false;
+        try {
+            $ok = db_execute(
+                $conn,
+                "UPDATE system_settings
+                 SET setting_value = ?, setting_group = 'payment', description = 'Payment setting', updated_by = ?, updated_at = NOW()
+                 WHERE setting_key = ?",
+                'sis',
+                [(string)$value, (int)$userId, $key]
+            );
+        } catch (Throwable $t) {
+            $ok = false;
+        }
+        
+        if (!$ok) {
+            db_execute(
+                $conn,
+                "UPDATE system_settings
+                 SET setting_value = ?, setting_group = 'payment', description = 'Payment setting', updated_at = NOW()
+                 WHERE setting_key = ?",
+                'ss',
+                [(string)$value, $key]
+            );
+        }
         return;
     }
 
-    db_execute(
-        $conn,
-        "INSERT INTO system_settings (setting_key, setting_value, setting_group, description, updated_by, updated_at)
-         VALUES (?, ?, 'payment', 'Payment setting', ?, NOW())",
-        'ssi',
-        [$key, (string)$value, (int)$userId]
-    );
+    $ok = false;
+    try {
+        $ok = db_execute(
+            $conn,
+            "INSERT INTO system_settings (setting_key, setting_value, setting_group, description, updated_by, updated_at)
+             VALUES (?, ?, 'payment', 'Payment setting', ?, NOW())",
+            'ssi',
+            [$key, (string)$value, (int)$userId]
+        );
+    } catch (Throwable $t) {
+        $ok = false;
+    }
+    
+    if (!$ok) {
+        db_execute(
+            $conn,
+            "INSERT INTO system_settings (setting_key, setting_value, setting_group, description, updated_at)
+             VALUES (?, ?, 'payment', 'Payment setting', NOW())",
+            'sss',
+            [$key, (string)$value, 'payment']
+        );
+    }
 }
 
 function clms_demo_payment_details($conn, $request = null) {
-    $qrPath = trim((string)clms_payment_setting($conn, 'payment_demo_qr_path', ''));
+    $qrPath = '';
+    // Primary source: active QR from history table
+    $activeQr = db_single($conn, "SELECT qr_path FROM payment_qr_history WHERE is_active = 1 LIMIT 1");
+    if ($activeQr && !empty($activeQr['qr_path'])) {
+        $qrPath = trim((string)$activeQr['qr_path']);
+    }
+    
+    // Fallback: system settings
+    if ($qrPath === '') {
+        $qrPath = trim((string)clms_payment_setting($conn, 'payment_demo_qr_path', ''));
+    }
+
     $qrUrl = '';
     if ($qrPath !== '') {
         $qrUrl = preg_match('/^https?:\/\//i', $qrPath)
@@ -265,6 +323,43 @@ function clms_demo_payment_details($conn, $request = null) {
         'qr_url' => $qrUrl,
         'amount' => $request ? (float)$request['total_amount'] : 0,
     ];
+}
+
+function clms_get_qr_history($conn) {
+    clms_ensure_payment_flow($conn);
+    return db_fetch_all(
+        $conn,
+        "SELECT h.*, u.name AS uploader_name
+         FROM payment_qr_history h
+         LEFT JOIN users u ON u.id = h.uploaded_by
+         ORDER BY h.uploaded_at DESC, h.id DESC"
+    );
+}
+
+function clms_activate_qr($conn, $qrId, $userId) {
+    clms_ensure_payment_flow($conn);
+    $qr = db_single($conn, "SELECT * FROM payment_qr_history WHERE id = ? LIMIT 1", 'i', [(int)$qrId]);
+    if (!$qr) return false;
+    
+    db_execute($conn, "UPDATE payment_qr_history SET is_active = 0");
+    db_execute($conn, "UPDATE payment_qr_history SET is_active = 1 WHERE id = ?", 'i', [(int)$qrId]);
+    
+    clms_set_payment_setting($conn, 'payment_demo_qr_path', $qr['qr_path'], $userId);
+    return true;
+}
+
+function clms_delete_qr_history($conn, $qrId) {
+    clms_ensure_payment_flow($conn);
+    $qr = db_single($conn, "SELECT * FROM payment_qr_history WHERE id = ? LIMIT 1", 'i', [(int)$qrId]);
+    if (!$qr) return false;
+    if ($qr['is_active']) return false;
+    
+    $localPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, ltrim($qr['qr_path'], '/'));
+    if (is_file($localPath)) {
+        @unlink($localPath);
+    }
+    
+    return db_execute($conn, "DELETE FROM payment_qr_history WHERE id = ?", 'i', [(int)$qrId]);
 }
 
 function clms_payment_base_url() {

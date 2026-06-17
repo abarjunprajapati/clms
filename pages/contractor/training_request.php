@@ -275,83 +275,7 @@ function renderContent() {
       </div>
     </div>
 
-    <div style="display:grid; grid-template-columns:400px 1fr; gap:20px; align-items:start;">
-
-      <!-- Training Request Form -->
-      <div class="card glass">
-        <div class="card-header"><div class="card-title"><i class="fas fa-paper-plane"></i> Submit Training Request</div></div>
-        <div class="card-body">
-          <?php if (empty($eligible_workers)): ?>
-          <div class="empty-state" style="padding:30px 0; text-align:center; color:var(--text-muted);">
-            <i class="fas fa-graduation-cap" style="font-size:40px;opacity:.2;display:block;margin-bottom:12px;"></i>
-            <p style="font-weight:600;">No eligible workers</p>
-            <p style="font-size:13px;">Training requests become available after Executing Officer approval. Auto-created requests are shown in the Training Request Status panel.</p>
-          </div>
-          <?php else: ?>
-          <form id="trainingForm">
-            <div class="form-group">
-              <label class="form-label required">Select Worker(s)</label>
-              <select class="form-control" name="workman_ids[]" id="workerSelect" multiple size="<?= min(6, count($eligible_workers)) ?>" required>
-                <?php foreach ($eligible_workers as $w): ?>
-                <option value="<?= $w['id'] ?>">
-                  <?= htmlspecialchars($w['name']) ?> — <?= htmlspecialchars($w['trade'] ?? '') ?>
-                  <?= $w['temp_id'] ? '(' . htmlspecialchars($w['temp_id']) . ')' : '' ?>
-                </option>
-                <?php endforeach; ?>
-              </select>
-              <small style="font-size:11px;color:var(--text-muted);margin-top:3px;display:block;">Hold Ctrl/Cmd to select multiple</small>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">Training Type</label>
-              <select class="form-control" name="training_type" required>
-                <option value="">Select Training Type</option>
-                <?php foreach ($trainingTypes as $type): ?>
-                <option value="<?= htmlspecialchars($type['type_name']) ?>"><?= htmlspecialchars($type['type_name']) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">Preferred Shift</label>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:4px;">
-                <label class="shift-option" id="shift-morning">
-                  <input type="radio" name="preferred_shift" value="morning" required checked>
-                  <div class="shift-card">
-                    <i class="fas fa-sun" style="color:#f59e0b;"></i>
-                    <strong>Morning</strong>
-                    <small>8 AM – 12 PM</small>
-                  </div>
-                </label>
-                <label class="shift-option" id="shift-evening">
-                  <input type="radio" name="preferred_shift" value="evening">
-                  <div class="shift-card">
-                    <i class="fas fa-moon" style="color:#818cf8;"></i>
-                    <strong>Evening</strong>
-                    <small>2 PM – 6 PM</small>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">Preferred Date</label>
-              <input type="date" class="form-control" name="preferred_date" min="<?= date('Y-m-d', strtotime('+1 day')) ?>">
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">Remarks</label>
-              <textarea class="form-control" name="remarks" rows="2" placeholder="Any special instructions..."></textarea>
-            </div>
-
-            <button type="submit" class="btn btn-primary" style="width:100%;" id="submitTrainingBtn">
-              <i class="fas fa-paper-plane"></i> Submit Training Request
-            </button>
-          </form>
-          <?php endif; ?>
-        </div>
-      </div>
-
+    <div>
       <!-- Training Requests History -->
       <div class="card glass">
         <div class="card-header">
@@ -538,9 +462,9 @@ function renderContent() {
                   <button class="btn btn-sm btn-danger" style="padding: 2px 5px; font-size:10px;" onclick="cancelTrainingRequest(<?= $r['id'] ?>)">Cancel Request</button>
                 </div>
                 <?php elseif ($viewStatus === 'failed' || $viewStatus === 'rejected' || $viewStatus === 'correction_required'): ?>
-                <button type="button" class="btn btn-sm btn-outline" onclick="reRequestTraining(<?= (int)$r['workman_id'] ?>)" title="Submit a fresh training request if this worker is eligible">
+                <a class="btn btn-sm btn-outline" href="enrolment-4a.php?type=retraining&edit_id=<?= (int)$r['workman_id'] ?>" title="Open worker enrolment to re-submit">
                   <i class="fas fa-redo"></i> Re-request
-                </button>
+                </a>
                 <?php else: ?>
                 <span style="font-size:11px; color:var(--text-muted);">—</span>
                 <?php endif; ?>

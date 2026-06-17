@@ -46,6 +46,14 @@ try {
         }
         $savedQrPath = 'uploads/payment_qr/' . $filename;
         clms_set_payment_setting($conn, 'payment_demo_qr_path', $savedQrPath, $userId);
+        
+        db_execute($conn, "UPDATE payment_qr_history SET is_active = 0");
+        db_execute(
+            $conn,
+            "INSERT INTO payment_qr_history (qr_path, uploaded_by, uploaded_at, is_active) VALUES (?, ?, NOW(), 1)",
+            'si',
+            [$savedQrPath, $userId]
+        );
     }
 
     $demo = clms_demo_payment_details($conn);
