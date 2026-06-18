@@ -154,7 +154,7 @@ function renderContent() {
                   $retestBlocked = ($attempts >= 3) || ($firstTrainingDate && $daysSinceFirst > 30);
                   $blockMessage = $attempts >= 3
                       ? 'Maximum Attempt Reached'
-                      : (($firstTrainingDate && $daysSinceFirst > 30) ? 'Retest period exceeded 30 days. Please apply for training again.' : '');
+                      : (($firstTrainingDate && $daysSinceFirst > 30) ? 'Time period exceeded 30 days' : '');
                 ?>
                 <?php if ($retestBlocked): ?>
                   <span class="badge badge-danger"><?= htmlspecialchars($blockMessage) ?></span>

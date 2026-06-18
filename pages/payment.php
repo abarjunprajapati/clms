@@ -80,6 +80,9 @@ $demoDetails = clms_demo_payment_details($conn, $request);
   <title>Safety Training Payment</title>
   <link rel="stylesheet" href="../css/style.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <style>
     .payment-page { max-width: 1040px; margin: 0 auto; padding: 28px 16px; }
     .payment-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
@@ -555,10 +558,54 @@ $demoDetails = clms_demo_payment_details($conn, $request);
 </div>
 
 <?php if ($request): ?>
+
+<!-- Razorpay Payment Modal -->
+<div class="pay-modal" id="rzpLoadingModal" aria-hidden="true">
+  <div class="pay-modal-dialog" style="max-width:420px;">
+    <div class="pay-modal-head" style="background: linear-gradient(135deg,#072654,#3395ff); border-bottom:none;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:36px;height:36px;background:rgba(255,255,255,.15);border-radius:8px;display:grid;place-items:center;">
+          <i class="fas fa-shield-halved" style="color:#fff;font-size:16px;"></i>
+        </div>
+        <div>
+          <h2 style="color:#fff;font-size:16px;margin:0;">Razorpay Secure Payment</h2>
+          <div style="color:rgba(255,255,255,.7);font-size:12px;">Safety Training Induction Fee</div>
+        </div>
+      </div>
+      <button type="button" onclick="closeRzpModal()" aria-label="Close" style="background:rgba(255,255,255,.15);border:none;color:#fff;"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-form" style="text-align:center;gap:18px;">
+      <div style="padding:10px 0 6px;">
+        <div style="font-size:13px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">Amount Payable</div>
+        <div style="font-size:36px;font-weight:900;color:#072654;margin:6px 0;">
+          â‚¹<?= number_format((float)$request['total_amount'], 2) ?>
+        </div>
+        <div style="font-size:13px;color:#64748b;">Ref: <strong><?= htmlspecialchars($request['payment_ref']) ?></strong> &nbsp;|&nbsp; <?= (int)$request['worker_count'] ?> worker(s)</div>
+      </div>
+      <div style="background:#f0f9ff;border:1.5px solid #bae6fd;border-radius:10px;padding:14px 16px;text-align:left;">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#0369a1;font-weight:700;margin-bottom:8px;">
+          <i class="fas fa-lock"></i> Secure Payment via Razorpay
+        </div>
+        <div style="font-size:12px;color:#64748b;line-height:1.6;">You will be redirected to Razorpay's secure checkout. Pay using UPI, Net Banking, Credit/Debit Card or Wallet.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div style="padding:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:11px;color:#64748b;text-align:center;"><i class="fas fa-mobile-alt" style="color:#3395ff;margin-bottom:3px;display:block;font-size:16px;"></i>UPI</div>
+        <div style="padding:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:11px;color:#64748b;text-align:center;"><i class="fas fa-credit-card" style="color:#3395ff;margin-bottom:3px;display:block;font-size:16px;"></i>Card</div>
+        <div style="padding:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:11px;color:#64748b;text-align:center;"><i class="fas fa-university" style="color:#3395ff;margin-bottom:3px;display:block;font-size:16px;"></i>Net Banking</div>
+      </div>
+      <button class="btn btn-primary btn-full" id="rzpOpenCheckoutBtn" type="button" style="background:linear-gradient(135deg,#072654,#3395ff);border:none;padding:14px;font-size:15px;">
+        <i class="fas fa-arrow-right"></i> Proceed to Pay â‚¹<?= number_format((float)$request['total_amount'], 2) ?>
+      </button>
+      <div style="font-size:11px;color:#94a3b8;text-align:center;"><i class="fas fa-shield-halved"></i> 256-bit SSL Encrypted &nbsp;|&nbsp; Powered by Razorpay</div>
+    </div>
+  </div>
+</div>
+
+<!-- Demo QR Fallback Modal -->
 <div class="pay-modal" id="demoPayModal" aria-hidden="true">
   <div class="pay-modal-dialog">
     <div class="pay-modal-head">
-      <h2>Demo QR Payment</h2>
+      <h2>Safety Fee Payment</h2>
       <button type="button" onclick="closeDemoPay()" aria-label="Close">&times;</button>
     </div>
     <div class="modal-form">
@@ -579,14 +626,13 @@ $demoDetails = clms_demo_payment_details($conn, $request);
         <div style="font-size:13px;color:#64748b;margin-top:4px;">UPI: <code id="demoUpi"><?= htmlspecialchars($demoDetails['upi_id']) ?></code></div>
         <div style="font-size:22px;font-weight:900;color:#0f766e;margin-top:8px;">Rs. <?= number_format((float)$request['total_amount'], 2) ?></div>
       </div>
-      <label>Payment Reference / UTR</label>
-      <input type="text" id="payerReference" placeholder="Example: DEMO123456 / UTR number" required>
-      <label>Note</label>
+      <label>Payment Reference / UTR <span style="color:red;">*</span></label>
+      <input type="text" id="payerReference" placeholder="Enter UTR / payment ref" required>
+      <label>Payment Note</label>
       <textarea id="payerNote" rows="2" placeholder="Optional payment note"></textarea>
       <button class="btn btn-primary btn-full" id="submitDemoPaymentBtn" type="button" onclick="submitDemoPayment()">
-        <i class="fas fa-check"></i> Confirm Safety Fee Payment
+        <i class="fas fa-check"></i> Payment Successful
       </button>
-      <div style="font-size:12px;color:#64748b;text-align:center;">After payment success, continue with Safety Training & Seat Booking.</div>
     </div>
   </div>
 </div>
@@ -688,6 +734,10 @@ updateSelectedTotal();
 
 const payBtn = document.getElementById('payBtn');
 const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
 if (payBtn) {
   payBtn.addEventListener('click', async () => {
     payBtn.disabled = true;
@@ -709,6 +759,37 @@ if (payBtn) {
         openDemoPay(result.demo || {});
         return;
       }
+      if (result.provider === 'razorpay') {
+        const options = {
+          key: result.key_id,
+          amount: Math.round(result.amount * 100),
+          currency: result.currency || "INR",
+          name: result.contractor_name || "BVM Ngo",
+          description: "Safety Training Payment",
+          order_id: result.gateway_order_id,
+          handler: function (response) {
+            verifyRazorpayPayment(
+              result.token, 
+              response.razorpay_payment_id, 
+              response.razorpay_order_id, 
+              response.razorpay_signature
+            );
+          },
+          prefill: {
+            name: result.contractor_name || "",
+            email: result.contractor_email || "",
+            contact: result.contractor_phone || ""
+          },
+          theme: {
+            color: "#0d6efd"
+          }
+        };
+        const rzp = new Razorpay(options);
+        rzp.open();
+        payBtn.disabled = false;
+        payBtn.innerHTML = '<i class="fas fa-credit-card"></i> Pay Online';
+        return;
+      }
       alert('Gateway order created. Provider checkout wiring will be enabled for the selected provider.');
     } catch (err) {
       alert('Unable to start payment.');
@@ -719,6 +800,60 @@ if (payBtn) {
 }
 if (autoPay && payBtn && !payBtn.disabled) {
   window.setTimeout(() => payBtn.click(), 250);
+}
+
+async function verifyRazorpayPayment(token, paymentId, orderId, signature) {
+  const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+if (payBtn) {
+    payBtn.disabled = true;
+    payBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying Payment';
+  }
+  try {
+    const res = await fetch('../api/payments/verify_razorpay_payment.php', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        token: token,
+        razorpay_payment_id: paymentId,
+        razorpay_order_id: orderId,
+        razorpay_signature: signature
+      })
+    });
+    const result = await res.json();
+    if (result.success) {
+      alert(result.message || 'Payment successful.');
+      window.location.href = <?= json_encode($bookingUrl) ?>;
+    } else {
+      alert(result.message || 'Payment verification failed.');
+      const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+if (payBtn) {
+        payBtn.disabled = false;
+        payBtn.innerHTML = '<i class="fas fa-credit-card"></i> Pay Online';
+      }
+    }
+  } catch (err) {
+    alert('Payment verification connection failed.');
+    const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+const payBtn = document.getElementById('payBtn');
+const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+if (payBtn) {
+      payBtn.disabled = false;
+      payBtn.innerHTML = '<i class="fas fa-credit-card"></i> Pay Online';
+    }
+  }
 }
 
 function openDemoPay(details) {

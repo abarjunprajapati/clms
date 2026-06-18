@@ -1,5 +1,15 @@
 <?php
-
+/**
+ * Migration: Fix skill_category Data Truncation Error
+ * 
+ * Error: "Data truncated for column 'skill_category' at row 1"
+ * 
+ * Root Causes:
+ * 1. skill column defined as VARCHAR(100) instead of VARCHAR(150)
+ * 2. skill_category column defined as VARCHAR(100) instead of VARCHAR(150)
+ * 3. education and trade columns also too small
+ * 4. normalize_skill_category() function not truncating data to safe limits
+ */
 
 ob_start();
 session_start();

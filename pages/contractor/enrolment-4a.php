@@ -1507,8 +1507,8 @@ function renderContent() {
           <!-- Tab 6: Safety Fee Payment -->
           <div class="modal-tab-content hidden" id="tab-payment">
             <div class="training-booking-box" id="pwoPaymentOptionBox" style="margin-bottom:12px;display:none;">
-              <label class="choice-row active">
-                <input type="radio" name="safety_fee_payment_option" value="pay_now" checked>
+              <label class="choice-row">
+                <input type="radio" name="safety_fee_payment_option" value="pay_now">
                 <span>Pay Safety Fee Now</span>
               </label>
               <label class="choice-row">
@@ -1530,10 +1530,6 @@ function renderContent() {
               <label class="choice-row">
                 <input type="radio" name="training_booking_choice" value="book_now" checked>
                 <span>I need to book an appointment for Safety Training</span>
-              </label>
-              <label class="choice-row" id="trainingLaterChoiceRow">
-                <input type="radio" name="training_booking_choice" value="not_now">
-                <span id="trainingLaterChoiceText">I don't need to book now</span>
               </label>
             </div>
             <div id="trainingBookingForm" class="training-booking-form hidden">
@@ -1576,7 +1572,13 @@ function renderContent() {
                 </div>
               </div>
             </div>
-            <div class="alert alert-info" style="margin-top:12px;">
+            <div class="training-booking-box" style="margin-top: 12px;">
+              <label class="choice-row" id="trainingLaterChoiceRow">
+                <input type="radio" name="training_booking_choice" value="not_now">
+                <span id="trainingLaterChoiceText">I don't need to book now</span>
+              </label>
+            </div>
+            <div class="alert alert-info" id="trainingLaterNote" style="margin-top:12px;">
               Save Draft will not submit this entitlement for processing. Training can be booked later from the Book Safety Training menu.
             </div>
           </div>
@@ -1662,7 +1664,7 @@ function renderContent() {
 
     <!-- Hidden Temporary ID Card Template (Standard CR80 Size) -->
     <div id="tempCardTemplate" style="position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none; z-index: -1;">
-      <div id="id-card-content" style="width: 3.375in; height: 2.125in; border: 1px solid #1e3a8a; border-radius: 8px; font-family: 'Arial', sans-serif; background:#fff; color:#000; overflow:hidden; position:relative; box-sizing: border-box;">
+      <div id="id-card-content" style="width: 3.375in; height: 2.125in; border: 1px solid #1e3a8a; border-radius: 8px; font-family: 'Arial', sans-serif; background:#fff; color:aqua; overflow:hidden; position:relative; box-sizing: border-box;">
         
         <!-- Blue Header Strip -->
         <div style="background: #1e3a8a; color: #fff; padding: 5px 10px; display: flex; align-items: center; justify-content: space-between;">
@@ -2677,7 +2679,7 @@ function renderContent() {
             certified_wage_rate: worker.certified_wage_rate,
             safety_language: worker.safety_language,
             work_order_source: worker.work_order_source,
-            safety_fee_payment_option: worker.safety_fee_payment_option || 'pay_now',
+            safety_fee_payment_option: worker.safety_fee_payment_option || '',
             blood_group: worker.blood_group,
             region: worker.region,
             pwd_status: worker.pwd_status,
@@ -2897,6 +2899,12 @@ function renderContent() {
           const bookingBox = document.getElementById('trainingBookingForm');
           const isBookingNow = (!isPwo || canBookPwoTrainingInline() || isPwoPayLater()) && choice === 'book_now';
           bookingBox?.classList.toggle('hidden', !isBookingNow);
+          
+          const trainingLaterNote = document.getElementById('trainingLaterNote');
+          if (trainingLaterNote) {
+            trainingLaterNote.style.display = isBookingNow ? 'none' : 'block';
+          }
+          
           document.querySelectorAll('.choice-row').forEach(row => {
             const input = row.querySelector('[name="training_booking_choice"]');
             if (!input) return;
@@ -2976,7 +2984,7 @@ function renderContent() {
         }
 
         function selectedSafetyFeeOption() {
-          return form.querySelector('[name="safety_fee_payment_option"]:checked')?.value || 'pay_now';
+          return form.querySelector('[name="safety_fee_payment_option"]:checked')?.value || '';
         }
 
         function isPwoPayLater() {
@@ -3046,13 +3054,13 @@ function renderContent() {
             if (row) row.classList.toggle('active', Boolean(input.checked));
           });
           if (laterText) {
-            laterText.textContent = canBookPwoTrainingInline()
-              ? 'Book Safety Training later from the Book Safety Training menu'
-              : isPwoWorkOrder() && selectedSafetyFeeOption() === 'pay_now'
-              ? 'Pay Safety Fee first. Safety Training & Seat Booking will open after payment.'
-              : isPwoPayLater()
+            laterText.textContent = 'Book Safety Training later from the Book Safety Training menu';
+          }
+          const trainingLaterNote = document.getElementById('trainingLaterNote');
+          if (trainingLaterNote) {
+            trainingLaterNote.textContent = isPwoPayLater()
               ? 'Enrollment Complete. Please do safety payment for proceeding further.'
-              : 'Book Safety Training later from the Book Safety Training menu';
+              : 'Save Draft will not submit this entitlement for processing. Training can be booked later from the Book Safety Training menu.';
           }
           if (isPwo && laterInput && !canBookPwoTrainingInline() && !isPwoPayLater()) laterInput.checked = true;
           if (bookNowInput) {

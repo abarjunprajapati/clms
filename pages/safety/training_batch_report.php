@@ -133,14 +133,14 @@ function renderContent() {
     padding: 0 !important;
   }
   .report-head {
-    border: 1px solid #000 !important;
+    border: 1px solid aqua !important;
     background: #fff !important;
     margin-bottom: 20px !important;
     padding: 12px !important;
     border-radius: 4px !important;
   }
   .report-head h3 {
-    color: #000 !important;
+    color: aqua !important;
     margin: 0 0 10px 0 !important;
     font-size: 16px !important;
   }
@@ -161,7 +161,7 @@ function renderContent() {
   }
   .report-meta-card strong {
     font-size: 11px !important;
-    color: #000 !important;
+    color: aqua !important;
   }
   .report-meta-card small {
     font-size: 8px !important;
@@ -173,10 +173,10 @@ function renderContent() {
     margin-top: 15px !important;
   }
   .report-table th, .report-table td {
-    border: 1px solid #000 !important;
+    border: 1px solid aqua !important;
     padding: 6px 8px !important;
     font-size: 10px !important;
-    color: #000 !important;
+    color: aqua !important;
     text-align: left !important;
   }
   .report-table th {

@@ -134,14 +134,16 @@ function safetyDashEnsureControlSchema($conn) {
             [$language, ($idx + 1) * 10]
         );
     }
-    foreach ([['PWO', 100.00], ['PO', 0.00], ['SO', 0.00]] as $fee) {
-        db_execute(
-            $conn,
-            "INSERT IGNORE INTO training_fee_masters (fee_source, amount, status, created_at, updated_at)
-             VALUES (?, ?, 'active', NOW(), NOW())",
-            'sd',
-            [$fee[0], $fee[1]]
-        );
+    if (db_count($conn, "SELECT COUNT(*) FROM training_fee_masters") === 0) {
+        foreach ([['PWO', 100.00], ['PO', 0.00], ['SO', 0.00]] as $fee) {
+            db_execute(
+                $conn,
+                "INSERT IGNORE INTO training_fee_masters (fee_source, amount, status, created_at, updated_at)
+                 VALUES (?, ?, 'active', NOW(), NOW())",
+                'sd',
+                [$fee[0], $fee[1]]
+            );
+        }
     }
 }
 

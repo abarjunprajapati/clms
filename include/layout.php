@@ -557,7 +557,7 @@ function renderSidebar($role) {
             echo '<a href="upcoming_sessions.php" class="sidebar-item"><i class="fas fa-clock"></i> Upcoming Sessions</a>';
             echo '<a href="enrollment_approval.php" class="sidebar-item"><i class="fas fa-user-check"></i> Enrollment Approval Inbox</a>';
             echo '<a href="training_class_master.php" class="sidebar-item"><i class="fas fa-calendar-plus"></i> Training Class Master</a>';
-            echo '<a href="training_requests.php" class="sidebar-item"><i class="fas fa-envelope-open-text"></i> Training Requests</a>';
+            // echo '<a href="training_requests.php" class="sidebar-item"><i class="fas fa-envelope-open-text"></i> Training Requests</a>';
             echo '<a href="training_schedule.php" class="sidebar-item"><i class="fas fa-calendar-alt"></i> Training Schedule</a>';
             echo '<a href="conduct_results.php" class="sidebar-item"><i class="fas fa-users-cog"></i> Conduct & Results</a>';
             echo '<a href="training_status.php" class="sidebar-item"><i class="fas fa-user-check"></i> Training Status</a>';

@@ -157,7 +157,7 @@ $qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=" . url
         }
         @media print {
             body { background: white; padding: 0; align-items: flex-start; }
-            .pass-card { box-shadow: none; border-color: #000; }
+            .pass-card { box-shadow: none; border-color: aqua; }
             .actions { display: none; }
         }
     </style>

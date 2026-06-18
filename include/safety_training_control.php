@@ -127,8 +127,7 @@ function clms_safety_ensure_master_tables($conn) {
         created_by INT NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL,
-        PRIMARY KEY (id),
-        UNIQUE KEY uq_training_fee_source (fee_source)
+        PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
 
@@ -230,8 +229,7 @@ function clms_safety_ensure_control_schema($conn) {
         created_by INT NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL,
-        PRIMARY KEY (id),
-        UNIQUE KEY uq_training_fee_source (fee_source)
+        PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     clms_safety_ensure_column($conn, 'training_fee_masters', 'from_date', 'DATE NULL');
     clms_safety_ensure_column($conn, 'training_fee_masters', 'to_date', "DATE NOT NULL DEFAULT '9999-12-31'");
@@ -396,8 +394,10 @@ function clms_safety_ensure_control_schema($conn) {
     foreach (array('Malayalam', 'English', 'Kannada', 'Tamil', 'Hindi') as $idx => $language) {
         db_execute($conn, "INSERT IGNORE INTO training_language_masters (language_name, status, sort_order, created_at, updated_at) VALUES (?, 'active', ?, NOW(), NOW())", 'si', array($language, ($idx + 1) * 10));
     }
-    foreach (array(array('PWO', 100.00), array('PO', 0.00), array('SO', 0.00)) as $fee) {
-        db_execute($conn, "INSERT IGNORE INTO training_fee_masters (fee_source, amount, status, created_at, updated_at) VALUES (?, ?, 'active', NOW(), NOW())", 'sd', array($fee[0], $fee[1]));
+    if (db_count($conn, "SELECT COUNT(*) FROM training_fee_masters") === 0) {
+        foreach (array(array('PWO', 100.00), array('PO', 0.00), array('SO', 0.00)) as $fee) {
+            db_execute($conn, "INSERT IGNORE INTO training_fee_masters (fee_source, amount, status, created_at, updated_at) VALUES (?, ?, 'active', NOW(), NOW())", 'sd', array($fee[0], $fee[1]));
+        }
     }
     clms_safety_expire_master_rows($conn);
 }
@@ -512,6 +512,13 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
                   )
               )
           )
+          AND (
+              tr.id = ?
+              OR NOT (
+                  COALESCE(tbw.ticked, 0) = 1
+                  AND LOWER(COALESCE(tbw.status, '')) = 'scheduled'
+              )
+          )
           AND NOT EXISTS (
               SELECT 1
               FROM training_batch_workers used
@@ -529,7 +536,7 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
               )
           )
         ORDER BY COALESCE(DATE($workerCreatedExpr), tr.requested_date, DATE(tr.created_at)) ASC, tr.id ASC
-    ", 'siissssi', array($batch['training_date'], $batchId, (int)$forceRequestId, $batch['language_name'], $batch['language_name'], $batch['language_name'], $batch['language_name'], $batchId));
+    ", 'siissssii', array($batch['training_date'], $batchId, (int)$forceRequestId, $batch['language_name'], $batch['language_name'], $batch['language_name'], $batch['language_name'], (int)$forceRequestId, $batchId));
 }
 
 function clms_safety_active_rows($rows) {
