@@ -862,7 +862,7 @@ worker4a_ensure_schema($conn);
         $paidWorkerIdsForBooking = clms_paid_training_worker_ids($conn, [$editing_worker_id]);
         $pwoPaymentAlreadyPaid = in_array($editing_worker_id, $paidWorkerIdsForBooking, true);
     }
-    if ($isPwoWorkOrder && !$pwoPaymentAlreadyPaid) {
+    if ($isPwoWorkOrder && !$pwoPaymentAlreadyPaid && $safetyFeePaymentOption !== 'pay_later') {
         $data['training_booking_choice'] = 'not_now';
         $data['training_booking_date'] = '';
         $data['training_booking_session'] = '';
@@ -1147,6 +1147,14 @@ worker4a_ensure_schema($conn);
     if ($action !== 'draft') {
         $temp_id = "TEMP-" . str_pad($workman_id_new, 6, "0", STR_PAD_LEFT);
         update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => $temp_id]);
+        if ($isRetraining || ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment))) {
+            $trainingData = $data;
+            $eoApproved = ((strtolower((string)($existing_workman['execution_training_status'] ?? '')) === 'approved'
+                       && (int)($existing_workman['execution_training_reviewed_by'] ?? 0) > 0) || !empty($existing_workman['temp_id']) || $isRetraining)
+                       && !$isWorkOrderChanged;
+            $trainingData['initial_training_status'] = ($isRetraining && $eoApproved) ? 'welfare_pending' : 'pending_eo';
+            worker4a_ensure_training_request($conn, $workman_id_new, $contractor_id, (int)($_SESSION['user_id'] ?? 0), $trainingData);
+        }
         if ($isPwoWorkOrder) {
             $paidWorkerIds = clms_paid_training_worker_ids($conn, [$workman_id_new]);
             $alreadyPaid = in_array($workman_id_new, $paidWorkerIds, true);
@@ -1167,14 +1175,6 @@ worker4a_ensure_schema($conn);
                 ]);
                 throw new Exception('Payment link generate nahi ho pa raha. Safety Fee Payment settings check karein.');
             }
-        }
-        if ($isRetraining || ((!$isPwoWorkOrder || $pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment))) {
-            $trainingData = $data;
-            $eoApproved = ((strtolower((string)($existing_workman['execution_training_status'] ?? '')) === 'approved'
-                       && (int)($existing_workman['execution_training_reviewed_by'] ?? 0) > 0) || !empty($existing_workman['temp_id']) || $isRetraining)
-                       && !$isWorkOrderChanged;
-            $trainingData['initial_training_status'] = ($isRetraining && $eoApproved) ? 'welfare_pending' : 'pending_eo';
-            worker4a_ensure_training_request($conn, $workman_id_new, $contractor_id, (int)($_SESSION['user_id'] ?? 0), $trainingData);
         }
     } else {
         update_table_row_by_id($conn, 'workmen', $workman_id_new, ['temp_id' => null]);

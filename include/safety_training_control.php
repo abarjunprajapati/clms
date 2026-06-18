@@ -438,6 +438,22 @@ function clms_safety_generate_training_token($trainingDate, $counter) {
     return 'TRN' . $year . str_pad((string)max(1, (int)$counter), 5, '0', STR_PAD_LEFT);
 }
 
+function clms_safety_generate_unique_token_number($conn) {
+    for ($i = 0; $i < 1000; $i++) {
+        $randVal = rand(100000, 999999);
+        $token = str_pad((string)$randVal, 6, '0', STR_PAD_LEFT);
+        if ($conn) {
+            $check = db_single($conn, "SELECT COUNT(*) AS c FROM training_batch_workers WHERE token_number = ?", 's', array($token));
+            if ((int)($check['c'] ?? 0) === 0) {
+                return $token;
+            }
+        } else {
+            return $token;
+        }
+    }
+    return str_pad((string)rand(100000, 999999), 6, '0', STR_PAD_LEFT);
+}
+
 function clms_safety_contractors_name_sql($conn, $alias) {
     $parts = array();
     foreach (array('contractor_name', 'vendor_name', 'name') as $col) {
@@ -797,34 +813,8 @@ function clms_safety_add_requests_to_batch($conn, $batchId, array $requestIds, $
         throw new RuntimeException('Maximum seat limit exceeded. Only ' . max(0, $capacity - $existingSelected) . ' seat(s) are available in this batch.');
     }
 
-    $finalTime = $batch['time_from'] ?: ($batch['session_name'] === 'AN' ? '14:00:00' : '09:00:00');
-    $shift = $batch['session_name'] === 'AN' ? 'evening' : 'morning';
-
     $conn->begin_transaction();
     try {
-        $session = db_single($conn, "SELECT id FROM training_schedule WHERE batch_number = ? LIMIT 1", 's', array($batch['batch_number']));
-        if (!$session) {
-            db_execute(
-                $conn,
-                "INSERT INTO training_schedule (session_date, session_time, location, capacity, trainer_name, batch_number, training_type, session_status, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 'open', NOW())",
-                'sssisss',
-                array($batch['training_date'], $finalTime, $batch['venue_name'], $capacity, $batch['instructor_name'] ?? '', $batch['batch_number'], $batch['training_type'])
-            );
-            $sessionId = (int)mysqli_insert_id($conn);
-        } else {
-            $sessionId = (int)$session['id'];
-            db_execute(
-                $conn,
-                "UPDATE training_schedule
-                 SET session_date = ?, session_time = ?, location = ?, capacity = ?, trainer_name = ?, training_type = ?, session_status = 'open'
-                 WHERE id = ?",
-                'sssissi',
-                array($batch['training_date'], $finalTime, $batch['venue_name'], $capacity, $batch['instructor_name'] ?? '', $batch['training_type'], $sessionId)
-            );
-        }
-
-        $nextToken = $existingSelected + 1;
         $added = 0;
         foreach ($requestIds as $requestId) {
             $row = db_single(
@@ -865,61 +855,20 @@ function clms_safety_add_requests_to_batch($conn, $batchId, array $requestIds, $
                 throw new RuntimeException(($row['name'] ?? 'Worker') . ' has reached maximum 3 attempts. Please apply again after the allowed period.');
             }
 
-            $token = str_pad((string)$nextToken, 6, '0', STR_PAD_LEFT);
-            $trainingToken = clms_safety_generate_training_token($batch['training_date'], $nextToken);
             db_execute(
                 $conn,
-                "INSERT INTO training_batch_workers (batch_id, training_request_id, workman_id, ticked, token_number, training_token, attempt_no, status, scheduled_at, created_at)
-                 VALUES (?, ?, ?, 1, ?, ?, ?, 'scheduled', NOW(), NOW())
-                 ON DUPLICATE KEY UPDATE training_request_id = VALUES(training_request_id), ticked = 1, token_number = COALESCE(token_number, VALUES(token_number)), training_token = COALESCE(training_token, VALUES(training_token)), attempt_no = VALUES(attempt_no), status = 'scheduled', scheduled_at = NOW()",
-                'iiissi',
-                array((int)$batchId, $requestId, (int)$row['workman_id'], $token, $trainingToken, $attemptNo)
-            );
-            db_execute(
-                $conn,
-                "UPDATE training_requests
-                 SET training_type = ?, scheduled_date = ?, scheduled_shift = ?, scheduled_venue = ?, scheduled_time = ?,
-                     batch_number = ?, instructor = ?, contractor_confirmed = 1, scheduled_by = ?, scheduled_session_id = ?,
-                     status = 'contractor_confirmed', updated_at = NOW()
-                 WHERE id = ?",
-                'sssssssiii',
-                array($batch['training_type'], $batch['training_date'], $shift, $batch['venue_name'], $finalTime, $batch['batch_number'], $batch['instructor_name'] ?? '', (int)$userId, $sessionId, $requestId)
-            );
-            db_execute(
-                $conn,
-                "INSERT INTO training_session_workers (session_id, workman_id, training_request_id, attendance_status, result, created_at)
-                 VALUES (?, ?, ?, 'pending', 'pending', NOW())
-                 ON DUPLICATE KEY UPDATE session_id = VALUES(session_id)",
-                'iii',
-                array($sessionId, (int)$row['workman_id'], $requestId)
-            );
-            db_execute(
-                $conn,
-                "UPDATE workmen SET training_status = 'scheduled', safety_training_status = 'TRAINING_CONFIRMED', updated_at = NOW() WHERE id = ?",
-                'i',
-                array((int)$row['workman_id'])
+                "INSERT INTO training_batch_workers (batch_id, training_request_id, workman_id, ticked, token_number, training_token, attempt_no, status, created_at)
+                 VALUES (?, ?, ?, 1, NULL, NULL, ?, 'draft', NOW())
+                 ON DUPLICATE KEY UPDATE training_request_id = VALUES(training_request_id), ticked = 1, token_number = NULL, training_token = NULL, attempt_no = VALUES(attempt_no), status = 'draft'",
+                'iiii',
+                array((int)$batchId, $requestId, (int)$row['workman_id'], $attemptNo)
             );
 
             if (empty($row['already_selected'])) {
-                $nextToken++;
                 $added++;
             }
         }
 
-        db_execute(
-            $conn,
-            "UPDATE training_schedule
-             SET enrolled_count = (
-                 SELECT COUNT(*)
-                 FROM training_session_workers tsw
-                 JOIN training_requests tr ON tr.id = tsw.training_request_id
-                 WHERE tsw.session_id = ? AND tr.status = 'contractor_confirmed'
-             )
-             WHERE id = ?",
-            'ii',
-            array($sessionId, $sessionId)
-        );
-        db_execute($conn, "UPDATE training_class_batches SET status = 'scheduled', updated_at = NOW() WHERE id = ?", 'i', array((int)$batchId));
         $conn->commit();
         return array('added' => $added, 'batch_number' => $batch['batch_number']);
     } catch (Throwable $e) {
@@ -1053,7 +1002,7 @@ function clms_safety_schedule_batch($conn, $batchId, $selectedRequestIds, $userI
                 throw new RuntimeException(($candidate['name'] ?? 'Worker') . ' has reached maximum 3 attempts. Please apply for training again.');
             }
 
-            $token = str_pad((string)$counter, 6, '0', STR_PAD_LEFT);
+            $token = clms_safety_generate_unique_token_number($conn);
             $trainingToken = clms_safety_generate_training_token($batch['training_date'], $counter);
             db_execute(
                 $conn,
@@ -1168,7 +1117,7 @@ function clms_safety_save_batch_selection($conn, $batchId, $selectedRequestIds, 
             if ($attemptNo > 3) {
                 throw new RuntimeException(($candidate['name'] ?? 'Worker') . ' has reached maximum 3 attempts. Please apply for training again.');
             }
-            $token = str_pad((string)$counter, 6, '0', STR_PAD_LEFT);
+            $token = clms_safety_generate_unique_token_number($conn);
             $trainingToken = clms_safety_generate_training_token($batch['training_date'], $counter);
             db_execute(
                 $conn,

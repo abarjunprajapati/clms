@@ -29,9 +29,14 @@ try {
         }
 
         // Fetch old value for audit logging
-        $oldRow = db_single($conn, "SELECT status FROM training_fee_masters WHERE id = ? LIMIT 1", 'i', [$id]);
+        $oldRow = db_single($conn, "SELECT status, fee_source FROM training_fee_masters WHERE id = ? LIMIT 1", 'i', [$id]);
         
         clms_safety_set_master_status($conn, 'training_fee_masters', $id, $newStatus);
+
+        if ($oldRow && $oldRow['fee_source'] === 'PWO') {
+            require_once __DIR__ . '/../../include/payment_flow.php';
+            clms_sync_fee_master_to_setting($conn, (int)($_SESSION['user_id'] ?? 0));
+        }
 
         // Audit Log
         AuditLogger::log($conn, 'FEE_STATUS_UPDATED', 'safety_fee', $oldRow ? $oldRow['status'] : '', $newStatus, "Deactivated or Activated training fee ID: $id");
@@ -103,6 +108,11 @@ try {
             );
 
             AuditLogger::log($conn, 'FEE_RATE_CREATED', 'safety_fee', '', $newVal, "Created or Upserted safety fee for source: $source");
+        }
+
+        if ($source === 'PWO') {
+            require_once __DIR__ . '/../../include/payment_flow.php';
+            clms_sync_fee_master_to_setting($conn, (int)($_SESSION['user_id'] ?? 0));
         }
 
         feeSettingJson([

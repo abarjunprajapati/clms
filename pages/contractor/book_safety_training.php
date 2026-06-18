@@ -222,7 +222,11 @@ function renderContent() {
                     'book_safety_training_payment'
                 );
                 if ($paymentRequest) {
-                    header("Location: ../payment.php?token=" . urlencode($paymentRequest['payment_token']));
+                    if (!headers_sent()) {
+                        header("Location: ../payment.php?token=" . urlencode($paymentRequest['payment_token']));
+                    } else {
+                        echo "<script>window.location.href = '../payment.php?token=" . urlencode($paymentRequest['payment_token']) . "';</script>";
+                    }
                     exit;
                 }
             }
@@ -314,7 +318,7 @@ function renderContent() {
               AND (w.training_valid_till IS NULL OR w.training_valid_till >= CURDATE())
           )
           AND NOT (
-              LOWER(COALESCE(tr.status, '')) IN ('pending_eo','pending_safety','scheduled','contractor_confirmed','passed')
+              LOWER(COALESCE(tr.status, '')) IN ('pending','pending_eo','pending_safety','welfare_pending','scheduled','contractor_confirmed','passed')
               AND LOWER(COALESCE(w.training_status, 'pending')) NOT IN ('training_failed','fail','failed','absent')
           )
         ORDER BY COALESCE(tr.requested_date, DATE(w.created_at), CURDATE()) ASC, w.id ASC

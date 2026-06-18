@@ -44,10 +44,10 @@ function renderContent() {
             <label class="form-label">UPI ID / Payment Handle</label>
             <input class="form-control" name="payment_demo_upi_id" value="<?= htmlspecialchars($demo['upi_id']) ?>" required>
           </div>
-          <div class="form-group">
+          <!-- <div class="form-group">
             <label class="form-label">Fee Per Worker</label>
             <input class="form-control" type="number" step="0.01" min="0" name="training_fee_per_worker" value="<?= htmlspecialchars(clms_training_fee_per_worker($conn)) ?>" required>
-          </div>
+          </div> -->
           <div class="form-group">
             <label class="form-label">GST Percent</label>
             <input class="form-control" type="number" step="0.01" min="0" name="training_payment_gst_percent" value="<?= htmlspecialchars(clms_training_payment_gst_percent($conn)) ?>" required>

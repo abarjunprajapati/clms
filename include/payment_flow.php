@@ -109,6 +109,7 @@ function clms_ensure_payment_flow($conn) {
         workman_id INT NOT NULL,
         training_request_id INT NULL,
         temp_id VARCHAR(80) NULL,
+        safety_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
         created_at DATETIME NULL,
         PRIMARY KEY (id),
         UNIQUE KEY uq_payment_workman (payment_request_id, workman_id),
@@ -120,6 +121,7 @@ function clms_ensure_payment_flow($conn) {
         'workman_id' => 'INT NOT NULL',
         'training_request_id' => 'INT NULL',
         'temp_id' => 'VARCHAR(80) NULL',
+        'safety_fee' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00',
         'created_at' => 'DATETIME NULL',
     ] as $column => $definition) {
         clms_payment_ensure_column($conn, 'training_payment_request_workers', $column, $definition);
@@ -181,7 +183,7 @@ function clms_ensure_payment_flow($conn) {
         ['training_fee_per_worker', '1000', 'payment', 'Safety fee per worker'],
         ['training_payment_gst_percent', '0', 'payment', 'GST percentage for safety induction fee'],
         ['training_payment_link_valid_hours', '72', 'payment', 'Payment link validity in hours'],
-        ['payment_gateway_provider', 'razorpay', 'payment', 'Gateway provider name. demo_qr enables QR demo flow.'],
+        ['payment_gateway_provider', 'demo_qr', 'payment', 'Gateway provider name. demo_qr enables QR demo flow.'],
         ['payment_gateway_key_id', 'rzp_test_LriFkVGa9DLZEN', 'payment', 'Gateway public/key id.'],
         ['payment_gateway_key_secret', 'VHohSkxRHzqkQCsxJEd8bGan', 'payment', 'Gateway secret key. Keep server-side only.'],
         ['payment_gateway_webhook_secret', '', 'payment', 'Razorpay Webhook Secret for payload authentication'],
@@ -193,14 +195,6 @@ function clms_ensure_payment_flow($conn) {
     foreach ($defaults as $setting) {
         $exists = db_count($conn, "SELECT COUNT(*) FROM system_settings WHERE setting_key = ?", 's', [$setting[0]]);
         if ($exists > 0) {
-            // Update provider/keys if they are currently set to empty or default demo values to enforce correct Razorpay config
-            if ($setting[0] === 'payment_gateway_provider') {
-                db_execute($conn, "UPDATE system_settings SET setting_value = 'razorpay' WHERE setting_key = 'payment_gateway_provider' AND (setting_value = 'demo_qr' OR setting_value = '')");
-            } elseif ($setting[0] === 'payment_gateway_key_id') {
-                db_execute($conn, "UPDATE system_settings SET setting_value = 'rzp_test_LriFkVGa9DLZEN' WHERE setting_key = 'payment_gateway_key_id' AND (setting_value = '' OR setting_value IS NULL)");
-            } elseif ($setting[0] === 'payment_gateway_key_secret') {
-                db_execute($conn, "UPDATE system_settings SET setting_value = 'VHohSkxRHzqkQCsxJEd8bGan' WHERE setting_key = 'payment_gateway_key_secret' AND (setting_value = '' OR setting_value IS NULL)");
-            }
             continue;
         }
         if ($isAuto) {
@@ -223,6 +217,7 @@ function clms_ensure_payment_flow($conn) {
             );
         }
     }
+    db_execute($conn, "UPDATE system_settings SET setting_value = 'demo_qr' WHERE setting_key = 'payment_gateway_provider'", '', []);
     // Removed legacy development auto-reset queries that override user-saved amounts.
 
     if (clms_payment_table_exists($conn, 'workmen')) {
@@ -301,6 +296,9 @@ function clms_set_payment_setting($conn, $key, $value, $userId = 0) {
                 [(string)$value, $key]
             );
         }
+        if ($key === 'training_fee_per_worker') {
+            clms_sync_setting_to_fee_master($conn, $value, $userId);
+        }
         return;
     }
 
@@ -325,6 +323,9 @@ function clms_set_payment_setting($conn, $key, $value, $userId = 0) {
             'sss',
             [$key, (string)$value, 'payment']
         );
+    }
+    if ($key === 'training_fee_per_worker') {
+        clms_sync_setting_to_fee_master($conn, $value, $userId);
     }
 }
 
@@ -636,6 +637,42 @@ function clms_get_current_contractor_for_payment($conn, $userId = 0, $vendorCode
     );
 }
 
+function clms_get_fee_for_worker($conn, $workOrderSource, $workOrderNo = '') {
+    $source = strtoupper(trim((string)$workOrderSource));
+    if ($source === '') {
+        $workOrderNo = strtoupper(trim((string)$workOrderNo));
+        if (strpos($workOrderNo, 'PWO') === 0 || strpos($workOrderNo, 'PWO') !== false) {
+            $source = 'PWO';
+        } elseif (strpos($workOrderNo, 'SO') === 0 || strpos($workOrderNo, 'SO') !== false) {
+            $source = 'SO';
+        } elseif (strpos($workOrderNo, 'PO') === 0 || strpos($workOrderNo, 'PO') !== false) {
+            $source = 'PO';
+        } else {
+            $source = 'PWO';
+        }
+    }
+    
+    $row = db_single(
+        $conn,
+        "SELECT amount
+         FROM training_fee_masters
+         WHERE UPPER(fee_source) = ?
+           AND LOWER(status) = 'active'
+           AND (from_date IS NULL OR from_date <= CURRENT_DATE())
+           AND (to_date IS NULL OR to_date >= CURRENT_DATE())
+         ORDER BY id DESC
+         LIMIT 1",
+        's',
+        [$source]
+    );
+    
+    if ($row) {
+        return max(0.00, (float)$row['amount']);
+    }
+    
+    return clms_training_fee_per_worker($conn);
+}
+
 function clms_create_training_payment_request($conn, $contractorId, array $workerIds, $createdBy = 0, $source = 'enrolment') {
     clms_ensure_payment_flow($conn);
     $workerIds = array_values(array_unique(array_filter(array_map('intval', $workerIds))));
@@ -929,7 +966,7 @@ function clms_release_workers_after_training_payment($conn, $paymentRequestId, $
             continue;
         }
 
-        if (!in_array($executionStatus, ['', 'pending', 'pending_payment', 'link_sent', 'pending_booking'], true)) {
+        if (!in_array($executionStatus, ['', 'pending', 'pending_payment', 'link_sent', 'pending_booking', 'pending_eo'], true)) {
             continue;
         }
         $hasTrainingRequest = db_single(
@@ -996,5 +1033,64 @@ function clms_release_all_paid_training_payments($conn, $userId = 0) {
     );
     foreach ($rows as $row) {
         clms_release_workers_after_training_payment($conn, (int)$row['id'], (int)$userId);
+    }
+}
+
+function clms_sync_setting_to_fee_master($conn, $feeAmount, $userId = 0) {
+    $feeAmount = (float)$feeAmount;
+    $activePwo = db_single($conn, "SELECT id, amount FROM training_fee_masters WHERE fee_source = 'PWO' AND status = 'active' ORDER BY from_date DESC, id DESC LIMIT 1");
+    if ($activePwo && (float)$activePwo['amount'] === $feeAmount) {
+        return;
+    }
+    
+    $today = date('Y-m-d');
+    $yesterday = date('Y-m-d', strtotime('-1 day'));
+    
+    db_execute(
+        $conn, 
+        "UPDATE training_fee_masters 
+         SET status = 'Inactive', 
+             to_date = CASE WHEN from_date <= ? AND to_date >= ? THEN ? ELSE to_date END, 
+             updated_at = NOW() 
+         WHERE fee_source = 'PWO' AND status = 'active'", 
+        'sss', 
+        [$today, $today, $yesterday]
+    );
+    
+    db_execute(
+        $conn,
+        "INSERT INTO training_fee_masters (fee_source, amount, from_date, to_date, status, created_by, created_at, updated_at) 
+         VALUES ('PWO', ?, ?, '9999-12-31', 'active', ?, NOW(), NOW())",
+        'dsi',
+        [$feeAmount, $today, $userId]
+    );
+}
+
+function clms_sync_fee_master_to_setting($conn, $userId = 0) {
+    $activePwo = db_single($conn, "SELECT amount FROM training_fee_masters WHERE fee_source = 'PWO' AND status = 'active' ORDER BY from_date DESC, id DESC LIMIT 1");
+    if ($activePwo) {
+        $amount = (string)$activePwo['amount'];
+        $currentSetting = clms_payment_setting($conn, 'training_fee_per_worker', '');
+        if ($currentSetting !== $amount) {
+            $exists = db_count($conn, "SELECT COUNT(*) FROM system_settings WHERE setting_key = 'training_fee_per_worker'");
+            if ($exists > 0) {
+                db_execute(
+                    $conn,
+                    "UPDATE system_settings 
+                     SET setting_value = ?, updated_by = ?, updated_at = NOW() 
+                     WHERE setting_key = 'training_fee_per_worker'",
+                    'si',
+                    [$amount, $userId]
+                );
+            } else {
+                db_execute(
+                    $conn,
+                    "INSERT INTO system_settings (setting_key, setting_value, setting_group, description, updated_by, updated_at) 
+                     VALUES ('training_fee_per_worker', ?, 'payment', 'Payment setting', ?, NOW())",
+                    'si',
+                    [$amount, $userId]
+                );
+            }
+        }
     }
 }

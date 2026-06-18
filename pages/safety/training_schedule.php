@@ -91,11 +91,11 @@ function renderContent() {
     $regularCapacity = (int)$capacityInfo['regular'];
 ?>
 <style>
-  .selected-row { border-left: 4px solid #4f46e5 !important; background: #eef2ff !important; }
-  .ts-selected-panel { background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); color: #fff; padding: 16px 20px; border-radius: 12px; margin-bottom: 18px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15); display: flex; flex-direction: column; gap: 12px; }
+  .selected-row { border-left: 4px solid #2563eb !important; background: #eff6ff !important; }
+  .ts-selected-panel { background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%); color: #fff; padding: 16px 20px; border-radius: 12px; margin-bottom: 18px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15); display: flex; flex-direction: column; gap: 12px; }
   .ts-selected-panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 10px; }
   .ts-selected-panel-title { font-size: 15px; font-weight: 800; display: inline-flex; align-items: center; gap: 8px; }
-  .ts-selected-panel-count { background: #fff; color: #4f46e5; border-radius: 99px; padding: 2px 8px; font-size: 11px; font-weight: 900; }
+  .ts-selected-panel-count { background: #fff; color: #2563eb; border-radius: 99px; padding: 2px 8px; font-size: 11px; font-weight: 900; }
   .ts-selected-chips { display: flex; flex-wrap: wrap; gap: 8px; max-height: 120px; overflow-y: auto; }
   .ts-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25); border-radius: 99px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #fff; }
   .ts-chip-token { opacity: 0.7; font-family: monospace; font-size: 10px; }
@@ -103,14 +103,14 @@ function renderContent() {
   .ts-chip-remove:hover { color: #fff; }
   @media print { .ts-selected-panel { display: none !important; } }
 
-  /* â”€â”€ Batch Info Unified Section â”€â”€ */
+  /* ── Batch Info Unified Section ── */
   .ts-batch-unified{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.04);overflow:hidden;margin-top:10px}
   .ts-selector-inner{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#f8fafc}
   .ts-selector-inner label{font-size:12px;font-weight:800;color:#475569;display:flex;flex-direction:column;gap:5px;flex:1;min-width:280px}
   .ts-selector-inner select.form-control{height:40px;border:1px solid #cbd5e1;border-radius:8px;padding:0 12px;background:#fff;font-size:13px;font-weight:600;color:#1e293b;transition:.2s}
   .ts-selector-inner select.form-control:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1);outline:none}
 
-  /* â”€â”€ Batch Summary â”€â”€ */
+  /* ── Batch Summary ── */
   .ts-summary{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:0}
   .ts-summary-card{padding:14px 16px;border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;transition:.2s;background:#fff}
   .ts-summary-card:nth-child(4n){border-right:none}
@@ -122,21 +122,21 @@ function renderContent() {
   .ts-summary-card.ts-slots .ts-value{color:#1d4ed8;font-size:18px}
   .ts-summary-card.ts-slots .ts-sub{font-size:11px;color:#475569;font-weight:600;margin-top:3px}
 
-  /* â”€â”€ Workers Card â”€â”€ */
+  /* ── Workers Card ── */
   .ts-workers-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
   .ts-card-header{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#f8fafc;flex-wrap:wrap}
   .ts-card-header-left{display:flex;flex-direction:column;gap:4px}
   .ts-card-title{font-size:16px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:8px}
-  .ts-card-title i{color:#4f46e5;font-size:15px}
+  .ts-card-title i{color:#2563eb;font-size:15px}
   .ts-card-desc{font-size:12px;color:#64748b;font-weight:500;max-width:600px;line-height:1.4}
   .ts-card-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .ts-card-actions .btn{font-size:12px;padding:8px 14px;border-radius:8px;font-weight:700;display:inline-flex;align-items:center;gap:6px;transition:.2s;cursor:pointer;text-decoration:none}
   .ts-btn-outline{background:#fff;border:1px solid #d1d5db;color:#374151}
   .ts-btn-outline:hover{background:#f3f4f6;border-color:#9ca3af}
-  .ts-btn-finalize{background:linear-gradient(135deg,#4f46e5,#6366f1);border:none;color:#fff;padding:9px 20px!important;font-size:13px!important}
-  .ts-btn-finalize:hover{background:linear-gradient(135deg,#4338ca,#4f46e5);box-shadow:0 4px 14px rgba(79,70,229,.3)}
+  .ts-btn-finalize{background:linear-gradient(135deg,#2563eb,#3b82f6);border:none;color:#fff;padding:9px 20px!important;font-size:13px!important}
+  .ts-btn-finalize:hover{background:linear-gradient(135deg,#1d4ed8,#2563eb);box-shadow:0 4px 14px rgba(37,99,235,.3)}
 
-  /* â”€â”€ Table â”€â”€ */
+  /* ── Table ── */
   .ts-table-wrap{overflow-x:auto}
   .ts-table{width:100%;border-collapse:collapse}
   .ts-table thead{background:#f1f5f9}
@@ -171,7 +171,7 @@ function renderContent() {
       <select class="form-control" name="batch_id" onchange="this.form.submit()">
         <?php foreach ($batches as $item): ?>
           <option value="<?= (int)$item['id'] ?>" <?= $batch && (int)$batch['id'] === (int)$item['id'] ? 'selected' : '' ?>>
-            <?= htmlspecialchars($item['batch_number']) ?> â€” <?= date('d M Y', strtotime($item['training_date'])) ?> â€” <?= htmlspecialchars($item['language_name']) ?>
+            <?= htmlspecialchars($item['batch_number']) ?> - <?= date('d M Y', strtotime($item['training_date'])) ?> - <?= htmlspecialchars($item['language_name']) ?>
           </option>
         <?php endforeach; ?>
       </select>
@@ -201,7 +201,7 @@ function renderContent() {
     </div>
     <div class="ts-summary-card">
       <div class="ts-label">Time</div>
-      <div class="ts-value"><?= htmlspecialchars(substr((string)($batch['time_from'] ?: ($batch['session_name'] === 'AN' ? '14:00' : '09:00')), 0, 5)) ?> â€“ <?= htmlspecialchars(substr((string)($batch['time_to'] ?: ''), 0, 5) ?: '-') ?></div>
+      <div class="ts-value"><?= htmlspecialchars(substr((string)($batch['time_from'] ?: ($batch['session_name'] === 'AN' ? '14:00' : '09:00')), 0, 5)) ?> - <?= htmlspecialchars(substr((string)($batch['time_to'] ?: ''), 0, 5) ?: '-') ?></div>
     </div>
     <div class="ts-summary-card">
       <div class="ts-label">Training Type</div>
@@ -361,7 +361,7 @@ function renderContent() {
         chip.innerHTML = `
           <span class="ts-chip-token">${tokenNum}</span>
           <span>${(info.name || 'Worker').substring(0,22)}</span>
-          <span class="ts-chip-remove" title="Remove" data-req="${input.value}">âœ•</span>`;
+          <span class="ts-chip-remove" title="Remove" data-req="${input.value}">&times;</span>`;
         chipsContainer.appendChild(chip);
       });
       // Attach remove listeners

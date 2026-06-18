@@ -993,7 +993,21 @@ function renderContent() {
             <i class="fas fa-file-pdf"></i> Download PDF
           </button>
         </div>
-        <input type="text" id="searchWorker" class="form-control" style="width:250px;" placeholder="Search name or Aadhaar...">
+        <div class="d-flex align-items-center gap-2">
+          <select id="filterStatus" class="form-control" style="width:200px; font-weight:600; font-size:12px; height:38px;">
+            <option value="">All Statuses</option>
+            <option value="safety booking pending">Safety Booking Pending</option>
+            <option value="eo approval pending">EO Approval Pending</option>
+            <option value="safety approval pending">Safety Approval Pending</option>
+            <option value="safety fee pending">Safety Fee Pending</option>
+            <option value="correction required">Correction Required</option>
+            <option value="booking confirmed">Booking Confirmed</option>
+            <option value="safety passed">Safety Passed</option>
+            <option value="safety failed">Safety Failed</option>
+            <option value="blocked by welfare">Blocked by Welfare</option>
+          </select>
+          <input type="text" id="searchWorker" class="form-control" style="width:250px;" placeholder="Search name or Aadhaar...">
+        </div>
       </div>
       <div class="card-body p-0">
         <table class="data-table" id="workerTable">
@@ -1655,6 +1669,9 @@ function renderContent() {
           <button type="button" class="btn btn-primary" id="btnConfirmInlinePayment" style="width:100%;justify-content:center;">
             <i class="fas fa-check"></i> Payment Successful
           </button>
+          <button type="button" class="btn btn-outline" id="btnBypassInlinePayment" style="width:100%;justify-content:center;margin-top:6px;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;" onclick="bypassInlinePaymentTest()">
+            <i class="fas fa-magic"></i> Bypass Payment (Test Mode)
+          </button>
         </div>
       </div>
     </div>
@@ -2146,6 +2163,11 @@ function renderContent() {
             : 'Submit';
           if (tabId === 'payment') refreshWorkflowPaymentState(false);
           if (tabId === 'training') refreshTrainingBookingFields();
+          
+          const formSection = document.getElementById('formSection');
+          if (formSection) {
+            formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
         }
         
         document.querySelectorAll('.square-tab').forEach(btn => {
@@ -3314,9 +3336,16 @@ function renderContent() {
             box.classList.add('show');
           }
           if (qrBox) {
-            qrBox.innerHTML = details.qr_url
-              ? `<img src="${details.qr_url}" alt="Payment QR" style="width:100%;height:100%;object-fit:contain;">`
-              : '<i class="fas fa-qrcode" style="font-size:54px;color:#94a3b8;"></i>';
+            const amountVal = Number(payment.amount || details.amount || 0);
+            if (details.upi_id && amountVal > 0) {
+              const upiUri = `upi://pay?pa=${encodeURIComponent(details.upi_id)}&pn=${encodeURIComponent(details.merchant_name || 'CLMS')}&am=${amountVal.toFixed(2)}&tn=${encodeURIComponent(payment.payment_ref || '')}&cu=INR`;
+              const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUri)}`;
+              qrBox.innerHTML = `<img src="${qrCodeUrl}" alt="Payment QR" style="width:100%;height:100%;object-fit:contain;">`;
+            } else if (details.qr_url) {
+              qrBox.innerHTML = `<img src="${details.qr_url}" alt="Payment QR" style="width:100%;height:100%;object-fit:contain;">`;
+            } else {
+              qrBox.innerHTML = '<i class="fas fa-qrcode" style="font-size:54px;color:#94a3b8;"></i>';
+            }
           }
           if (summary) {
             const amount = Number(payment.amount || details.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -3387,6 +3416,56 @@ function renderContent() {
           await startInlineSafetyPayment(paymentResult.payment, workerId);
         }
 
+        async function loadRazorpayScript() {
+          return new Promise((resolve) => {
+            if (window.Razorpay) {
+              resolve(true);
+              return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            script.onload = () => resolve(true);
+            script.onerror = () => resolve(false);
+            document.head.appendChild(script);
+          });
+        }
+
+        async function verifyInlineRazorpayPayment(token, paymentId, orderId, signature) {
+          renderInlinePaymentLoading();
+          const summary = document.getElementById('inlinePaymentSummary');
+          if (summary) summary.textContent = 'Verifying payment with gateway...';
+          
+          try {
+            const res = await fetch('../../api/payments/verify_razorpay_payment.php', {
+              method: 'POST',
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({
+                token: token,
+                razorpay_payment_id: paymentId,
+                razorpay_order_id: orderId,
+                razorpay_signature: signature
+              })
+            });
+            const result = await res.json();
+            if (result.success) {
+              pwoPaymentCompleted = true;
+              closeInlinePaymentPopup();
+              notify('Payment Successful', 'Safety Fee Payment is completed successfully.', 'success');
+              
+              const bookNowInput = form.querySelector('[name="training_booking_choice"][value="book_now"]');
+              if (bookNowInput) bookNowInput.disabled = false;
+              refreshWorkflowPaymentState(true);
+              activateTab('training');
+            } else {
+              closeInlinePaymentPopup();
+              notify('Verification Failed', result.message || 'Payment verification failed.', 'error');
+            }
+          } catch (err) {
+            closeInlinePaymentPopup();
+            notify('Verification Error', 'Unable to verify payment status.', 'error');
+          }
+        }
+
         async function startInlineSafetyPayment(payment, workerId) {
           inlineSafetyPaymentWorkerId = workerId || inlineSafetyPaymentWorkerId;
           inlineSafetyPaymentToken = payment?.payment_token || '';
@@ -3414,6 +3493,49 @@ function renderContent() {
               notify('Payment Error', result.message || 'Payment gateway is not ready.', 'error');
               return;
             }
+            
+            if (result.provider === 'razorpay') {
+              closeInlinePaymentPopup();
+              const loaded = await loadRazorpayScript();
+              if (!loaded) {
+                notify('Payment Error', 'Razorpay library load nahi ho saki. Please check internet connection.', 'error');
+                return;
+              }
+              
+              const options = {
+                key: result.key_id,
+                amount: Math.round(result.amount * 100),
+                currency: result.currency || "INR",
+                name: result.contractor_name || "CLMS Safety Payment",
+                description: "Safety Training Fee",
+                order_id: result.gateway_order_id,
+                handler: function (response) {
+                  verifyInlineRazorpayPayment(
+                    inlineSafetyPaymentToken, 
+                    response.razorpay_payment_id, 
+                    response.razorpay_order_id, 
+                    response.razorpay_signature
+                  );
+                },
+                prefill: {
+                  name: result.contractor_name || "",
+                  email: result.contractor_email || "",
+                  contact: result.contractor_phone || ""
+                },
+                theme: {
+                  color: "#0f766e"
+                },
+                modal: {
+                  ondismiss: function() {
+                    inlineSafetyPaymentToken = '';
+                  }
+                }
+              };
+              const rzp = new Razorpay(options);
+              rzp.open();
+              return;
+            }
+            
             renderInlinePaymentDetails(result.demo || payment?.demo || {}, payment || result);
           } catch (err) {
             inlineSafetyPaymentToken = '';
@@ -3470,6 +3592,55 @@ function renderContent() {
             if (btn) {
               btn.disabled = false;
               btn.innerHTML = '<i class="fas fa-check"></i> Payment Successful';
+            }
+          }
+        }
+
+        async function bypassInlinePaymentTest() {
+          const btn = document.getElementById('btnBypassInlinePayment');
+          if (!inlineSafetyPaymentToken) {
+            notify('Payment Required', 'Please submit enrollment and generate payment QR first.', 'warning');
+            return;
+          }
+          if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bypassing...';
+          }
+          try {
+            const res = await fetch('../../api/payments/submit_demo_payment.php', {
+              method: 'POST',
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({
+                token: inlineSafetyPaymentToken,
+                payer_reference: 'TEST-INLINE-MOCK-' + Math.floor(Math.random() * 1000000),
+                note: 'Bypassed using inline test mode bypass button.'
+              })
+            });
+            const result = await res.json();
+            if (!result.success) {
+              notify('Bypass Failed', result.message || 'Bypass failed.', 'error');
+              if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-magic"></i> Bypass Payment (Test Mode)';
+              }
+              return;
+            }
+            pwoPaymentCompleted = true;
+            closeInlinePaymentPopup();
+            if (inlineSafetyPaymentWorkerId) document.getElementById('workerEditId').value = inlineSafetyPaymentWorkerId;
+            const bookNowInput = form.querySelector('[name="training_booking_choice"][value="book_now"]');
+            if (bookNowInput) {
+              bookNowInput.disabled = false;
+              bookNowInput.checked = true;
+            }
+            notify('Payment Successful', 'Payment simulated successfully!', 'success');
+            refreshWorkflowPaymentState(true);
+            activateTab('training');
+          } catch (err) {
+            notify('Bypass Error', 'Unable to connect to demo API.', 'error');
+            if (btn) {
+              btn.disabled = false;
+              btn.innerHTML = '<i class="fas fa-magic"></i> Bypass Payment (Test Mode)';
             }
           }
         }
@@ -3816,12 +3987,28 @@ function renderContent() {
       setTimeout(() => viewModal.classList.add('hidden'), 250);
     }
 
-    document.getElementById('searchWorker').onkeyup = function() {
-      const q = this.value.toLowerCase();
+    function filterWorkers() {
+      const q = document.getElementById('searchWorker').value.toLowerCase();
+      const status = document.getElementById('filterStatus').value.toLowerCase();
+      
       document.querySelectorAll('#workerTable tbody tr').forEach(row => {
-        row.style.display = row.innerText.toLowerCase().includes(q) ? '' : 'none';
+        const textMatch = row.innerText.toLowerCase().includes(q);
+        
+        let statusMatch = true;
+        if (status) {
+          if (status === 'blocked by welfare') {
+            statusMatch = row.innerText.toLowerCase().includes('blocked by welfare');
+          } else {
+            statusMatch = row.innerText.toLowerCase().includes(status);
+          }
+        }
+        
+        row.style.display = (textMatch && statusMatch) ? '' : 'none';
       });
-    };
+    }
+
+    document.getElementById('searchWorker').onkeyup = filterWorkers;
+    document.getElementById('filterStatus').onchange = filterWorkers;
     </script>
 
     <!-- ===== RE-ENROLL MODAL ===== -->

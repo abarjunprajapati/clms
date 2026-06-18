@@ -83,8 +83,7 @@ function safetyDashEnsureControlSchema($conn) {
         created_by INT NULL,
         created_at DATETIME NULL,
         updated_at DATETIME NULL,
-        PRIMARY KEY (id),
-        UNIQUE KEY uq_training_fee_source (fee_source)
+        PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
     mysqli_query($conn, "CREATE TABLE IF NOT EXISTS training_class_batches (
@@ -231,6 +230,10 @@ function safetyDashHandlePost($conn) {
                 'sdi',
                 [$source, $amount, $userId]
             );
+            if ($source === 'PWO') {
+                require_once __DIR__ . '/../../include/payment_flow.php';
+                clms_sync_fee_master_to_setting($conn, $userId);
+            }
             safetyDashRedirect('Training fee master saved.');
         }
 

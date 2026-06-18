@@ -356,7 +356,7 @@ function renderSidebar($role) {
             echo '<a href="'.BASE_URL.'pages/welfare/temporary_pass_validity.php" class="sidebar-item"><i class="fas fa-calendar-day"></i> Temporary Pass Validity</a>';
             echo '<a href="'.BASE_URL.'pages/welfare/age_range_mapping.php" class="sidebar-item"><i class="fas fa-user-clock"></i> Age Range Mapping</a>';
             echo '<a href="'.BASE_URL.'pages/welfare/gate_pass_document_master.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Gate Pass Document Master</a>';
-            echo '<a href="'.BASE_URL.'pages/welfare/payment_gateway.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment Gateway / QR</a>';
+// echo '<a href="'.BASE_URL.'pages/welfare/payment_gateway.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment Gateway / QR</a>';
             echo '<a href="'.$ab.'master_data.php" class="sidebar-item"><i class="fas fa-database"></i> Master Data</a>';
             
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Enterprise Governance</div>';
@@ -395,7 +395,7 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'gate_pass_document_master.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Gate Pass Document Master</a>';
             echo '<a href="'.$wb.'training_type_master.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Training Type Master</a>';
             echo '<a href="'.$wb.'training_venue_master.php" class="sidebar-item"><i class="fas fa-location-dot"></i> Training Venue Master</a>';
-            echo '<a href="'.$wb.'payment_gateway.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment Gateway / QR</a>';
+//             echo '<a href="'.$wb.'payment_gateway.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment Gateway / QR</a>';
             echo '<a href="'.$wb.'temp_pass_control.php" class="sidebar-item"><i class="fas fa-clock"></i> Temp Pass Control</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Monitoring & Oversight</div>';
             echo '<a href="'.$wb.'entity_directory.php" class="sidebar-item"><i class="fas fa-address-book"></i> Contractor / Customer Data</a>';
@@ -462,9 +462,9 @@ function renderSidebar($role) {
                 
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Management</div>';
                 echo '<a href="enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Enrolment for Entry Pass</a>';
-                echo '<a href="training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
                 echo '<a href="book_safety_training.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Book Safety Training</a>';
                 echo '<a href="payment.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Pending Fee Payment</a>';
+                echo '<a href="training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Retraining</a>';
                 echo '<a href="gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Gate Pass</a>';
                 echo '<a href="gatepass-reupload.php" class="sidebar-item"><i class="fas fa-file-circle-exclamation"></i> Re-upload Gate Pass Docs</a>';
                 echo '<a href="pass_status.php" class="sidebar-item"><i class="fas fa-id-card"></i> ACC Card</a>';
@@ -554,11 +554,11 @@ function renderSidebar($role) {
         case 'safety':
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Training Engine</div>';
             echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
-            echo '<a href="upcoming_sessions.php" class="sidebar-item"><i class="fas fa-clock"></i> Upcoming Sessions</a>';
             echo '<a href="enrollment_approval.php" class="sidebar-item"><i class="fas fa-user-check"></i> Enrollment Approval Inbox</a>';
             echo '<a href="training_class_master.php" class="sidebar-item"><i class="fas fa-calendar-plus"></i> Training Class Master</a>';
             // echo '<a href="training_requests.php" class="sidebar-item"><i class="fas fa-envelope-open-text"></i> Training Requests</a>';
             echo '<a href="training_schedule.php" class="sidebar-item"><i class="fas fa-calendar-alt"></i> Training Schedule</a>';
+            echo '<a href="upcoming_sessions.php" class="sidebar-item"><i class="fas fa-clock"></i> Upcoming Sessions</a>';
             echo '<a href="conduct_results.php" class="sidebar-item"><i class="fas fa-users-cog"></i> Conduct & Results</a>';
             echo '<a href="training_status.php" class="sidebar-item"><i class="fas fa-user-check"></i> Training Status</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Safety Masters</div>';

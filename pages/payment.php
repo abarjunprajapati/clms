@@ -67,8 +67,19 @@ if (!empty($_SESSION['user_id'])) {
 
 $gatewayReady = clms_payment_gateway_configured($conn);
 $workers = $request ? clms_training_payment_workers($conn, (int)$request['id']) : [];
+$allBooked = false;
+if ($workers) {
+    $allBooked = true;
+    foreach ($workers as $w) {
+        $hasRequest = db_single($conn, "SELECT id FROM training_requests WHERE workman_id = ? LIMIT 1", 'i', [(int)$w['id']]);
+        if (!$hasRequest) {
+            $allBooked = false;
+            break;
+        }
+    }
+}
 $bookingWorkerId = count($workers) === 1 ? (int)($workers[0]['id'] ?? 0) : 0;
-$bookingUrl = 'contractor/book_safety_training.php' . ($bookingWorkerId > 0 ? '?worker_id=' . urlencode((string)$bookingWorkerId) : '');
+$bookingUrl = $allBooked ? 'contractor/dashboard.php' : ('contractor/book_safety_training.php' . ($bookingWorkerId > 0 ? '?worker_id=' . urlencode((string)$bookingWorkerId) : ''));
 $isExpired = $request && !empty($request['link_expires_at']) && strtotime($request['link_expires_at']) < time() && !in_array($request['status'], ['paid', 'verified'], true);
 $demoDetails = clms_demo_payment_details($conn, $request);
 ?>
@@ -345,7 +356,10 @@ $demoDetails = clms_demo_payment_details($conn, $request);
         <div class="payment-subtitle">Review pending PWO workers, select fees, and complete payment securely.</div>
       </div>
     </div>
-    <a href="contractor/dashboard.php" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Dashboard</a>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <a href="payment_history.php" class="btn btn-outline"><i class="fas fa-history"></i> Payment History / Requests</a>
+      <a href="contractor/dashboard.php" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Dashboard</a>
+    </div>
   </div>
 
   <?php if (!$request): ?>
@@ -428,69 +442,8 @@ $demoDetails = clms_demo_payment_details($conn, $request);
       </div>
     </section>
 
-    <?php if ($paymentRequests): ?>
-      <section class="payment-card" style="margin-top:18px;">
-        <div class="payment-head">
-          <h1>Recent Payment Requests</h1>
-          <span style="font-size:12px;color:#64748b;font-weight:700;"><?= count($paymentRequests) ?> request(s)</span>
-        </div>
-        <div class="payment-body">
-          <div class="request-list">
-            <?php foreach ($paymentRequests as $pr): ?>
-              <?php
-                $prStatus = strtolower((string)$pr['status']);
-                $prExpired = !empty($pr['link_expires_at']) && strtotime($pr['link_expires_at']) < time() && !in_array($prStatus, ['paid', 'verified'], true);
-                $prBadgeClass = $prExpired ? 'badge-expired' : (in_array($prStatus, ['paid', 'verified'], true) ? 'badge-paid' : 'badge-pending');
-                $prBadgeText = $prExpired ? 'Expired' : (in_array($prStatus, ['pending', 'link_sent', 'gateway_created', 'submitted'], true) ? 'Pending' : ucfirst($prStatus));
-              ?>
-              <a class="request-item" href="payment.php?token=<?= urlencode($pr['payment_token']) ?>">
-                <div>
-                  <strong><?= htmlspecialchars($pr['payment_ref']) ?></strong>
-                  <span class="badge-pay <?= $prBadgeClass ?>" style="margin-left:8px;"><?= htmlspecialchars($prBadgeText) ?></span>
-                  <div class="request-meta"><?= (int)$pr['worker_count'] ?> worker(s)</div>
-                </div>
-                <div class="request-amount">Rs. <?= number_format((float)$pr['total_amount'], 2) ?></div>
-              </a>
-            <?php endforeach; ?>
-          </div>
-        </div>
-      </section>
-    <?php endif; ?>
+
   <?php else: ?>
-    <?php if (count($paymentRequests) > 1): ?>
-      <section class="payment-card" style="margin-bottom:18px;">
-        <div class="payment-head">
-          <h1>All Payment Requests</h1>
-          <span style="font-size:12px;color:#64748b;font-weight:700;"><?= count($paymentRequests) ?> request(s)</span>
-        </div>
-        <div class="payment-body">
-          <div class="request-list">
-            <?php foreach ($paymentRequests as $pr): ?>
-              <?php
-                $prStatus = strtolower((string)$pr['status']);
-                $prWorkers = clms_training_payment_workers($conn, (int)$pr['id']);
-                $workerNames = array_slice(array_map(function($w) { return $w['name'] ?? 'Worker'; }, $prWorkers), 0, 3);
-                $moreWorkers = max(0, count($prWorkers) - count($workerNames));
-                $namesText = implode(', ', $workerNames) . ($moreWorkers > 0 ? " +{$moreWorkers} more" : '');
-                $isCurrent = (int)($request['id'] ?? 0) === (int)$pr['id'];
-                $prExpired = !empty($pr['link_expires_at']) && strtotime($pr['link_expires_at']) < time() && !in_array($prStatus, ['paid', 'verified'], true);
-                $prBadgeClass = $prExpired ? 'badge-expired' : ($prStatus === 'paid' ? 'badge-paid' : 'badge-pending');
-                $prBadgeText = $prExpired ? 'Expired' : (in_array($prStatus, ['pending', 'link_sent', 'gateway_created', 'submitted'], true) ? 'Pending' : ucfirst($prStatus));
-              ?>
-              <a class="request-item <?= $isCurrent ? 'active' : '' ?>" href="payment.php?token=<?= urlencode($pr['payment_token']) ?>">
-                <div>
-                  <strong><?= htmlspecialchars($pr['payment_ref']) ?></strong>
-                  <span class="badge-pay <?= $prBadgeClass ?>" style="margin-left:8px;"><?= htmlspecialchars($prBadgeText) ?></span>
-                  <div class="request-meta"><?= (int)$pr['worker_count'] ?> worker(s)<?= $namesText ? ' | ' . htmlspecialchars($namesText) : '' ?></div>
-                </div>
-                <div class="request-amount">Rs. <?= number_format((float)$pr['total_amount'], 2) ?></div>
-              </a>
-            <?php endforeach; ?>
-          </div>
-          <div style="font-size:12px;color:#64748b;">Jis worker/payment ki fee pay karni hai, us request ko select karke Pay Online karein.</div>
-        </div>
-      </section>
-    <?php endif; ?>
     <div class="payment-grid">
       <section class="payment-card">
         <div class="payment-head">
@@ -524,12 +477,21 @@ $demoDetails = clms_demo_payment_details($conn, $request);
           <div class="pay-actions">
             <?php if ($status === 'paid'): ?>
               <a class="btn btn-primary btn-full" href="<?= htmlspecialchars($bookingUrl) ?>">
-                <i class="fas fa-calendar-check"></i> Safety Training & Seat Booking
+                <?php if ($allBooked): ?>
+                  <i class="fas fa-tachometer-alt"></i> Go to Dashboard
+                <?php else: ?>
+                  <i class="fas fa-calendar-check"></i> Safety Training & Seat Booking
+                <?php endif; ?>
               </a>
             <?php endif; ?>
             <button class="btn btn-primary btn-full" id="payBtn" <?= (!$gatewayReady || $isExpired || in_array($status, ['paid'], true)) ? 'disabled' : '' ?>>
               <i class="fas fa-credit-card"></i> Pay Online
             </button>
+            <?php if (in_array($status, ['pending', 'link_sent', 'gateway_created', 'submitted'], true)): ?>
+               <button class="btn btn-full" id="btnBypassPayment" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;margin-top:5px;justify-content:center;" onclick="bypassPaymentTest()">
+                 <i class="fas fa-magic"></i> Bypass Payment (Test Mode)
+               </button>
+            <?php endif; ?>
             <a class="btn btn-outline btn-full" href="payments/download_training_invoice.php?token=<?= urlencode($token) ?>">
               <i class="fas fa-file-invoice"></i> Download GST Invoice
             </a>
@@ -734,10 +696,6 @@ updateSelectedTotal();
 
 const payBtn = document.getElementById('payBtn');
 const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
 if (payBtn) {
   payBtn.addEventListener('click', async () => {
     payBtn.disabled = true;
@@ -804,12 +762,8 @@ if (autoPay && payBtn && !payBtn.disabled) {
 
 async function verifyRazorpayPayment(token, paymentId, orderId, signature) {
   const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-if (payBtn) {
+  const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
+  if (payBtn) {
     payBtn.disabled = true;
     payBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying Payment';
   }
@@ -830,26 +784,14 @@ if (payBtn) {
       window.location.href = <?= json_encode($bookingUrl) ?>;
     } else {
       alert(result.message || 'Payment verification failed.');
-      const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-if (payBtn) {
+      if (payBtn) {
         payBtn.disabled = false;
         payBtn.innerHTML = '<i class="fas fa-credit-card"></i> Pay Online';
       }
     }
   } catch (err) {
     alert('Payment verification connection failed.');
-    const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-const payBtn = document.getElementById('payBtn');
-const autoPay = <?= $autoPay ? 'true' : 'false' ?>;
-if (payBtn) {
+    if (payBtn) {
       payBtn.disabled = false;
       payBtn.innerHTML = '<i class="fas fa-credit-card"></i> Pay Online';
     }
@@ -908,6 +850,42 @@ async function submitDemoPayment() {
   }
   btn.disabled = false;
   btn.innerHTML = '<i class="fas fa-check"></i> Confirm Safety Fee Payment';
+}
+
+async function bypassPaymentTest() {
+  const btn = document.getElementById('btnBypassPayment');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Bypassing...';
+  }
+  try {
+    const res = await fetch('../api/payments/submit_demo_payment.php', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        token: <?= json_encode($token) ?>,
+        payer_reference: 'TEST-MOCK-' + Math.floor(Math.random() * 1000000),
+        note: 'Bypassed using test mode simulate payment button.'
+      })
+    });
+    const result = await res.json();
+    if (result.success) {
+      alert('Payment Simulated Successfully!');
+      window.location.href = <?= json_encode($bookingUrl) ?>;
+    } else {
+      alert(result.message || 'Bypass failed.');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-magic"></i> Bypass Payment (Test Mode)';
+      }
+    }
+  } catch (err) {
+    alert('Unable to connect to demo API.');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-magic"></i> Bypass Payment (Test Mode)';
+    }
+  }
 }
 </script>
 </body>

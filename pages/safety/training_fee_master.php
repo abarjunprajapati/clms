@@ -54,12 +54,12 @@ function renderContent() {
         <input type="number" class="form-control" name="amount" min="0.00" step="0.01" placeholder="Enter amount" required>
       </div>
 
-      <div class="form-group" style="margin:0;">
+      <div class="form-group date-group" style="margin:0;">
         <label class="form-label">From Date</label>
         <input type="date" class="form-control" name="from_date" value="<?= htmlspecialchars(date('Y-m-d')) ?>" required>
       </div>
 
-      <div class="form-group" style="margin:0;">
+      <div class="form-group date-group" style="margin:0;">
         <label class="form-label">To Date</label>
         <input type="date" class="form-control" name="to_date" value="9999-12-31" required>
       </div>
@@ -87,6 +87,7 @@ function renderContent() {
               <th style="padding:10px; text-align:left;">Amount (Rs.)</th>
               <th style="padding:10px; text-align:left;">Entry Date</th>
               <th style="padding:10px; text-align:left;">Status</th>
+              <th style="padding:10px; text-align:left;">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -98,9 +99,17 @@ function renderContent() {
               <td style="padding:10px;"><strong><?= number_format((float)$row['amount'], 2) ?></strong></td>
               <td style="padding:10px;"><?= !empty($row['created_at']) ? htmlspecialchars(date('d/m/Y', strtotime($row['created_at']))) : '-' ?></td>
               <td style="padding:10px;"><span class="badge <?= $active ? 'badge-success' : 'badge-gray' ?>"><?= htmlspecialchars(ucfirst($row['status'])) ?></span></td>
+              <td style="padding:10px;">
+                <div class="row-actions" style="display:flex; gap:8px; align-items:center;">
+                  <button class="btn btn-sm btn-outline-primary" style="padding:4px 8px; font-size:11px;" type="button" onclick='editFee(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>Edit</button>
+                  <button class="btn btn-sm <?= $active ? 'btn-warning' : 'btn-success' ?>" style="padding:4px 8px; font-size:11px;" type="button" onclick="toggleFeeStatus(<?= (int)$row['id'] ?>, '<?= $active ? 'inactive' : 'active' ?>')">
+                    <?= $active ? 'Deactivate' : 'Activate' ?>
+                  </button>
+                </div>
+              </td>
             </tr>
             <?php endforeach; else: ?>
-            <tr><td colspan="6" style="text-align:center; padding:20px; color:var(--text-muted);">No fee rate configured for <?= htmlspecialchars($source) ?>.</td></tr>
+            <tr><td colspan="7" style="text-align:center; padding:20px; color:var(--text-muted);">No fee rate configured for <?= htmlspecialchars($source) ?>.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>
@@ -114,7 +123,9 @@ function renderContent() {
   .form-label { display:block; font-size:13px; font-weight:600; margin-bottom:6px; }
   .form-control { width:100%; padding:10px 14px; border-radius:10px; border:1.5px solid var(--border-color); background:var(--input-bg, rgba(255,255,255,.05)); color:var(--text-primary); font-size:14px; box-sizing:border-box; }
   .content-header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
-  .fee-add-form { display:grid; grid-template-columns:repeat(4, 1fr) auto; gap:14px; align-items:end; }
+  .fee-add-form { display:flex; gap:14px; align-items:end; flex-wrap:wrap; }
+  .fee-add-form .form-group { flex:1; min-width:200px; }
+  .fee-add-form button[type="submit"] { flex:0 0 auto; }
   .toast-msg { position:fixed; bottom:30px; right:30px; z-index:9999; padding:14px 20px; border-radius:12px; display:flex; align-items:center; gap:10px; font-size:14px; font-weight:600; animation:slideUp .3s ease; box-shadow:0 8px 30px rgba(0,0,0,.2); }
   .toast-success { background:#10b981; color:white; }
   .toast-error { background:#ef4444; color:white; }
@@ -129,9 +140,68 @@ const btnShowFeeForm = document.getElementById('btnShowFeeForm');
 const btnHideFeeForm = document.getElementById('btnHideFeeForm');
 const btnSubmitFee = document.getElementById('btnSubmitFee');
 
+function editFee(row) {
+  feeFormPanel.style.display = 'block';
+  btnShowFeeForm.style.display = 'none';
+  
+  feeFormPanel.querySelector('.card-title').innerHTML = '<i class="fas fa-edit"></i> Edit Fee Rate';
+  feeFormPanel.querySelectorAll('.date-group').forEach(el => el.style.display = 'block');
+  
+  trainingFeeForm.querySelector('[name="fee_source"]').value = row.fee_source;
+  trainingFeeForm.querySelector('[name="amount"]').value = row.amount;
+  trainingFeeForm.querySelector('[name="from_date"]').value = row.from_date;
+  trainingFeeForm.querySelector('[name="to_date"]').value = row.to_date;
+  
+  let idInput = trainingFeeForm.querySelector('[name="id"]');
+  if (!idInput) {
+    idInput = document.createElement('input');
+    idInput.type = 'hidden';
+    idInput.name = 'id';
+    trainingFeeForm.appendChild(idInput);
+  }
+  idInput.value = row.id;
+  
+  feeFormPanel.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+async function toggleFeeStatus(id, newStatus) {
+  const ok = confirm(`Are you sure you want to make this fee rate ${newStatus}?`);
+  if (!ok) return;
+  
+  try {
+    const res = await fetch('../../api/safety/update_fee_setting.php', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+      },
+      body: JSON.stringify({ action: 'set_status', id: id, status: newStatus })
+    });
+    const result = await res.json();
+    if (result.success) {
+      showToast(result.message || 'Status updated successfully.', 'success');
+      setTimeout(() => location.reload(), 800);
+    } else {
+      showToast(result.message || 'Failed to update status.', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error. Please try again.', 'error');
+  }
+}
+
 btnShowFeeForm.addEventListener('click', () => {
   feeFormPanel.style.display = 'block';
   btnShowFeeForm.style.display = 'none';
+  
+  feeFormPanel.querySelector('.card-title').innerHTML = '<i class="fas fa-plus-circle"></i> Add Fee Rate';
+  feeFormPanel.querySelectorAll('.date-group').forEach(el => el.style.display = 'none');
+  
+  trainingFeeForm.querySelector('[name="from_date"]').value = '<?= htmlspecialchars(date('Y-m-d')) ?>';
+  trainingFeeForm.querySelector('[name="to_date"]').value = '9999-12-31';
+  
+  const idInput = trainingFeeForm.querySelector('[name="id"]');
+  if (idInput) idInput.value = '';
+  
   const firstField = trainingFeeForm.querySelector('select, input');
   if (firstField) firstField.focus();
 });
@@ -142,6 +212,8 @@ btnHideFeeForm.addEventListener('click', () => {
   trainingFeeForm.reset();
   trainingFeeForm.elements.from_date.value = '<?= htmlspecialchars(date('Y-m-d')) ?>';
   trainingFeeForm.elements.to_date.value = '9999-12-31';
+  const idInput = trainingFeeForm.querySelector('[name="id"]');
+  if (idInput) idInput.value = '';
 });
 
 trainingFeeForm.onsubmit = async (e) => {

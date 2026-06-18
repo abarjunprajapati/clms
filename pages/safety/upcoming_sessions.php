@@ -60,10 +60,12 @@ function renderContent() {
     }
 
     $upcomingSessions = $hasSchedule ? db_fetch_all($conn, "
-        SELECT ts.id, $dateExpr AS session_date, $timeExpr AS session_time, $locationExpr AS location,
+        SELECT ts.id, ts.batch_number, $dateExpr AS session_date, $timeExpr AS session_time, $locationExpr AS location,
                $typeExpr AS training_type, $statusExpr AS session_status, $capacityExpr AS capacity,
+               cb.language_name,
                $workerStatsSelect
         FROM training_schedule ts
+        LEFT JOIN training_class_batches cb ON cb.batch_number = ts.batch_number
         $workerStatsJoin
         WHERE LOWER(COALESCE($statusExpr, 'open')) IN ('open', 'scheduled')
         ORDER BY $dateExpr ASC, $timeExpr ASC
@@ -87,8 +89,11 @@ function renderContent() {
     <table class="data-table">
       <thead>
         <tr>
+          <th>Batch No</th>
+          <th>Language</th>
           <th>Date & Time</th>
           <th>Venue</th>
+          <th>Seats</th>
           <th>Workers</th>
           <th>Status</th>
           <th>Action</th>
@@ -100,6 +105,8 @@ function renderContent() {
           $done = (int)($session['result_done_count'] ?? 0);
         ?>
         <tr>
+          <td><strong><?= htmlspecialchars($session['batch_number'] ?? '-') ?></strong></td>
+          <td><?= htmlspecialchars($session['language_name'] ?? '-') ?></td>
           <td>
             <strong><?= !empty($session['session_date']) ? date('d M Y', strtotime($session['session_date'])) : '-' ?></strong>
             <div style="font-size:11px;color:var(--text-muted)"><?= !empty($session['session_time']) ? date('H:i', strtotime($session['session_time'])) : '-' ?></div>
@@ -108,13 +115,14 @@ function renderContent() {
             <strong><?= htmlspecialchars($session['location'] ?? 'Training Venue') ?></strong>
             <div style="font-size:11px;color:var(--text-muted)"><?= htmlspecialchars(ucfirst((string)($session['training_type'] ?? 'induction'))) ?></div>
           </td>
+          <td><?= (int)$session['capacity'] ?></td>
           <td><?= $done ?> / <?= $assigned ?> results</td>
           <td><span class="badge badge-info"><?= htmlspecialchars(ucfirst((string)($session['session_status'] ?? 'open'))) ?></span></td>
           <td><a href="manage_session.php?id=<?= (int)$session['id'] ?>" class="btn btn-sm btn-outline">Manage</a></td>
         </tr>
         <?php endforeach; ?>
         <?php if (empty($upcomingSessions)): ?>
-        <tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">No open sessions.</td></tr>
+        <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">No open sessions.</td></tr>
         <?php endif; ?>
       </tbody>
     </table>

@@ -21,7 +21,9 @@ try {
     clms_set_payment_setting($conn, 'payment_gateway_provider', $provider, $userId);
     clms_set_payment_setting($conn, 'payment_demo_merchant_name', $_POST['payment_demo_merchant_name'] ?? 'CLMS Safety Training', $userId);
     clms_set_payment_setting($conn, 'payment_demo_upi_id', $_POST['payment_demo_upi_id'] ?? 'clms-demo@upi', $userId);
-    clms_set_payment_setting($conn, 'training_fee_per_worker', $_POST['training_fee_per_worker'] ?? '500', $userId);
+    if (isset($_POST['training_fee_per_worker'])) {
+        clms_set_payment_setting($conn, 'training_fee_per_worker', $_POST['training_fee_per_worker'], $userId);
+    }
     clms_set_payment_setting($conn, 'training_payment_gst_percent', $_POST['training_payment_gst_percent'] ?? '18', $userId);
     clms_set_payment_setting($conn, 'training_payment_link_valid_hours', $_POST['training_payment_link_valid_hours'] ?? '72', $userId);
 

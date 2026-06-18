@@ -190,8 +190,7 @@ CREATE TABLE IF NOT EXISTS training_fee_masters (
     status VARCHAR(20) NOT NULL DEFAULT 'active',
     created_by INT NULL,
     created_at DATETIME NULL,
-    updated_at DATETIME NULL,
-    UNIQUE KEY uq_training_fee_source (fee_source)
+    updated_at DATETIME NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS training_class_batches (
