@@ -25,7 +25,21 @@ try {
         'iss',
         [$contractorId, $start, $end]
     );
-    $wageRow = db_single($conn, "SELECT COALESCE(SUM(salary),0) total FROM wages WHERE contractor_id=? AND month_year=?", 'is', [$contractorId, $monthYear]);
+    // Calculate wages dynamically based on workmen certified_wage_rate and attendance check_ins
+    $wagesRows = db_fetch_all($conn, "
+        SELECT w.certified_wage_rate, COUNT(DISTINCT DATE(a.check_in)) AS attended_days
+        FROM workmen w
+        JOIN attendance a ON w.id = a.workman_id
+        WHERE w.contractor_id = ? AND DATE(a.check_in) BETWEEN ? AND ?
+        GROUP BY w.id
+    ", 'iss', [$contractorId, $start, $end]);
+
+    $calculatedWageTotal = 0.0;
+    foreach ($wagesRows as $r) {
+        $rate = (float)($r['certified_wage_rate'] ?? 0);
+        $days = (int)($r['attended_days'] ?? 0);
+        $calculatedWageTotal += ($rate * $days);
+    }
 
     echo json_encode([
         'success' => true,
@@ -34,7 +48,7 @@ try {
             'month_year' => $monthYear,
             'worker_count' => $workerCount,
             'attendance_days' => $attendanceDays,
-            'wage_total' => (float)($wageRow['total'] ?? 0),
+            'wage_total' => $calculatedWageTotal,
             'status' => $workerCount > 0 && $attendanceDays > 0 ? 'ready' : 'missing_base_data',
         ],
     ]);

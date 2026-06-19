@@ -45,8 +45,21 @@ function computeComplianceValidation($conn, $contractorId, $monthYear, $type, $p
         'iss',
         [$contractorId, $start, $end]
     );
-    $wageRow = db_single($conn, "SELECT COALESCE(SUM(salary),0) AS total FROM wages WHERE contractor_id = ? AND month_year = ?", 'is', [$contractorId, $monthYear]);
-    $wageTotal = (float)($wageRow['total'] ?? 0);
+    // Calculate wages dynamically based on workmen certified_wage_rate and attendance check_ins
+    $wagesRows = db_fetch_all($conn, "
+        SELECT w.certified_wage_rate, COUNT(DISTINCT DATE(a.check_in)) AS attended_days
+        FROM workmen w
+        JOIN attendance a ON w.id = a.workman_id
+        WHERE w.contractor_id = ? AND DATE(a.check_in) BETWEEN ? AND ?
+        GROUP BY w.id
+    ", 'iss', [$contractorId, $start, $end]);
+
+    $wageTotal = 0.0;
+    foreach ($wagesRows as $r) {
+        $rate = (float)($r['certified_wage_rate'] ?? 0);
+        $days = (int)($r['attended_days'] ?? 0);
+        $wageTotal += ($rate * $days);
+    }
 
     $errors = [];
     if ($workerCount <= 0) {
@@ -59,6 +72,7 @@ function computeComplianceValidation($conn, $contractorId, $monthYear, $type, $p
         $expected = round($gross * 0.04, 2);
         $actual = (float)($payload['total_contribution'] ?? 0);
         if ($covered !== $workerCount) $errors[] = "ESI employee count ($covered) does not match enrolled workers ($workerCount).";
+        if (abs($gross - $wageTotal) > 1.0) $errors[] = "ESI Gross Wages (₹" . number_format($gross, 2) . ") does not match calculated wages (₹" . number_format($wageTotal, 2) . ") based on workmen enrollment & attendance.";
         if (abs($expected - $actual) > 1) $errors[] = "ESI contribution mismatch. Expected about $expected.";
         if ($attendanceDays === 0) $errors[] = 'No attendance found for this month.';
     }
@@ -69,6 +83,7 @@ function computeComplianceValidation($conn, $contractorId, $monthYear, $type, $p
         $expected = round($wages * 0.24, 2);
         $actual = (float)($payload['total_pf'] ?? 0);
         if ($members !== $workerCount) $errors[] = "PF member count ($members) does not match enrolled workers ($workerCount).";
+        if (abs($wages - $wageTotal) > 1.0) $errors[] = "PF Total Wages (₹" . number_format($wages, 2) . ") does not match calculated wages (₹" . number_format($wageTotal, 2) . ") based on workmen enrollment & attendance.";
         if (abs($expected - $actual) > 1) $errors[] = "PF contribution mismatch. Expected about $expected.";
     }
 

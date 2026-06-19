@@ -76,23 +76,23 @@ function renderContent() {
                 </div>
                 <div class="form-group">
                   <label class="form-label required">No. of Employees Covered</label>
-                  <input type="number" class="form-control" name="employees_count" required min="1" placeholder="Total employees">
+                  <input type="number" class="form-control" name="employees_count" id="esiEmployees" required min="1" placeholder="Total employees" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Total Gross Wages (₹)</label>
-                  <input type="number" class="form-control" name="gross_wages" required step="0.01" placeholder="0.00" id="esiGross">
+                  <input type="number" class="form-control" name="gross_wages" required step="0.01" placeholder="0.00" id="esiGross" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Employer Contribution (₹)</label>
-                  <input type="number" class="form-control" name="employer_contribution" required step="0.01" id="esiEmployer" placeholder="Auto-calc: 3.25%">
+                  <input type="number" class="form-control" name="employer_contribution" required step="0.01" id="esiEmployer" placeholder="Auto-calc: 3.25%" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Employee Contribution (₹)</label>
-                  <input type="number" class="form-control" name="employee_contribution" required step="0.01" id="esiEmployee" placeholder="Auto-calc: 0.75%">
+                  <input type="number" class="form-control" name="employee_contribution" required step="0.01" id="esiEmployee" placeholder="Auto-calc: 0.75%" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Total Contribution (₹)</label>
-                  <input type="number" class="form-control" name="total_contribution" required step="0.01" id="esiTotal" placeholder="Total amount" style="font-weight:700;color:#10b981;">
+                  <input type="number" class="form-control" name="total_contribution" required step="0.01" id="esiTotal" placeholder="Total amount" style="font-weight:700;color:#10b981; background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;" readonly>
                 </div>
                 <div class="form-group span-2">
                   <label class="form-label required">Upload Challan (PDF)</label>
@@ -132,23 +132,23 @@ function renderContent() {
                 </div>
                 <div class="form-group">
                   <label class="form-label required">No. of Members</label>
-                  <input type="number" class="form-control" name="members_count" required min="1">
+                  <input type="number" class="form-control" name="members_count" id="pfMembers" required min="1" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Total Wages (₹)</label>
-                  <input type="number" class="form-control" name="total_wages" required step="0.01" id="pfWages">
+                  <input type="number" class="form-control" name="total_wages" required step="0.01" id="pfWages" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">EPF Contribution (₹)</label>
-                  <input type="number" class="form-control" name="epf_contribution" required step="0.01" id="pfEPF" placeholder="12% of wages">
+                  <input type="number" class="form-control" name="epf_contribution" required step="0.01" id="pfEPF" placeholder="12% of wages" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">EPS Contribution (₹)</label>
-                  <input type="number" class="form-control" name="eps_contribution" required step="0.01" id="pfEPS" placeholder="8.33% of wages">
+                  <input type="number" class="form-control" name="eps_contribution" required step="0.01" id="pfEPS" placeholder="8.33% of wages" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Total PF Amount (₹)</label>
-                  <input type="number" class="form-control" name="total_pf" required step="0.01" id="pfTotal" style="font-weight:700;color:#10b981;">
+                  <input type="number" class="form-control" name="total_pf" required step="0.01" id="pfTotal" style="font-weight:700;color:#10b981; background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;" readonly>
                 </div>
                 <div class="form-group span-2">
                   <label class="form-label required">Upload PF Challan (PDF)</label>
@@ -196,19 +196,19 @@ function renderContent() {
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Number of Workers</label>
-                  <input type="number" class="form-control" name="worker_count" required min="1" id="klwfCount">
+                  <input type="number" class="form-control" name="worker_count" required min="1" id="klwfCount" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Employee Contribution (₹)</label>
-                  <input type="number" class="form-control" name="employee_contribution" required step="0.01" id="klwfEmployee" placeholder="₹40 × workers">
+                  <input type="number" class="form-control" name="employee_contribution" required step="0.01" id="klwfEmployee" placeholder="₹40 × workers" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Employer Contribution (₹)</label>
-                  <input type="number" class="form-control" name="employer_contribution" required step="0.01" id="klwfEmployer" placeholder="₹160 × workers">
+                  <input type="number" class="form-control" name="employer_contribution" required step="0.01" id="klwfEmployer" placeholder="₹160 × workers" readonly style="background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;">
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Total KLWF Amount (₹)</label>
-                  <input type="number" class="form-control" name="total_amount" required step="0.01" id="klwfTotal" style="font-weight:700;color:#10b981;">
+                  <input type="number" class="form-control" name="total_amount" required step="0.01" id="klwfTotal" style="font-weight:700;color:#10b981; background-color: var(--input-bg, rgba(255,255,255,.04)); opacity: 0.85; cursor: not-allowed;" readonly>
                 </div>
                 <div class="form-group">
                   <label class="form-label required">Upload KLWF Challan</label>
@@ -412,6 +412,77 @@ function renderContent() {
         btn.disabled = false;
         btn.innerHTML = originalText;
       });
+    });
+
+    // AJAX load of wages based on enrolled workmen and attendance
+    async function fetchComplianceDetails(monthVal) {
+      if (!monthVal) return;
+      try {
+        const contractorId = <?= json_encode($c_id) ?>;
+        if (!contractorId) return;
+
+        const response = await fetch('../../api/compliance/validate.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contractor_id: contractorId, month_year: monthVal })
+        });
+        const result = await response.json();
+        if (result.success && result.data) {
+          const data = result.data;
+          const wageTotal = parseFloat(data.wage_total) || 0;
+          const workerCount = parseInt(data.worker_count) || 0;
+
+          // Fill ESI fields
+          const esiGross = document.getElementById('esiGross');
+          if (esiGross) {
+            esiGross.value = wageTotal.toFixed(2);
+            esiGross.dispatchEvent(new Event('input'));
+          }
+          const esiEmployees = document.getElementById('esiEmployees');
+          if (esiEmployees) {
+            esiEmployees.value = workerCount;
+          }
+
+          // Fill PF fields
+          const pfWages = document.getElementById('pfWages');
+          if (pfWages) {
+            pfWages.value = wageTotal.toFixed(2);
+            pfWages.dispatchEvent(new Event('input'));
+          }
+          const pfMembers = document.getElementById('pfMembers');
+          if (pfMembers) {
+            pfMembers.value = workerCount;
+          }
+
+          // Fill KLWF fields
+          const klwfCount = document.getElementById('klwfCount');
+          if (klwfCount) {
+            klwfCount.value = workerCount;
+            klwfCount.dispatchEvent(new Event('input'));
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching compliance details:', err);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const monthInputs = document.querySelectorAll('input[name="contribution_month"]');
+      monthInputs.forEach(input => {
+        input.addEventListener('change', (e) => {
+          fetchComplianceDetails(e.target.value);
+        });
+      });
+
+      let monthVal = null;
+      const activeMonthInput = document.querySelector('input[name="contribution_month"]');
+      if (activeMonthInput) {
+        monthVal = activeMonthInput.value;
+      } else {
+        const d = new Date();
+        monthVal = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      }
+      fetchComplianceDetails(monthVal);
     });
     </script>
     <?php
