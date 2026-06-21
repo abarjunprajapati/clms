@@ -259,7 +259,7 @@ function renderContent() {
             GROUP BY batch_id
         ) x ON x.batch_id = b.id
         WHERE b.training_date >= CURDATE()
-          AND LOWER(COALESCE(b.status, 'draft')) IN ('draft','open','scheduled','active')
+          AND LOWER(COALESCE(b.status, 'open')) IN ('open','scheduled','active')
         ORDER BY b.training_date ASC, b.session_name ASC, b.id ASC
     ");
     foreach ($batches as &$batchRow) {
@@ -320,6 +320,7 @@ function renderContent() {
           AND NOT (
               LOWER(COALESCE(tr.status, '')) IN ('pending','pending_eo','pending_safety','welfare_pending','scheduled','contractor_confirmed','passed')
               AND LOWER(COALESCE(w.training_status, 'pending')) NOT IN ('training_failed','fail','failed','absent')
+              AND tr.batch_number IS NOT NULL AND tr.batch_number <> ''
           )
         ORDER BY COALESCE(tr.requested_date, DATE(w.created_at), CURDATE()) ASC, w.id ASC
     ", 'ii', [$contractorId, $contractorId]) : [];

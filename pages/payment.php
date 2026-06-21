@@ -428,7 +428,7 @@ $demoDetails = clms_demo_payment_details($conn, $request);
           <div class="live-total">
             <div>
               <strong>Selected Workers : <span id="selectedWorkerCount">0</span></strong>
-              <div style="font-size:12px;color:#1d4ed8;margin-top:3px;">Individual payment ke liye ek worker select karein, bulk payment ke liye multiple workers tick karein.</div>
+              <div style="font-size:12px;color:#1d4ed8;margin-top:3px;">Select a single worker for individual payment, or tick multiple workers to perform a bulk payment.</div>
             </div>
             <div>
               <div style="font-size:12px;color:#64748b;font-weight:800;text-transform:uppercase;">Total Amount</div>

@@ -28,11 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $result = clms_safety_create_batch($conn, $_POST, (int)($_SESSION['user_id'] ?? 0));
-        $_SESSION['success'] = 'Batch ' . $result['batch_number'] . ' created. Select workers and schedule the class.';
-        $returnUrl = 'training_schedule.php?batch_id=' . (int)($result['batch_id'] ?? 0);
-        if (!empty($_POST['source_request_id'])) {
-            $returnUrl .= '&request_id=' . (int)$_POST['source_request_id'];
-        }
+        $returnUrl = 'training_class_master.php?created=1&batch_no=' . urlencode($result['batch_number']) . '#recent-batches';
         header('Location: ' . $returnUrl);
         exit;
     } catch (Throwable $e) {
@@ -90,7 +86,7 @@ function renderContent() {
   </div>
 </section>
 
-<section class="card glass" style="margin-top:18px">
+<section class="card glass" style="margin-top:18px" id="recent-batches" tabindex="-1">
   <div class="card-header"><div class="card-title">Recent Batches</div><a href="training_batch_report.php" class="btn btn-sm btn-primary">Reports</a></div>
   <div class="card-body" style="padding:0">
     <table class="data-table"><thead><tr><th>Batch No</th><th>Date</th><th>Location</th><th>Language</th><th>Workers</th><th>Status</th><th>Action</th></tr></thead><tbody>
@@ -103,7 +99,7 @@ function renderContent() {
       $fillPct = min(100, max(0, round(($assigned / $capacity) * 100)));
       $active = in_array(strtolower((string)$b['status']), array('open', 'scheduled', 'active'), true) && $b['training_date'] >= date('Y-m-d');
       $assignUrl = 'training_schedule.php?batch_id=' . (int)$b['id'] . ($prefillRequestId ? '&request_id=' . (int)$prefillRequestId : '');
-    ?><tr><td><strong><?= htmlspecialchars($b['batch_number']) ?></strong><div style="font-size:11px;color:var(--text-muted)">Token: <?= htmlspecialchars($b['batch_token']) ?></div></td><td><?= date('d M Y', strtotime($b['training_date'])) ?></td><td><?= htmlspecialchars($b['venue_name']) ?></td><td><?= htmlspecialchars($b['language_name']) ?></td><td><div class="worker-capacity"><div class="worker-capacity-top"><strong><?= $assigned ?></strong><span>of <?= $capacity ?> assigned</span><em><?= $available ?> open</em></div><div class="worker-capacity-bar"><span style="width:<?= $fillPct ?>%"></span></div><div class="worker-capacity-split"><span><?= $regular ?> regular</span><span><?= $emg ?> emergency</span></div></div></td><td><span class="badge <?= $active ? 'badge-success' : 'badge-gray' ?>"><?= $active ? 'Active' : 'Inactive' ?></span></td><td><div class="row-actions"><?php if ($active): ?><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars($assignUrl) ?>">Assign Workers</a><?php endif; ?><a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a><button type="button" class="btn btn-sm btn-outline" onclick="viewRescheduleHistory(<?= (int)$b['id'] ?>, '<?= htmlspecialchars($b['batch_number']) ?>')">History</button><form method="post" style="margin:0"><input type="hidden" name="batch_action" value="set_status"><input type="hidden" name="batch_id" value="<?= (int)$b['id'] ?>"><input type="hidden" name="status" value="<?= $active ? 'inactive' : 'active' ?>"><button class="btn btn-sm <?= $active ? 'btn-warning' : 'btn-success' ?>" type="submit" <?= !$active && $b['training_date'] < date('Y-m-d') ? 'disabled title="Previous date batch cannot be activated"' : '' ?>><?= $active ? 'Inactive' : 'Active' ?></button></form></div></td></tr><?php endforeach; ?>
+    ?><tr><td><strong><?= htmlspecialchars($b['batch_number']) ?> (<?= htmlspecialchars($b['session_name'] ?? '') ?>)</strong><div style="font-size:11px;color:var(--text-muted)">Token: <?= htmlspecialchars($b['batch_token']) ?></div></td><td><?= date('d M Y', strtotime($b['training_date'])) ?></td><td><?= htmlspecialchars($b['venue_name']) ?></td><td><?= htmlspecialchars($b['language_name']) ?></td><td><div class="worker-capacity"><div class="worker-capacity-top"><strong><?= $assigned ?></strong><span>of <?= $capacity ?> assigned</span><em><?= $available ?> open</em></div><div class="worker-capacity-bar"><span style="width:<?= $fillPct ?>%"></span></div><div class="worker-capacity-split"><span><?= $regular ?> regular</span><span><?= $emg ?> emergency</span></div></div></td><td><span class="badge <?= $active ? 'badge-success' : 'badge-gray' ?>"><?= $active ? 'Active' : 'Inactive' ?></span></td><td><div class="row-actions"><button type="button" class="btn btn-sm btn-outline" onclick="viewBatchDetails(<?= htmlspecialchars(json_encode($b)) ?>)">View</button><?php if ($active): ?><a class="btn btn-sm btn-primary" href="<?= htmlspecialchars($assignUrl) ?>">Assign Workers</a><?php endif; ?><a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a><button type="button" class="btn btn-sm btn-outline" onclick="viewRescheduleHistory(<?= (int)$b['id'] ?>, '<?= htmlspecialchars($b['batch_number']) ?>')">History</button><button class="btn btn-sm <?= $active ? 'btn-warning' : 'btn-success' ?>" type="button" onclick="confirmToggleStatus(<?= (int)$b['id'] ?>, '<?= $active ? 'inactive' : 'active' ?>', <?= (int)$b['total_workers'] ?>, '<?= htmlspecialchars($b['batch_number']) ?>')" <?= !$active && $b['training_date'] < date('Y-m-d') ? 'disabled title="Previous date batch cannot be activated"' : '' ?>><?= $active ? 'Inactive' : 'Active' ?></button></div></td></tr><?php endforeach; ?>
     </tbody></table>
   </div>
 </section>
@@ -233,6 +229,101 @@ async function viewRescheduleHistory(batchId, batchNumber) {
     Swal.fire('Error', 'Unable to fetch reschedule history.', 'error');
   }
 }
+
+function viewBatchDetails(batch) {
+  let html = `
+    <table class="table table-bordered text-start" style="width:100%; font-size:14px; border-collapse:collapse; margin-top:10px;">
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc; width:40%;">Batch Number</th><td style="padding:8px; border:1px solid #cbd5e1;"><strong>${batch.batch_number}</strong></td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Batch Token</th><td style="padding:8px; border:1px solid #cbd5e1;">${batch.batch_token}</td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Training Date</th><td style="padding:8px; border:1px solid #cbd5e1;">${batch.training_date}</td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Venue / Location</th><td style="padding:8px; border:1px solid #cbd5e1;">${batch.venue_name || 'N/A'}</td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Language</th><td style="padding:8px; border:1px solid #cbd5e1;">${batch.language_name || 'N/A'}</td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Session</th><td style="padding:8px; border:1px solid #cbd5e1;">${batch.session_name || 'FN'}</td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Timing</th><td style="padding:8px; border:1px solid #cbd5e1;">${batch.time_from || '—'} to ${batch.time_to || '—'}</td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Trainer / Instructor</th><td style="padding:8px; border:1px solid #cbd5e1;">${batch.instructor_name || 'Not assigned'}</td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Capacity</th><td style="padding:8px; border:1px solid #cbd5e1;">${batch.capacity} total (includes ${batch.emergency_seats || 0} emergency)</td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Assigned Workers</th><td style="padding:8px; border:1px solid #cbd5e1;">${batch.total_workers} workers</td></tr>
+      <tr><th style="padding:8px; border:1px solid #cbd5e1; background:#f8fafc;">Status</th><td style="padding:8px; border:1px solid #cbd5e1;"><span class="badge ${batch.status === 'active' || batch.status === 'open' || batch.status === 'scheduled' ? 'bg-success' : 'bg-secondary'}">${batch.status.toUpperCase()}</span></td></tr>
+    </table>
+  `;
+  Swal.fire({
+    title: 'Batch Details',
+    html: html,
+    width: '500px',
+    confirmButtonText: 'Close',
+    confirmButtonColor: '#1e3a8a'
+  });
+}
+
+function confirmToggleStatus(batchId, targetStatus, workerCount, batchNumber) {
+  if (targetStatus === 'inactive' && workerCount > 0) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Action Blocked',
+      text: 'Batch ' + batchNumber + ' has ' + workerCount + ' scheduled worker(s). You cannot deactivate a batch that has assigned workers.',
+      confirmButtonColor: '#ef4444'
+    });
+    return;
+  }
+  
+  const actionWord = targetStatus === 'active' ? 'activate' : 'deactivate';
+  Swal.fire({
+    title: 'Are you sure?',
+    text: 'Do you want to ' + actionWord + ' Batch ' + batchNumber + '?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: targetStatus === 'active' ? '#10b981' : '#f59e0b',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: 'Yes, ' + actionWord + ' it!'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.style.display = 'none';
+      
+      const actionInput = document.createElement('input');
+      actionInput.type = 'hidden';
+      actionInput.name = 'batch_action';
+      actionInput.value = 'set_status';
+      form.appendChild(actionInput);
+      
+      const idInput = document.createElement('input');
+      idInput.type = 'hidden';
+      idInput.name = 'batch_id';
+      idInput.value = batchId;
+      form.appendChild(idInput);
+      
+      const statusInput = document.createElement('input');
+      statusInput.type = 'hidden';
+      statusInput.name = 'status';
+      statusInput.value = targetStatus;
+      form.appendChild(statusInput);
+      
+      document.body.appendChild(form);
+      form.submit();
+    }
+  });
+}
+
+// Success popup and auto-scroll/focus
+window.addEventListener('load', () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('created') === '1') {
+    const batchNo = urlParams.get('batch_no') || '';
+    Swal.fire({
+      icon: 'success',
+      title: 'Batch Created Successfully',
+      text: 'Batch with Batch No ' + batchNo + ' is created successfully',
+      confirmButtonColor: '#1e3a8a'
+    }).then(() => {
+      const el = document.getElementById('recent-batches');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+        setTimeout(() => el.focus(), 500);
+      }
+    });
+  }
+});
 </script>
 <?php }
 renderLayout('Training Class Master', 'renderContent', $role, $name);

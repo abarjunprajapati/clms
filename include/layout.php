@@ -192,19 +192,29 @@ function renderLayout($page_title, $content_callback, $role, $name) {
     ?>
 
     <?php if($success_msg): ?>
-      <div class="alert alert-success" id="auto-hide-alert">
-        <i class="fas fa-check-circle"></i>
-        <div><?= htmlspecialchars($success_msg) ?></div>
-        <button type="button" style="margin-left:auto; background:none; border:none; cursor:pointer;" onclick="this.parentElement.remove()">&times;</button>
-      </div>
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          Swal.fire({
+            icon: 'success',
+            title: 'Success',
+            text: <?= json_encode($success_msg) ?>,
+            confirmButtonColor: '#1e3a8a'
+          });
+        });
+      </script>
     <?php endif; ?>
 
     <?php if($error_msg): ?>
-      <div class="alert alert-danger" id="auto-hide-alert">
-        <i class="fas fa-exclamation-circle"></i>
-        <div><?= htmlspecialchars($error_msg) ?></div>
-        <button type="button" style="margin-left:auto; background:none; border:none; cursor:pointer;" onclick="this.parentElement.remove()">&times;</button>
-      </div>
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: <?= json_encode($error_msg) ?>,
+            confirmButtonColor: '#1e3a8a'
+          });
+        });
+      </script>
     <?php endif; ?>
 
     <?php $content_callback(); ?>

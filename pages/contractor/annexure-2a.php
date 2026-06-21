@@ -30,17 +30,34 @@ function renderContent() {
     $is_approved_limited_edit = $status === 'approved';
     $is_limited_update_mode = $is_readonly || $is_approved_limited_edit;
     $is_approved_view_only = false;
+
+    // Fetch previously saved PO/PWO/SO selections
+    $selected_pos_db = [];
+    $selected_pwos_db = [];
+    $selected_sales_db = [];
+    if (!empty($c['id'])) {
+        $cid = (int)$c['id'];
+        $po_res = $conn->query("SELECT po_number FROM contractor_po_selection WHERE contractor_id = $cid");
+        while ($r = $po_res->fetch_assoc()) $selected_pos_db[] = $r['po_number'];
+        
+        $pwo_res = $conn->query("SELECT pwo_number FROM contractor_pwo_selection WHERE contractor_id = $cid");
+        while ($r = $pwo_res->fetch_assoc()) $selected_pwos_db[] = $r['pwo_number'];
+
+        $so_res = $conn->query("SELECT sale_order_no FROM contractor_so_selection WHERE contractor_id = $cid");
+        while ($r = $so_res->fetch_assoc()) $selected_sales_db[] = $r['sale_order_no'];
+    }
     
     // Parse worker categories
     $worker_cats = !empty($c['worker_category']) ? explode(',', $c['worker_category']) : [];
     $readonly_attr = ($is_readonly || $is_approved_limited_edit || $is_approved_view_only) ? 'readonly' : '';
     $disabled_attr = ($is_readonly || $is_approved_limited_edit || $is_approved_view_only) ? 'disabled' : '';
     $limited_edit_readonly_attr = $is_approved_view_only ? 'readonly' : '';
-    $limited_edit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
-    $saved_limited_row_readonly_attr = $is_limited_update_mode ? 'readonly' : $limited_edit_readonly_attr;
-    $saved_limited_file_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
-    $saved_limited_action_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
-    $ecp_choice_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
+    $limited_edit_disabled_attr = ($is_approved_view_only || ($is_limited_update_mode && !$is_resubmit_mode)) ? 'disabled' : '';
+    $saved_limited_row_readonly_attr = ($is_limited_update_mode && !$is_resubmit_mode) ? 'readonly' : $limited_edit_readonly_attr;
+    $saved_limited_file_disabled_attr = ($is_limited_update_mode && !$is_resubmit_mode) ? 'disabled' : $limited_edit_disabled_attr;
+    $saved_limited_action_disabled_attr = ($is_limited_update_mode && !$is_resubmit_mode) ? 'disabled' : $limited_edit_disabled_attr;
+    $ecp_choice_disabled_attr = ($is_limited_update_mode && !$is_resubmit_mode) ? 'disabled' : $limited_edit_disabled_attr;
+    $po_disabled_attr = ($is_readonly && !$is_resubmit_mode) || $is_approved_view_only ? 'disabled' : '';
     $submit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
     $draft_disabled_attr = ($is_readonly || $is_approved_view_only) ? 'disabled' : '';
     $selected_ecp_covered = $c['ecp_covered'] ?? 'YES';
@@ -424,7 +441,7 @@ function renderContent() {
                             <table class="table table-hover align-middle mb-0" id="poTable">
                                 <thead>
                                     <tr>
-                                        <th class="ps-4"><input type="checkbox" id="selectAllPO" class="form-check-input" <?= $disabled_attr ?>></th>
+                                        <th class="ps-4"><input type="checkbox" id="selectAllPO" class="form-check-input" <?= $po_disabled_attr ?>></th>
                                         <th>PO Number</th>
                                         <th>Type</th>
                                         <th>Purch. Group</th>
@@ -432,13 +449,13 @@ function renderContent() {
                                         <th>Currency</th>
                                         <th>Total Value</th>
                                         <th>Doc Date</th>
-                                        <th>Status</th>
+                                        <th>Status <i class="fas fa-info-circle text-muted" style="cursor: help;" title="Released status means the Purchase Order is approved, active in SAP, and available for use."></i></th>
                                     </tr>
                                 </thead>
                                 <tbody id="poTableBody">
                                     <tr><td colspan="9" class="text-center py-4 text-muted">No PO records found for this vendor code.</td></tr>
                                 </tbody>
-                            </table>
+                              </table>
                         </div>
                         <input type="hidden" name="selected_pos" id="selected_pos">
                     </div>
@@ -454,7 +471,7 @@ function renderContent() {
                             <div class="card-body p-0">
                                 <div class="table-responsive" style="max-height: 300px;">
                                     <table class="table table-sm table-hover mb-0" id="pwoTable">
-                                        <thead><tr><th class="ps-3"><input type="checkbox" id="selectAllPWO" class="form-check-input" <?= $disabled_attr ?>></th><th>PWO No</th><th>Vessel</th><th>Completion</th></tr></thead>
+                                        <thead><tr><th class="ps-3"><input type="checkbox" id="selectAllPWO" class="form-check-input" <?= $po_disabled_attr ?>></th><th>PWO No</th><th>Vessel</th><th>Completion</th></tr></thead>
                                         <tbody id="pwoTableBody"><tr><td colspan="4" class="text-center py-3 text-muted">No records.</td></tr></tbody>
                                     </table>
                                 </div>
@@ -470,7 +487,7 @@ function renderContent() {
                             <div class="card-body p-0">
                                 <div class="table-responsive" style="max-height: 300px;">
                                     <table class="table table-sm table-hover mb-0" id="soTable">
-                                        <thead><tr><th class="ps-3"><input type="checkbox" id="selectAllSO" class="form-check-input" <?= $disabled_attr ?>></th><th>Sales Doc</th><th>Amount</th><th>Curr</th></tr></thead>
+                                        <thead><tr><th class="ps-3"><input type="checkbox" id="selectAllSO" class="form-check-input" <?= $po_disabled_attr ?>></th><th>Sales Doc</th><th>Amount</th><th>Curr</th></tr></thead>
                                         <tbody id="soTableBody"><tr><td colspan="4" class="text-center py-3 text-muted">No records.</td></tr></tbody>
                                     </table>
                                 </div>
@@ -928,6 +945,34 @@ function renderContent() {
 <script>
     const ANNEXURE_IS_READONLY = <?= $is_readonly ? 'true' : 'false' ?>;
     const ANNEXURE2A_LIMITED_EDIT = <?= $is_limited_update_mode ? 'true' : 'false' ?>;
+    const IS_RESUBMIT_MODE = <?= $is_resubmit_mode ? 'true' : 'false' ?>;
+    let initialEcpAndLicenseData = '';
+
+    function serializeEcpAndLicense() {
+        const data = {
+            ecp_covered: getRadioValue('ecp_covered'),
+            ecps: Array.from(document.querySelectorAll('#ecpTableBody tr.ecp-row')).map(row => {
+                return {
+                    number: row.querySelector('[name="ecp_number[]"]')?.value || '',
+                    from: row.querySelector('[name="ecp_valid_from[]"]')?.value || '',
+                    to: row.querySelector('[name="ecp_valid_to[]"]')?.value || '',
+                    workers: row.querySelector('[name="ecp_workers[]"]')?.value || row.querySelector('[name="workers_ecp[]"]')?.value || ''
+                };
+            }),
+            ecp_reason: document.getElementById('ecp_exemption_reason')?.value || '',
+            licenses: Array.from(document.querySelectorAll('#licenseTableBody tr.license-row')).map(row => {
+                return {
+                    no: row.querySelector('[name="license_no[]"]')?.value || '',
+                    validity: row.querySelector('[name="license_validity[]"]')?.value || '',
+                    issued: row.querySelector('[name="license_issued[]"]')?.value || '',
+                    issued_date: row.querySelector('[name="issued_date[]"]')?.value || '',
+                    expiry_date: row.querySelector('[name="expiry_date[]"]')?.value || '',
+                    file: row.querySelector('[name="license_file[]"]')?.value || ''
+                };
+            })
+        };
+        return JSON.stringify(data);
+    }
 
     function showAnnexure2AFeedback(message, type = 'info', title = '') {
         if (typeof window.notifyUser === 'function') {
@@ -1195,6 +1240,11 @@ function renderContent() {
         return true;
     }
 
+    const savedSelectedPOs = <?= json_encode($selected_pos_db) ?>;
+    const savedSelectedPWOs = <?= json_encode($selected_pwos_db) ?>;
+    const savedSelectedSales = <?= json_encode($selected_sales_db) ?>;
+    const isPOCheckboxDisabled = <?= (($is_readonly && !$is_resubmit_mode) || $is_approved_view_only) ? 'true' : 'false' ?>;
+
     // SAP Fetch logic
     async function fetchSAPData() {
         const code = '<?= $vendor_code ?>';
@@ -1208,19 +1258,26 @@ function renderContent() {
             const poData = await poResp.json();
             const poBody = document.getElementById('poTableBody');
             if (poData.status === 'success' && poData.data.length > 0) {
-                poBody.innerHTML = poData.data.map(p => `
-                    <tr>
-                        <td class="ps-4"><input type="checkbox" class="po-check form-check-input" value="${p.po_number}" ${ANNEXURE_IS_READONLY ? 'disabled' : ''}></td>
-                        <td><span class="fw-bold text-dark">${p.po_number}</span></td>
-                        <td><span class="badge bg-light text-dark border">${p.po_type}</span></td>
-                        <td>${p.purchasing_group}</td>
-                        <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.header_text}</td>
-                        <td>${p.currency}</td>
-                        <td class="fw-bold">${p.total_value}</td>
-                        <td>${p.document_date}</td>
-                        <td><span class="badge ${p.release_status==='R'?'bg-success':'bg-warning'}">${p.release_status==='R'?'Released':'Pending'}</span></td>
-                    </tr>
-                `).join('');
+                poBody.innerHTML = poData.data.map(p => {
+                    const isChecked = savedSelectedPOs.includes(p.po_number) ? 'checked' : '';
+                    const isDisabled = isPOCheckboxDisabled ? 'disabled' : '';
+                    const titleText = p.release_status==='R' 
+                        ? 'Purchase Order is approved and active in SAP, ready for engagement.' 
+                        : 'Purchase Order is pending approval in SAP.';
+                    return `
+                        <tr>
+                            <td class="ps-4"><input type="checkbox" class="po-check form-check-input" value="${p.po_number}" ${isChecked} ${isDisabled}></td>
+                            <td><span class="fw-bold text-dark">${p.po_number}</span></td>
+                            <td><span class="badge bg-light text-dark border">${p.po_type}</span></td>
+                            <td>${p.purchasing_group}</td>
+                            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.header_text}</td>
+                            <td>${p.currency}</td>
+                            <td class="fw-bold">${p.total_value}</td>
+                            <td>${p.document_date}</td>
+                            <td><span class="badge ${p.release_status==='R'?'bg-success':'bg-warning'}" style="cursor: help;" title="${titleText}">${p.release_status==='R'?'Released':'Pending'}</span></td>
+                        </tr>
+                    `;
+                }).join('');
             }
 
             // Fetch PWOs
@@ -1228,14 +1285,18 @@ function renderContent() {
             const pwoData = await pwoResp.json();
             const pwoBody = document.getElementById('pwoTableBody');
             if(pwoData.status === 'success' && pwoData.data.length > 0) {
-                pwoBody.innerHTML = pwoData.data.map(p => `
-                    <tr>
-                        <td class="ps-3"><input type="checkbox" class="pwo-check form-check-input" value="${p.pwo_number}" ${ANNEXURE_IS_READONLY ? 'disabled' : ''}></td>
-                        <td>${p.pwo_number}</td>
-                        <td>${p.vessel}</td>
-                        <td>${p.work_completion_date}</td>
-                    </tr>
-                `).join('');
+                pwoBody.innerHTML = pwoData.data.map(p => {
+                    const isChecked = savedSelectedPWOs.includes(p.pwo_number) ? 'checked' : '';
+                    const isDisabled = isPOCheckboxDisabled ? 'disabled' : '';
+                    return `
+                        <tr>
+                            <td class="ps-3"><input type="checkbox" class="pwo-check form-check-input" value="${p.pwo_number}" ${isChecked} ${isDisabled}></td>
+                            <td>${p.pwo_number}</td>
+                            <td>${p.vessel}</td>
+                            <td>${p.work_completion_date}</td>
+                        </tr>
+                    `;
+                }).join('');
             }
 
             // Fetch Sales Orders
@@ -1243,14 +1304,34 @@ function renderContent() {
             const soData = await soResp.json();
             const soBody = document.getElementById('soTableBody');
             if(soData.status === 'success' && soData.data.length > 0) {
-                soBody.innerHTML = soData.data.map(s => `
-                    <tr>
-                        <td class="ps-3"><input type="checkbox" class="so-check form-check-input" value="${s.sale_order_no}" ${ANNEXURE_IS_READONLY ? 'disabled' : ''}></td>
-                        <td>${s.sale_order_no}</td>
-                        <td class="fw-bold">${s.amount}</td>
-                        <td>${s.currency}</td>
-                    </tr>
-                `).join('');
+                soBody.innerHTML = soData.data.map(s => {
+                    const isChecked = savedSelectedSales.includes(s.sale_order_no) ? 'checked' : '';
+                    const isDisabled = isPOCheckboxDisabled ? 'disabled' : '';
+                    return `
+                        <tr>
+                            <td class="ps-3"><input type="checkbox" class="so-check form-check-input" value="${s.sale_order_no}" ${isChecked} ${isDisabled}></td>
+                            <td>${s.sale_order_no}</td>
+                            <td class="fw-bold">${s.amount}</td>
+                            <td>${s.currency}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+            // Update Select All checkboxes initial state based on prechecked items
+            if (document.getElementById('selectAllPO')) {
+                const all = document.querySelectorAll('.po-check');
+                const checked = document.querySelectorAll('.po-check:checked');
+                document.getElementById('selectAllPO').checked = all.length > 0 && all.length === checked.length;
+            }
+            if (document.getElementById('selectAllPWO')) {
+                const all = document.querySelectorAll('.pwo-check');
+                const checked = document.querySelectorAll('.pwo-check:checked');
+                document.getElementById('selectAllPWO').checked = all.length > 0 && all.length === checked.length;
+            }
+            if (document.getElementById('selectAllSO')) {
+                const all = document.querySelectorAll('.so-check');
+                const checked = document.querySelectorAll('.so-check:checked');
+                document.getElementById('selectAllSO').checked = all.length > 0 && all.length === checked.length;
             }
         } catch (e) {
             console.error("SAP Fetch Error", e);
@@ -1304,8 +1385,16 @@ function renderContent() {
             return;
         }
 
+        if (IS_RESUBMIT_MODE) {
+            const currentData = serializeEcpAndLicense();
+            if (currentData === initialEcpAndLicenseData) {
+                showAnnexure2AFeedback('No changes detected in EC Policy or Labour License details. Please make changes before resubmitting.', 'warning', 'No Changes Detected');
+                return;
+            }
+        }
+
         syncLicenseIssuedFields();
-        if (!ANNEXURE2A_LIMITED_EDIT) collectData();
+        collectData();
         const btn = e.submitter || form.querySelector('.btn-reg-submit[type="submit"]') || document.getElementById('submitBtn');
         const originalText = btn ? btn.innerHTML : '';
         if (btn) {
@@ -1350,7 +1439,7 @@ function renderContent() {
             return;
         }
         syncLicenseIssuedFields();
-        if (!ANNEXURE2A_LIMITED_EDIT) collectData();
+        collectData();
         const draftBtn = document.querySelector('button[onclick="saveDraft()"]');
         const originalText = draftBtn ? draftBtn.innerHTML : '';
         if (draftBtn) {
@@ -1403,6 +1492,8 @@ function renderContent() {
         toggleESI();
         toggleEcpPolicy();
         toggleLicenceMandatory();
+        // Record initial state for change detection
+        initialEcpAndLicenseData = serializeEcpAndLicense();
     });
 
     document.querySelector('[name="workers_proposed_to_be_engaged"]')?.addEventListener('input', toggleLicenceMandatory);
@@ -1419,6 +1510,38 @@ function renderContent() {
     });
     document.getElementById('selectAllSO')?.addEventListener('change', (e) => {
         document.querySelectorAll('.so-check').forEach(cb => cb.checked = e.target.checked);
+    });
+
+    // Event delegation for PO/PWO/SO checkboxes to update the parent selectAll checkbox
+    document.getElementById('poTable')?.addEventListener('change', (e) => {
+        if (e.target.classList.contains('po-check')) {
+            const allPO = document.querySelectorAll('.po-check');
+            const checkedPO = document.querySelectorAll('.po-check:checked');
+            const selectAll = document.getElementById('selectAllPO');
+            if (selectAll) {
+                selectAll.checked = allPO.length > 0 && allPO.length === checkedPO.length;
+            }
+        }
+    });
+    document.getElementById('pwoTable')?.addEventListener('change', (e) => {
+        if (e.target.classList.contains('pwo-check')) {
+            const allPWO = document.querySelectorAll('.pwo-check');
+            const checkedPWO = document.querySelectorAll('.pwo-check:checked');
+            const selectAll = document.getElementById('selectAllPWO');
+            if (selectAll) {
+                selectAll.checked = allPWO.length > 0 && allPWO.length === checkedPWO.length;
+            }
+        }
+    });
+    document.getElementById('soTable')?.addEventListener('change', (e) => {
+        if (e.target.classList.contains('so-check')) {
+            const allSO = document.querySelectorAll('.so-check');
+            const checkedSO = document.querySelectorAll('.so-check:checked');
+            const selectAll = document.getElementById('selectAllSO');
+            if (selectAll) {
+                selectAll.checked = allSO.length > 0 && allSO.length === checkedSO.length;
+            }
+        }
     });
 
     // Worker category checklist change handler

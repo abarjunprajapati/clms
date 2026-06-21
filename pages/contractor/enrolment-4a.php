@@ -626,6 +626,14 @@ function renderContent() {
                 " . $roleTypeExpr . ",
                 " . enrolment_expr($conn, 'workmen', 'training_status', 'safety_status') . ",
                 (
+                    SELECT IF(pr.status = 'paid', 1, 0)
+                    FROM training_payment_request_workers pw
+                    JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                    WHERE pw.workman_id = workmen.id
+                    ORDER BY pr.id DESC
+                    LIMIT 1
+                ) AS is_safety_paid,
+                (
                     SELECT tr.status
                     FROM training_requests tr
                     WHERE tr.workman_id = workmen.id
@@ -728,6 +736,14 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'education', 'education') . ",
                 " . $roleTypeExpr . ",
                 " . enrolment_expr($conn, 'workmen', 'training_status', 'safety_status') . ",
+                (
+                    SELECT IF(pr.status = 'paid', 1, 0)
+                    FROM training_payment_request_workers pw
+                    JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                    WHERE pw.workman_id = workmen.id
+                    ORDER BY pr.id DESC
+                    LIMIT 1
+                ) AS is_safety_paid,
                 (
                     SELECT tr.status
                     FROM training_requests tr
@@ -878,7 +894,7 @@ function renderContent() {
     .preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
     .preview-section { border:1px solid #dbe4ef; border-radius:8px; background:#fff; overflow:hidden; }
     .preview-section.full { grid-column:1 / -1; }
-    .preview-section-title { padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:11px; font-weight:900; color:#334155; text-transform:uppercase; }
+    .preview-section-title { padding:10px 12px; background:#1e3a8a; border-bottom:1px solid #1e3a8a; font-size:11px; font-weight:900; color:#ffffff; text-transform:uppercase; }
     .preview-section-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; }
     .preview-item { border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#fff; }
     .preview-item span { display:block; color:#64748b; font-size:11px; font-weight:800; text-transform:uppercase; margin-bottom:4px; }
@@ -924,49 +940,52 @@ function renderContent() {
       <button class="btn btn-primary" id="btnOpenModal"><i class="fas fa-plus"></i> New <?= htmlspecialchars($selectedType['pass']) ?></button>
     </div>
 
-    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; align-items: stretch;">
-      <div style="flex: 1; min-width: 260px;">
-        <!-- Summary Stats -->
-        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 0; height: 100%;">
-          <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px;">
-            <div class="stat-icon" style="background:rgba(99,102,241,0.1);color:#6366f1; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-users"></i></div>
-            <div>
-              <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count($workers) ?></div>
-              <div class="stat-label" style="font-size:10px;"><?= htmlspecialchars($selectedType['plural']) ?> Enrolled</div>
+    <div class="card glass" style="margin-bottom: 16px;">
+      <div class="card-body" style="padding: 12px;">
+        <div class="row g-3">
+          <!-- Left Column: Summary Stats -->
+          <div class="col-md-6">
+            <div class="stats-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; height: 100%;">
+              <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px; margin-bottom:0;">
+                <div class="stat-icon" style="background:rgba(99,102,241,0.1);color:#6366f1; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-users"></i></div>
+                <div>
+                  <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count($workers) ?></div>
+                  <div class="stat-label" style="font-size:10px;"><?= htmlspecialchars($selectedType['plural']) ?> Enrolled</div>
+                </div>
+              </div>
+              <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px; margin-bottom:0;">
+                <div class="stat-icon" style="background:rgba(16,185,129,0.1);color:#10b981; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-check"></i></div>
+                <div>
+                  <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return ($w['safety_status']??'')==='pass'; })) ?></div>
+                  <div class="stat-label" style="font-size:10px;">Safety Passed</div>
+                </div>
+              </div>
+              <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px; margin-bottom:0;">
+                <div class="stat-icon" style="background:rgba(245,158,11,0.1);color:#f59e0b; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-id-badge"></i></div>
+                <div>
+                  <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return !empty($w['temp_id']); })) ?></div>
+                  <div class="stat-label" style="font-size:10px;">Temp IDs Issued</div>
+                </div>
+              </div>
+              <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px; margin-bottom:0;">
+                <div class="stat-icon" style="background:rgba(239,68,68,0.1);color:#ef4444; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-door-open"></i></div>
+                <div>
+                  <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return ($w['gate_pass_status']??'')==='active'; })) ?></div>
+                  <div class="stat-label" style="font-size:10px;">Active Passes</div>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px;">
-            <div class="stat-icon" style="background:rgba(16,185,129,0.1);color:#10b981; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-check"></i></div>
-            <div>
-              <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return ($w['safety_status']??'')==='pass'; })) ?></div>
-              <div class="stat-label" style="font-size:10px;">Safety Passed</div>
+          <!-- Right Column: Pass Limits -->
+          <div class="col-md-6 border-start border-light">
+            <div style="padding-left: 10px;">
+              <div class="d-flex align-items-center gap-2 mb-2" style="font-size:12px; font-weight:700; color:var(--primary-color);">
+                <i class="fas fa-shield-alt" style="color:#6366f1;"></i> PASS LIMITS (ANNEXURE 5/A)
+              </div>
+              <div id="passLimitsWidget" style="font-size:12px;">
+                <p style="color:var(--text-muted);font-size:12px;margin:0;">Loading pass limits...</p>
+              </div>
             </div>
-          </div>
-          <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px;">
-            <div class="stat-icon" style="background:rgba(245,158,11,0.1);color:#f59e0b; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-id-badge"></i></div>
-            <div>
-              <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return !empty($w['temp_id']); })) ?></div>
-              <div class="stat-label" style="font-size:10px;">Temp IDs Issued</div>
-            </div>
-          </div>
-          <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px;">
-            <div class="stat-icon" style="background:rgba(239,68,68,0.1);color:#ef4444; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-door-open"></i></div>
-            <div>
-              <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return ($w['gate_pass_status']??'')==='active'; })) ?></div>
-              <div class="stat-label" style="font-size:10px;">Active Passes</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div style="flex: 1; min-width: 260px;">
-        <!-- Annexure 5/A: Pass Limits Widget -->
-        <div class="card glass h-100" style="margin-bottom:0;">
-          <div class="card-header" style="padding:6px 12px; min-height:0;">
-            <div class="card-title" style="font-size:12px;"><i class="fas fa-shield-alt" style="color:#6366f1;"></i> Pass Limits</div>
-          </div>
-          <div class="card-body" id="passLimitsWidget" style="padding:8px 12px;">
-            <p style="color:var(--text-muted);font-size:12px;">Loading pass limits...</p>
           </div>
         </div>
       </div>
@@ -1825,7 +1844,7 @@ function renderContent() {
         const viewModal = document.getElementById('viewModal');
         const form = document.getElementById('enrollForm');
         const tabOrder = ['basic', 'personal', 'address', 'work', 'docs', 'payment', 'training'];
-        const scheduledTrainingSessions = <?= json_encode(db_fetch_all($conn, "SELECT id, batch_number, training_date, session_name, language_name, capacity FROM training_class_batches WHERE training_date >= CURDATE() AND LOWER(COALESCE(status, 'open')) IN ('open','draft','scheduled','active') ORDER BY training_date ASC, session_name ASC, id ASC"), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        const scheduledTrainingSessions = <?= json_encode(db_fetch_all($conn, "SELECT id, batch_number, training_date, session_name, language_name, capacity FROM training_class_batches WHERE training_date >= CURDATE() AND LOWER(COALESCE(status, 'open')) IN ('open','scheduled','active') ORDER BY training_date ASC, session_name ASC, id ASC"), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
         
         const defaultDepartment = <?= json_encode($department_name) ?>;
         const workOptions = <?= json_encode($workOptions, JSON_UNESCAPED_SLASHES) ?>;
@@ -2849,6 +2868,7 @@ function renderContent() {
           if (worker.safety_fee_payment_option) {
             setFieldValue('safety_fee_payment_option', worker.safety_fee_payment_option);
           }
+          pwoPaymentCompleted = (parseInt(worker.is_safety_paid) === 1);
           refreshWorkflowPaymentState(false);
           formSection.scrollIntoView({ behavior: 'smooth' });
           activateTab(rejectedByEO ? 'docs' : 'basic');
@@ -3084,11 +3104,27 @@ function renderContent() {
               ? 'Enrollment Complete. Please do safety payment for proceeding further.'
               : 'Save Draft will not submit this entitlement for processing. Training can be booked later from the Book Safety Training menu.';
           }
-          if (isPwo && laterInput && !canBookPwoTrainingInline() && !isPwoPayLater()) laterInput.checked = true;
-          if (bookNowInput) {
-            bookNowInput.disabled = isPwo && !canBookPwoTrainingInline() && !isPwoPayLater();
+          const payOption = selectedSafetyFeeOption();
+          if (isPwo && payOption === 'pay_now') {
+            if (laterInput) {
+              laterInput.disabled = true;
+              laterInput.checked = false;
+            }
+            if (bookNowInput) {
+              bookNowInput.disabled = !canBookPwoTrainingInline();
+              bookNowInput.checked = true;
+            }
+          } else {
+            if (bookNowInput) {
+              bookNowInput.disabled = isPwo && !canBookPwoTrainingInline() && !isPwoPayLater();
+            }
+            if (laterInput) {
+              laterInput.disabled = false;
+            }
+            if (isPwo && laterInput && !canBookPwoTrainingInline() && !isPwoPayLater()) {
+              laterInput.checked = true;
+            }
           }
-          if (laterInput) laterInput.disabled = false;
           // Do NOT force book_now for non-PWO — let the user choose freely
           const activeTab = document.querySelector('.square-tab.active')?.dataset.tab || '';
           const submitBtn = document.getElementById('btnSubmit');
@@ -3406,6 +3442,7 @@ function renderContent() {
             const bookNowInput = form.querySelector('[name="training_booking_choice"][value="book_now"]');
             if (bookNowInput) bookNowInput.disabled = false;
             refreshWorkflowPaymentState(true);
+            notify('Payment Verified', 'Safety Fee Payment for this worker is already completed.', 'success');
             activateTab('training');
             return;
           }
@@ -3789,6 +3826,28 @@ function renderContent() {
           }
 
           const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
+          if (isPwoWorkOrder()) {
+            const payOption = selectedSafetyFeeOption();
+            if (payOption === 'pay_now') {
+              if (bookingChoice === 'not_now') {
+                activateTab('payment');
+                notify('Invalid Configuration', 'You have selected "Pay Safety Fee Now". You must choose "Book Safety Training Now" and complete the seat booking.', 'warning');
+                return;
+              }
+              if (!canBookPwoTrainingInline()) {
+                activateTab('payment');
+                notify('Payment Required', 'Please complete the safety fee payment inline before submitting your enrollment.', 'warning');
+                return;
+              }
+            } else if (payOption === 'pay_later') {
+              if (bookingChoice === 'book_now') {
+                activateTab('payment');
+                notify('Invalid Configuration', 'For "Pay Safety Fee Later", you cannot book safety training now. Please select "I don\'t need to book now".', 'warning');
+                return;
+              }
+            }
+          }
+
           if (bookingChoice === 'book_now' && (!previewValue('training_booking_date') || !previewValue('training_booking_session'))) {
             activateTab('training');
             notify('Training Booking Required', 'Please select safety training date and session.', 'warning');
@@ -3862,7 +3921,9 @@ function renderContent() {
                 successMessage += 'Safety Training not booked.';
               }
               successMessage += '\nTemp ID: ' + result.temp_id;
-              if (result.payment && result.payment.payment_link) {
+              if (selectedSafetyFeeOption() === 'pay_later') {
+                successMessage += '\n\nNote: Safety Fee payment is pending. Please complete payment to proceed with training booking.';
+              } else if (result.payment && result.payment.payment_link) {
                 successMessage += '\nPayment Ref: ' + result.payment.payment_ref + '\nAmount: Rs. ' + result.payment.amount;
               }
               notify('Success', successMessage, 'success').then(() => {

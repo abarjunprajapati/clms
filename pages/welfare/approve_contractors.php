@@ -216,8 +216,8 @@ function renderContent() {
 
       /* Standard Form Styling (lighten value boxes so text is readable) */
       .form-container { display:flex; flex-direction:column; gap:20px; padding-bottom:16px; }
-      .form-section-card { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); border-radius:12px; padding:18px; }
-      .form-section-header { font-size:15px; font-weight:700; color:#ffffff; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.03); display:flex; align-items:center; gap:8px; }
+      .form-section-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius:12px; padding:18px; }
+      .form-section-header { font-size:15px; font-weight:700; color:#ffffff; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; gap:8px; }
       .card-title { color: #ffffff; font-weight:700; }
       .form-section-header i {
         font-size: 16px;
@@ -256,13 +256,13 @@ function renderContent() {
       .form-field label {
         font-size: 11px;
         font-weight: 700;
-        color: var(--text-muted);
+        color: #94a3b8;
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
       .form-field .value-box {
-        background: rgba(255,255,255,0.02);
-        border: 1px solid rgba(255,255,255,0.04);
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,255,255,0.18);
         border-radius: 8px;
         padding: 12px 14px;
         font-size: 13px;
@@ -281,13 +281,13 @@ function renderContent() {
       }
       .review-table th,
       .review-table td {
-        border: 1px solid rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.15);
         padding: 10px;
         text-align: left;
         vertical-align: top;
       }
       .review-table th {
-        background: rgba(255,255,255,0.04);
+        background: rgba(255,255,255,0.10);
         font-weight: 800;
         text-transform: uppercase;
         font-size: 11px;
@@ -308,8 +308,8 @@ function renderContent() {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        background: rgba(255,255,255,0.02);
-        border: 1px solid rgba(255,255,255,0.04);
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.15);
         border-radius: 10px;
         padding: 12px 16px;
         transition: all 0.15s ease;
