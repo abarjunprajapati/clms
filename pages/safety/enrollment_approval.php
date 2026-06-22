@@ -99,16 +99,34 @@ function renderContent() {
         $batchSelect = "NULL AS pre_batch_number, NULL AS pre_batch_date, NULL AS pre_batch_label";
 
         if ($hasBatches) {
-            // LEFT JOIN to find the best matching future batch by language
+            // LEFT JOIN to find the best matching batch:
+            // 1. If mapping exists in training_batch_workers, use that batch.
+            // 2. If tr.batch_number is set, match the batch with that batch_number.
+            // 3. Otherwise, match by worker's safety_language to the earliest upcoming batch of that language.
             $batchJoin = "
-            LEFT JOIN training_class_batches tcb ON tcb.id = (
-                SELECT tb2.id
-                FROM training_class_batches tb2
-                WHERE LOWER(TRIM(tb2.language_name)) = LOWER(TRIM(COALESCE(w.safety_language, '')))
-                  AND tb2.training_date >= CURDATE()
-                  AND LOWER(tb2.status) IN ('scheduled', 'draft', 'open')
-                ORDER BY tb2.training_date ASC, tb2.id ASC
-                LIMIT 1
+            LEFT JOIN training_class_batches tcb ON tcb.id = COALESCE(
+                (
+                    SELECT tbw.batch_id 
+                    FROM training_batch_workers tbw 
+                    WHERE tbw.training_request_id = tr.id 
+                      AND tbw.ticked = 1 
+                    LIMIT 1
+                ),
+                (
+                    SELECT tb_asg.id 
+                    FROM training_class_batches tb_asg 
+                    WHERE tb_asg.batch_number = tr.batch_number 
+                    LIMIT 1
+                ),
+                (
+                    SELECT tb2.id
+                    FROM training_class_batches tb2
+                    WHERE LOWER(TRIM(tb2.language_name)) = LOWER(TRIM(COALESCE(w.safety_language, '')))
+                      AND tb2.training_date >= CURDATE()
+                      AND LOWER(tb2.status) IN ('scheduled', 'draft', 'open')
+                    ORDER BY tb2.training_date ASC, tb2.id ASC
+                    LIMIT 1
+                )
             )";
             $batchSelect = "tcb.batch_number AS pre_batch_number,
                    tcb.training_date AS pre_batch_date,

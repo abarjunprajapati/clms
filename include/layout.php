@@ -369,6 +369,10 @@ function renderSidebar($role) {
 // echo '<a href="'.BASE_URL.'pages/welfare/payment_gateway.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Payment Gateway / QR</a>';
             echo '<a href="'.$ab.'master_data.php" class="sidebar-item"><i class="fas fa-database"></i> Master Data</a>';
             
+            echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
+            echo '<a href="'.BASE_URL.'pages/welfare/muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
+            echo '<a href="'.BASE_URL.'pages/welfare/check_esi_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check ESI Compliance</a>';
+
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Enterprise Governance</div>';
             echo '<a href="'.BASE_URL.'pages/amc/dashboard.php" class="sidebar-item"><i class="fas fa-handshake"></i> AMC & SLA</a>';
             echo '<a href="'.BASE_URL.'pages/payments/invoices.php" class="sidebar-item"><i class="fas fa-file-invoice-dollar"></i> Payment Governance</a>';
@@ -415,6 +419,11 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'gatepass_monitor.php" class="sidebar-item"><i class="fas fa-id-card-clip"></i> Gate Pass Monitor</a>';
             echo '<a href="'.$wb.'acc_tracking.php" class="sidebar-item"><i class="fas fa-fingerprint"></i> ACC Monitor</a>';
             echo '<a href="'.$wb.'productivity_dashboard.php" class="sidebar-item"><i class="fas fa-chart-line"></i> Productivity Dashboard</a>';
+            
+            echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
+            echo '<a href="'.$wb.'muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
+            echo '<a href="'.$wb.'check_esi_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check ESI Compliance</a>';
+
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Lifecycle</div>';
             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';
             echo '<a href="'.$wb.'blocking_control.php" class="sidebar-item"><i class="fas fa-building-circle-exclamation"></i> Contractor Control</a>';
@@ -446,9 +455,11 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'worker_block.php" class="sidebar-item"><i class="fas fa-user-slash"></i> Worker Blocking</a>';
             echo '<a href="'.$wb.'noc_transfer.php" class="sidebar-item"><i class="fas fa-exchange-alt"></i> Company Change / NOC</a>';
             echo '<a href="'.$wb.'acc_return_queue.php" class="sidebar-item"><i class="fas fa-undo"></i> Relieving Management</a>';
+            echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
+            echo '<a href="'.$wb.'muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
+            echo '<a href="'.$wb.'check_esi_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check ESI Compliance</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Monitor</div>';
             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Verification</a>';
-            echo '<a href="'.$wb.'muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
             echo '<a href="'.$wb.'certified_wages.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Certified Wage Rate</a>';
             echo '<a href="'.$wb.'gatepass_monitor.php" class="sidebar-item"><i class="fas fa-id-card"></i> Gate Pass Monitoring</a>';
             echo '<a href="'.$wb.'attendance_monitor.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance Monitor</a>';
@@ -480,10 +491,12 @@ function renderSidebar($role) {
                 echo '<a href="gatepass-reupload.php" class="sidebar-item"><i class="fas fa-file-circle-exclamation"></i> Re-upload Gate Pass Docs</a>';
                 echo '<a href="pass_status.php" class="sidebar-item"><i class="fas fa-id-card"></i> ACC Card</a>';
                 
+                echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
+                echo '<a href="muster_roll.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll</a>';
+                echo '<a href="esi_contribution.php" class="sidebar-item"><i class="fas fa-hand-holding-dollar"></i> ESI Contribution</a>';
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Operations & Compliance</div>';
                 echo '<a href="attendance.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance</a>';
                 echo '<a href="compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';
-                echo '<a href="muster_roll.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll</a>';
                 echo '<a href="documents.php" class="sidebar-item"><i class="fas fa-folder-open"></i> Documents</a>';
                 echo '<a href="reports.php" class="sidebar-item"><i class="fas fa-chart-bar"></i> Reports</a>';
             } else {
