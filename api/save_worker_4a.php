@@ -1106,7 +1106,9 @@ worker4a_ensure_schema($conn);
         
         $workman_row['execution_training_remarks'] = $isPwoWorkOrder
             ? ($pwoBookedAfterPayment 
-                ? ($hasAttachment ? 'Safety fee payment completed. Training approval attachment uploaded. Waiting for Executing Officer approval.' : 'Safety fee payment completed. Safety seat booking submitted. Waiting for Executing Officer approval.') 
+                ? ($safetyFeePaymentOption === 'pay_later'
+                    ? ($hasAttachment ? 'Safety fee payment pending (Payment Later). Training approval attachment uploaded. Waiting for Executing Officer approval.' : 'Safety fee payment pending (Payment Later). Safety seat booking submitted. Waiting for Executing Officer approval.')
+                    : ($hasAttachment ? 'Safety fee payment completed. Training approval attachment uploaded. Waiting for Executing Officer approval.' : 'Safety fee payment completed. Safety seat booking submitted. Waiting for Executing Officer approval.'))
                 : 'Waiting for Safety fee payment verification.')
             : ($nonPwoBookedNow 
                 ? ($hasAttachment ? 'Training approval attachment uploaded. Waiting for Executing Officer approval.' : 'Safety seat booking submitted. Waiting for Executing Officer approval.') 

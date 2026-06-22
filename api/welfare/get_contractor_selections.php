@@ -76,9 +76,26 @@ try {
         $docs2 = db_fetch_all($conn, $docs2_sql, 'i', [$contractor_id]);
     }
 
-// License file stored directly on contractors table
+// Extract all files from multi-row license details JSON
 $license_docs = [];
-if (!empty($display_contractor['license_file'])) {
+if (!empty($display_contractor['license_details_json'])) {
+    $rows = json_decode($display_contractor['license_details_json'], true);
+    if (is_array($rows)) {
+        foreach ($rows as $row) {
+            if (!empty($row['file_path'])) {
+                $licNoSuffix = !empty($row['license_no']) ? ' (' . $row['license_no'] . ')' : '';
+                $license_docs[] = [
+                    'doc_type'      => 'Labour Licence Certificate' . $licNoSuffix,
+                    'file_path'     => 'contractors/' . $row['file_path'],
+                    'original_name' => basename($row['file_path']),
+                ];
+            }
+        }
+    }
+}
+
+// Fallback to legacy single file if license_docs is empty
+if (empty($license_docs) && !empty($display_contractor['license_file'])) {
     $license_docs[] = [
         'doc_type'      => 'Labour Licence Certificate',
         'file_path'     => 'contractors/' . $display_contractor['license_file'],
@@ -86,13 +103,13 @@ if (!empty($display_contractor['license_file'])) {
     ];
 }
 
-// Merge & deduplicate by doc_type
+// Merge & deduplicate by file_path
 $all_docs = array_merge($docs1, $docs2, $license_docs);
 $seen = [];
 $final_docs = [];
 foreach ($all_docs as $d) {
-    $key = strtolower(trim($d['doc_type'] ?? ''));
-    if (!isset($seen[$key])) {
+    $key = strtolower(trim($d['file_path'] ?? ''));
+    if ($key !== '' && !isset($seen[$key])) {
         $seen[$key] = true;
         $final_docs[] = $d;
     }

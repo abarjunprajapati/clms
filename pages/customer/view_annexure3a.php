@@ -158,7 +158,7 @@ function renderContent() {
                 <div style="padding:10px; border:1px solid #edf2f7; border-radius:8px; display:flex; align-items:center; gap:8px;">
                     <i class="fas fa-file-pdf" style="color:#e53e3e;"></i>
                     <span style="font-size:12px; font-weight:700;"><?= $lbl ?></span>
-                    <a href="../../<?= $path ?>" target="_blank" style="font-size:10px; color:#3182ce; text-decoration:none;">View</a>
+                    <a href="../../<?= $path ?>" target="_blank" class="btn-view"><i class="fas fa-eye"></i> View</a>
                 </div>
             <?php endif; endforeach; ?>
         </div>

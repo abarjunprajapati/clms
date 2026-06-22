@@ -275,9 +275,22 @@ function renderContent() {
         <tbody>
           <?php foreach ($workers as $idx => $worker):
             $isForcedRequest = $forceRequestId > 0 && (int)$worker['training_request_id'] === $forceRequestId;
-            $autoChecked = $alreadyScheduled ? (((int)$worker['ticked'] === 1) || $isForcedRequest) : (($idx < $capacity) || $isForcedRequest);
+            $autoChecked = false;
+            if ($alreadyScheduled) {
+                $autoChecked = ((int)$worker['ticked'] === 1) || $isForcedRequest;
+            } else {
+                $autoChecked = ($idx < $capacity) || $isForcedRequest;
+            }
+            if ($isDraft && in_array((int)$worker['training_request_id'], $selectedInDraft, true)) {
+                $autoChecked = true;
+            }
+            $tokenPreview = '';
+            if ($worker['token_number']) {
+                $tokenPreview = $worker['token_number'];
+            } elseif ($autoChecked) {
+                $tokenPreview = (string)rand(100000, 999999);
+            }
             $isBlocked = (int)$worker['attempt_no'] > 3;
-            $tokenPreview = $worker['token_number'] ?: ($autoChecked ? str_pad((string)($idx + 1), 6, '0', STR_PAD_LEFT) : '');
             $seatLabel = ($autoChecked && $idx >= $regularCapacity) ? 'Emergency' : ($autoChecked ? 'Selected' : 'Waiting');
             $seatBadge = $seatLabel === 'Emergency' ? 'badge-warning' : ($autoChecked ? 'badge-info' : 'badge-gray');
           ?>
@@ -355,7 +368,8 @@ function renderContent() {
       chipsContainer.innerHTML = '';
       checked.forEach((input, idx) => {
         const info = workerInfoMap[input.value] || {};
-        const tokenNum = String(idx + 1).padStart(6, '0');
+        const target = document.getElementById(input.dataset.tokenTarget);
+        const tokenNum = (target && target.textContent.trim() !== '') ? target.textContent : String(Math.floor(100000 + Math.random() * 900000));
         const chip = document.createElement('div');
         chip.className = 'ts-chip';
         chip.innerHTML = `
@@ -412,7 +426,9 @@ function renderContent() {
     });
     checked.forEach((input, idx) => {
       const target = document.getElementById(input.dataset.tokenTarget);
-      if (target) target.textContent = String(idx + 1).padStart(6, '0');
+      if (target && target.textContent.trim() === '') {
+          target.textContent = String(Math.floor(100000 + Math.random() * 900000));
+      }
       const state = input.closest('tr')?.querySelector('.row-state');
       if (state && idx >= regularCapacity) {
         state.textContent = 'Emergency';
@@ -446,12 +462,7 @@ function renderContent() {
     const selected = document.querySelectorAll('.worker-check:checked').length;
     if (selected > scheduleCapacity) {
       event.target.checked = false;
-      const message = 'Maximum Slot Exceeded';
-      if (window.Swal) {
-        Swal.fire({ icon: 'warning', title: message, text: `Only ${scheduleCapacity} workers can be selected for this batch.` });
-      } else {
-        alert(message);
-      }
+      Swal.fire({ icon: 'warning', title: 'Maximum Slot Exceeded', text: `Only ${scheduleCapacity} workers can be selected for this batch.`, confirmButtonColor: '#f59e0b' });
     }
     refreshSelection();
   });
@@ -460,12 +471,12 @@ function renderContent() {
     const selected = document.querySelectorAll('.worker-check:checked').length;
     if (selected > scheduleCapacity) {
       event.preventDefault();
-      alert('Maximum Slot Exceeded');
+      Swal.fire({ icon: 'warning', title: 'Maximum Slot Exceeded', text: `Only ${scheduleCapacity} workers can be selected for this batch.`, confirmButtonColor: '#f59e0b' });
       return;
     }
     if (selected === 0) {
       event.preventDefault();
-      alert('Please select workers to finalize batch.');
+      Swal.fire({ icon: 'warning', title: 'No Workers Selected', text: 'Please select at least one worker to finalize the batch.', confirmButtonColor: '#f59e0b' });
     }
   });
 

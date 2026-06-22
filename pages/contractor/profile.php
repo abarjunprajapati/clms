@@ -90,6 +90,8 @@ function renderContent() {
     </div>
 
     <style>
+        .card-header { background: #1e3a8a; border-top-left-radius: inherit; border-top-right-radius: inherit; padding: 14px 20px; }
+        .card-title { color: #ffffff !important; font-weight: 700; font-size: 15px; }
         .profile-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--gray-100); font-size: 14px; }
         .profile-row:last-child { border-bottom: none; }
         .profile-row span { color: var(--gray-500); font-weight: 500; }

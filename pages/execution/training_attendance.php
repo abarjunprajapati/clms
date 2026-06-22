@@ -107,14 +107,14 @@ function renderContent() {
     ?>
     <div class="content-header">
       <div>
-        <h2 class="page-title"><i class="fas fa-file-signature" style="color:#6366f1;margin-right:10px"></i>Training Attendance Approval Desk</h2>
+        <h2 class="page-title"><i class="fas fa-file-signature" style="color:#6366f1;margin-right:10px"></i>Workmen Enrollment Details</h2>
       </div>
       <a class="btn btn-outline" href="dashboard.php"><i class="fas fa-arrow-left"></i> Dashboard</a>
     </div>
 
     <div class="card glass">
       <div class="card-header">
-        <div class="card-title">Training Attendance Review</div>
+        <div class="card-title">Workmen Enrollment Details</div>
         <span class="badge badge-warning"><?= count($rows) ?> Records</span>
       </div>
       <div class="card-body" style="padding:0">
@@ -171,9 +171,9 @@ function renderContent() {
                   <?php endif; ?>
                 </td>
                 <td>
-                  <button type="button" class="btn btn-sm btn-outline btn-view-workman" data-workman='<?= htmlspecialchars(json_encode($r), ENT_QUOTES, 'UTF-8') ?>' style="margin-right:4px;"><i class="fas fa-user"></i> View Details</button>
+                  <button type="button" class="btn-view btn-view-workman" data-workman='<?= htmlspecialchars(json_encode($r), ENT_QUOTES, 'UTF-8') ?>'><i class="fas fa-eye"></i> View Details</button>
                   <?php if ($hasDoc): ?>
-                    <a class="btn btn-sm btn-outline" target="_blank" href="<?= htmlspecialchars($docUrl) ?>"><i class="fas fa-eye"></i> View Doc</a>
+                    <a class="btn-view" target="_blank" href="<?= htmlspecialchars($docUrl) ?>"><i class="fas fa-eye"></i> View Doc</a>
                   <?php endif; ?>
                   <?php if (!$approved): ?>
                     <button class="btn btn-sm btn-success" onclick="reviewTraining(<?= (int)$r['id'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>
@@ -552,5 +552,5 @@ function renderContent() {
     <?php
 }
 
-renderLayout('Training Attendance Approval Desk', 'renderContent', $role, $name);
+renderLayout('Workmen Enrollment Details', 'renderContent', $role, $name);
 ?>

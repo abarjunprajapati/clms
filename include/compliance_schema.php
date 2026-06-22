@@ -120,7 +120,38 @@ function ensureComplianceSchema($conn) {
     compliance_add_column_if_not_exists($conn, 'workmen', 'compliance_status', "ENUM('pending','verified','non_compliant') DEFAULT 'pending' AFTER training_status");
     compliance_add_column_if_not_exists($conn, 'workmen', 'last_compliance_month', "VARCHAR(7) DEFAULT NULL AFTER compliance_status");
     compliance_add_column_if_not_exists($conn, 'contractors', 'compliance_status', "ENUM('pending','verified','non_compliant') DEFAULT 'pending' AFTER status");
+    ensureMusterRollSchema($conn);
 }
+
+function ensureMusterRollSchema($conn) {
+    if (!function_exists('compliance_add_column_if_not_exists')) {
+        function compliance_add_column_if_not_exists($conn, $table, $column, $definition) {
+            $result = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+            if ($result && $result->num_rows == 0) {
+                return $conn->query("ALTER TABLE `$table` ADD COLUMN `$column` $definition");
+            }
+            return true;
+        }
+    }
+
+    $conn->query("CREATE TABLE IF NOT EXISTS muster_rolls (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        contractor_id INT NOT NULL,
+        month_year VARCHAR(7) NOT NULL,
+        file_path VARCHAR(255) NULL,
+        status ENUM('pending', 'verified', 'rejected') DEFAULT 'pending',
+        remarks TEXT NULL,
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        verified_by INT NULL,
+        verified_at TIMESTAMP NULL,
+        UNIQUE KEY uq_contractor_month (contractor_id, month_year),
+        KEY idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Add ot_hours column to attendance table if it doesn't exist
+    compliance_add_column_if_not_exists($conn, 'attendance', 'ot_hours', "DECIMAL(4,2) DEFAULT 0.00 AFTER status");
+}
+
 
 function complianceMonthParts($monthYear) {
     $ts = strtotime($monthYear . '-01');

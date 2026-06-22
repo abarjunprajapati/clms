@@ -32,7 +32,12 @@ function entityDirectoryRows($conn) {
         ORDER BY created_at DESC
     ");
 
-    $customers = [];
+    $customers = db_fetch_all($conn, "
+        SELECT id, customer_code, customer_name, Customer_MOB1, EMAIL_ADDRESS, Address, ACTIVE_IND, created_at, user_id, user_status
+        FROM sap_customer_master
+        WHERE UPPER(ACTIVE_IND) = 'A'
+        ORDER BY created_at DESC
+    ");
 
     $rows = [];
     foreach ($contractors as $c) {

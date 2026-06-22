@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
-checkAuth(['welfare_admin', 'super_admin']);
+checkAuth(['welfare_admin', 'super_admin', 'welfare_user', 'welfare', 'pass_user', 'pass_issuer']);
 include __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/temporary_pass_validity.php';
 

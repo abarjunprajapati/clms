@@ -15,7 +15,7 @@ if (!$workerId) {
 
 // PDF Point 10: 1 Fingerprint = 1 ACC Rule
 // Here we mock the uniqueness check and capture
-$stmt = $conn->prepare("UPDATE workmen SET biometric_status = 'completed', status = 'biometric_completed' WHERE id = ?");
+$stmt = $conn->prepare("UPDATE workmen SET biometric_status = 'completed' WHERE id = ?");
 if ($stmt) {
     $stmt->bind_param('i', $workerId);
     if ($stmt->execute()) {

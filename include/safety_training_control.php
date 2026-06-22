@@ -575,10 +575,10 @@ function clms_safety_set_batch_status($conn, $batchId, $status) {
     if ($status === 'active' && (string)$batch['training_date'] < date('Y-m-d')) {
         throw new RuntimeException('Previous date batch cannot be activated.');
     }
-    if ($status === 'inactive') {
-        $workerCount = db_count($conn, "SELECT COUNT(*) FROM training_batch_workers WHERE batch_id = ? AND ticked = 1", 'i', array((int)$batchId));
-        if ($workerCount > 0) {
-            throw new RuntimeException('Cannot deactivate batch because it has assigned workers.');
+    if ($status !== 'active') {
+        $assigned = db_single($conn, "SELECT COUNT(*) AS cnt FROM training_batch_workers WHERE batch_id = ? AND ticked = 1", 'i', array((int)$batchId));
+        if ($assigned && (int)$assigned['cnt'] > 0) {
+            throw new RuntimeException('This batch cannot be inactivated because it is already scheduled for training');
         }
     }
     $storedStatus = $status === 'active' ? 'open' : 'inactive';

@@ -23,8 +23,43 @@ $work_orders = db_fetch_all($conn, "
     ORDER BY wo.id DESC
 ", 's', [$customer_code]);
 
+// Fetch Sales Orders by the SAP sale order master schema.
+if (!function_exists('customer_column_exists')) {
+    function customer_column_exists($conn, $table, $column) {
+        $safeTable = str_replace('`', '``', $table);
+        $column = mysqli_real_escape_string($conn, $column);
+        $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
+        return $result && mysqli_num_rows($result) > 0;
+    }
+}
+
+$vendor_code_expr = customer_column_exists($conn, 'sap_sale_order_master', 'vendor_code') ? 'vendor_code' : "'' AS vendor_code";
+$po_number_expr = customer_column_exists($conn, 'sap_sale_order_master', 'po_number') ? 'po_number' : "'' AS po_number";
+$department_expr = customer_column_exists($conn, 'sap_sale_order_master', 'department') ? 'department' : "'' AS department";
+
+$raw_sales_orders = db_fetch_all($conn, "
+    SELECT id, sale_order_no, customer_code, customer_name, amount, currency,
+           doc_date, sales_organization, description, status, 
+           $vendor_code_expr, $po_number_expr, $department_expr
+    FROM sap_sale_order_master
+    WHERE customer_code = ?
+    ORDER BY doc_date DESC, id DESC
+", 's', [$customer_code]);
+
+$sales_orders = [];
+$seen = [];
+foreach ($raw_sales_orders as $so) {
+    $key = ($so['sale_order_no'] ?? '') . '_' . ($so['po_number'] ?? '');
+    if (!isset($seen[$key])) {
+        $seen[$key] = true;
+        $sales_orders[] = $so;
+    }
+}
+
 $selected_wo_no = $_GET['wo'] ?? '';
+$selected_so_id = $_GET['so_id'] ?? '';
 $work_order = null;
+
 if ($selected_wo_no) {
     foreach ($work_orders as $wo) {
         if (($wo['work_order_no'] ?? '') === $selected_wo_no) {
@@ -33,9 +68,48 @@ if ($selected_wo_no) {
         }
     }
 }
+
+if (!$work_order && $selected_so_id) {
+    foreach ($sales_orders as $so) {
+        if ((string)$so['id'] === $selected_so_id) {
+            $v_row = db_single($conn, "SELECT vendor_name, address FROM sap_vendor_master WHERE vendor_code = ?", 's', [$so['vendor_code']]);
+            $work_order = [
+                'customer_code' => $customer_code,
+                'customer_name' => $so['customer_name'] ?? $name,
+                'work_order_no' => $so['po_number'] ?? '',
+                'project_name' => $so['description'] ?? '',
+                'department' => $so['department'] ?? '',
+                'vendor_code' => $so['vendor_code'] ?? '',
+                'vendor_name' => $v_row['vendor_name'] ?? '',
+                'vendor_address' => $v_row['address'] ?? '',
+                'sale_order_no' => $so['sale_order_no'] ?? '',
+            ];
+            break;
+        }
+    }
+}
+
 if (!$work_order) {
     $work_order = $work_orders[0] ?? null;
 }
+
+if (!$work_order && !empty($sales_orders)) {
+    // If no work_orders exist but sales_orders exist, default to the first sales order
+    $so = $sales_orders[0];
+    $v_row = db_single($conn, "SELECT vendor_name, address FROM sap_vendor_master WHERE vendor_code = ?", 's', [$so['vendor_code']]);
+    $work_order = [
+        'customer_code' => $customer_code,
+        'customer_name' => $so['customer_name'] ?? $name,
+        'work_order_no' => $so['po_number'] ?? '',
+        'project_name' => $so['description'] ?? '',
+        'department' => $so['department'] ?? '',
+        'vendor_code' => $so['vendor_code'] ?? '',
+        'vendor_name' => $v_row['vendor_name'] ?? '',
+        'vendor_address' => $v_row['address'] ?? '',
+        'sale_order_no' => $so['sale_order_no'] ?? '',
+    ];
+}
+
 if (!$work_order) {
     $customer_row = $customer_code ? db_single($conn, "SELECT customer_name FROM sap_customer_master WHERE customer_code = ?", 's', [$customer_code]) : null;
     $work_order = [
@@ -55,6 +129,24 @@ $vendor_code = $work_order['vendor_code'] ?? '';
 $c = $vendor_code ? db_single($conn, "SELECT * FROM contractors WHERE vendor_code = ?", 's', [$vendor_code]) : null;
 $is_registered = ($c && $c['status'] === 'approved') ? true : false;
 
+$selected_so_nos = [];
+if ($c) {
+    $selections = db_fetch_all($conn, "SELECT sale_order_no FROM contractor_so_selection WHERE contractor_id = ?", 'i', [$c['id']]);
+    $selected_so_nos = array_column($selections, 'sale_order_no');
+}
+if ($role === 'customer' && !empty($customer_code)) {
+    $c_cust = db_single($conn, "SELECT id FROM contractors WHERE vendor_code = ?", 's', ['CUST-' . $customer_code]);
+    if ($c_cust) {
+        $selections = db_fetch_all($conn, "SELECT sale_order_no FROM contractor_so_selection WHERE contractor_id = ?", 'i', [$c_cust['id']]);
+        $selected_so_nos = array_merge($selected_so_nos, array_column($selections, 'sale_order_no'));
+    }
+}
+$selected_so_nos = array_values(array_unique(array_filter($selected_so_nos)));
+if (empty($selected_so_nos) && !empty($work_order['sale_order_no'])) {
+    $selected_so_nos[] = $work_order['sale_order_no'];
+}
+
+
 // Handle Edit Mode
 $edit_id = $_GET['edit_id'] ?? null;
 $existing_data = null;
@@ -69,7 +161,7 @@ if (!$existing_data && $work_order) {
 }
 
 function renderContent() {
-    global $conn, $c, $is_registered, $vendor_code, $customer_code, $work_order, $work_orders, $existing_data, $edit_id;
+    global $conn, $c, $is_registered, $vendor_code, $customer_code, $work_order, $work_orders, $sales_orders, $existing_data, $edit_id, $selected_so_nos;
 
     $a3_status = strtolower($existing_data['status'] ?? 'new');
     $is_resubmit_mode = (($_GET['resubmit'] ?? '') === '1');
@@ -452,6 +544,7 @@ function renderContent() {
         <input type="hidden" name="vendor_code" id="vendor_code" value="<?= htmlspecialchars($vendor_code) ?>">
         <input type="hidden" name="customer_code" id="hidden_customer_code" value="<?= htmlspecialchars($customer_code) ?>">
         <input type="hidden" name="work_order_no" id="hidden_work_order_no" value="<?= htmlspecialchars($work_order['work_order_no'] ?? '') ?>">
+        <input type="hidden" name="selected_sales" id="selected_sales" value='<?= json_encode($selected_so_nos) ?>'>
         <?php if($edit_id): ?>
             <input type="hidden" name="edit_id" value="<?= $edit_id ?>">
         <?php endif; ?>
@@ -494,6 +587,67 @@ function renderContent() {
                             </div>
                         </div>
 
+                    </div>
+                </div>
+
+                <!-- SAP SALES ORDERS TABLE -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white py-3 border-bottom">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-primary text-white rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                <i class="fas fa-shopping-cart fa-sm"></i>
+                            </div>
+                            <h5 class="mb-0 text-primary">SAP Sales Orders</h5>
+                        </div>
+                    </div>
+                    <div class="card-body p-4">
+                        <h6 class="text-uppercase fw-bold text-muted small mb-3">Select Sales Orders to load details</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle" id="salesOrdersTable">
+                                <thead>
+                                    <tr>
+                                        <th class="ps-4"><input type="checkbox" id="selectAllSO" class="form-check-input"></th>
+                                        <th>Sales Order No</th>
+                                        <th>PO / Work Order No</th>
+                                        <th>Project Name</th>
+                                        <th>Department</th>
+                                        <th>Vendor Code</th>
+                                        <th>Amount</th>
+                                        <th>Doc Date</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($sales_orders as $so): 
+                                         $is_checked = in_array($so['sale_order_no'], $selected_so_nos);
+                                         $row_class = $is_checked ? 'table-primary fw-bold' : '';
+                                     ?>
+                                     <tr class="<?= $row_class ?>">
+                                         <td class="ps-4">
+                                             <input type="checkbox" class="form-check-input so-checkbox" value="<?= htmlspecialchars($so['sale_order_no']) ?>" <?= $is_checked ? 'checked' : '' ?> data-vendor-code="<?= htmlspecialchars($so['vendor_code'] ?? '') ?>" data-po-number="<?= htmlspecialchars($so['po_number'] ?? '') ?>" data-description="<?= htmlspecialchars($so['description'] ?? '') ?>" data-department="<?= htmlspecialchars($so['department'] ?? '') ?>">
+                                         </td>
+                                         <td><b class="text-primary"><?= htmlspecialchars($so['sale_order_no']) ?></b></td>
+                                         <td><?= htmlspecialchars($so['po_number'] ?? 'N/A') ?></td>
+                                         <td><?= htmlspecialchars($so['description'] ?? 'N/A') ?></td>
+                                         <td><span class="badge bg-secondary"><?= htmlspecialchars($so['department'] ?? 'N/A') ?></span></td>
+                                         <td><?= htmlspecialchars($so['vendor_code'] ?? 'N/A') ?></td>
+                                         <td><?= number_format($so['amount'], 2) ?> <?= htmlspecialchars($so['currency']) ?></td>
+                                         <td><?= !empty($so['doc_date']) ? date('d M Y', strtotime($so['doc_date'])) : 'N/A' ?></td>
+                                         <td>
+                                             <span class="badge bg-<?= (strtolower($so['status'] ?? 'active') === 'active') ? 'success' : 'warning' ?>">
+                                                 <?= htmlspecialchars(strtoupper($so['status'] ?? 'active')) ?>
+                                             </span>
+                                         </td>
+                                     </tr>
+                                     <?php endforeach; ?>
+                                     <?php if (empty($sales_orders)): ?>
+                                     <tr>
+                                         <td colspan="9" class="text-center py-4 text-muted">No Sales Orders found in SAP master for this customer.</td>
+                                     </tr>
+                                     <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 <div class="text-end mb-5">
@@ -967,6 +1121,98 @@ function renderContent() {
     const ANNEXURE3A_LIMITED_EDIT = <?= $is_limited_update_mode ? 'true' : 'false' ?>;
 
     const workOrders = <?= json_encode($work_orders ?? []) ?>;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const selectAllSO = document.getElementById('selectAllSO');
+        const soCheckboxes = document.querySelectorAll('.so-checkbox');
+        const selectedSalesInput = document.getElementById('selected_sales');
+        const hiddenWorkOrderNo = document.getElementById('hidden_work_order_no');
+        const displayWorkOrderNo = document.getElementById('display_work_order_no');
+        const displayProjectName = document.getElementById('display_project_name');
+        const displayDepartment = document.getElementById('display_department');
+        const vendorCodeInput = document.getElementById('vendor_code');
+
+        function updateSelections() {
+            const selectedSos = [];
+            const poNumbers = [];
+            const descriptions = [];
+            const departments = [];
+            let vendorCode = '';
+
+            soCheckboxes.forEach(cb => {
+                const row = cb.closest('tr');
+                if (cb.checked) {
+                    selectedSos.push(cb.value);
+                    row.classList.add('table-primary', 'fw-bold');
+                    
+                    const po = cb.getAttribute('data-po-number');
+                    if (po) poNumbers.push(po);
+                    
+                    const desc = cb.getAttribute('data-description');
+                    if (desc) descriptions.push(desc);
+                    
+                    const dept = cb.getAttribute('data-department');
+                    if (dept) departments.push(dept);
+                    
+                    if (!vendorCode) {
+                        vendorCode = cb.getAttribute('data-vendor-code');
+                    }
+                } else {
+                    row.classList.remove('table-primary', 'fw-bold');
+                }
+            });
+
+            selectedSalesInput.value = JSON.stringify(selectedSos);
+
+            if (selectedSos.length > 0) {
+                const woString = [...new Set(poNumbers)].join(', ');
+                hiddenWorkOrderNo.value = woString;
+                if (displayWorkOrderNo) displayWorkOrderNo.value = woString;
+                if (displayProjectName) displayProjectName.value = [...new Set(descriptions)].join(', ');
+                if (displayDepartment) displayDepartment.value = [...new Set(departments)].join(', ');
+                if (vendorCodeInput && vendorCode) {
+                    vendorCodeInput.value = vendorCode;
+                }
+            }
+        }
+
+        if (selectAllSO) {
+            selectAllSO.addEventListener('change', function() {
+                soCheckboxes.forEach(cb => cb.checked = selectAllSO.checked);
+                updateSelections();
+            });
+        }
+
+        soCheckboxes.forEach(cb => {
+            cb.addEventListener('change', updateSelections);
+        });
+
+        // Initialize table classes based on PHP loaded checked states
+        soCheckboxes.forEach(cb => {
+            const row = cb.closest('tr');
+            if (cb.checked) {
+                row.classList.add('table-primary', 'fw-bold');
+            } else {
+                row.classList.remove('table-primary', 'fw-bold');
+            }
+        });
+
+        // Listen for tab switching and save active tab to localStorage
+        document.querySelectorAll('a[data-bs-toggle="tab"]').forEach(tabLink => {
+            tabLink.addEventListener('shown.bs.tab', function(e) {
+                const activeTabId = e.target.getAttribute('href').substring(1);
+                localStorage.setItem('active_annexure3a_tab', activeTabId);
+            });
+        });
+
+        // Restore active tab from localStorage if available
+        const activeTab = localStorage.getItem('active_annexure3a_tab');
+        if (activeTab) {
+            setTimeout(() => {
+                showTab(activeTab);
+            }, 100);
+        }
+    });
 
     function updateWorkOrderDetails(woNo) {
         const wo = workOrders.find(w => w.work_order_no === woNo);

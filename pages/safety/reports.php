@@ -611,7 +611,7 @@ function renderContent() {
               <td><?= htmlspecialchars(ucfirst(str_replace('_', ' ', $attendance))) ?></td>
               <td><span class="badge <?= safetyReportsStatusBadge($status) ?>"><?= htmlspecialchars(ucfirst(str_replace('_', ' ', $status))) ?></span></td>
               <td><span class="badge badge-gray"><?= htmlspecialchars($row['source'] ?? 'Report') ?></span></td>
-              <td><button type="button" class="btn btn-sm btn-outline" onclick='openTrainingView(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>View</button></td>
+              <td><button type="button" class="btn-view" onclick='openTrainingView(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'><i class="fas fa-eye"></i> View</button></td>
             </tr>
             <?php endforeach; ?>
             <?php if(empty($reportRows)): ?>

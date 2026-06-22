@@ -730,6 +730,30 @@ if ($success) {
         [$annexure3a_id, $vendor_code, $customer_code, $work_order_no, $insurance_policy_name . " (" . $insurance_policy_no . ")", $insurance_validity, $insurance_workers_count, $record_status === 'resubmitted' ? 'resubmitted' : 'submitted', $record_status === 'resubmitted' ? 'Resubmitted EC / Labour License' : 'Submitted/Updated']
     );
 
+    if (!empty($_POST['selected_sales'])) {
+        $selected_sales_arr = json_decode($_POST['selected_sales'], true);
+        if (is_array($selected_sales_arr)) {
+            // 1. Save for contractor
+            if ($contractor_id) {
+                $conn->query("DELETE FROM contractor_so_selection WHERE contractor_id = $contractor_id");
+                foreach ($selected_sales_arr as $so) {
+                    db_execute($conn, "INSERT INTO contractor_so_selection (contractor_id, sale_order_no) VALUES (?,?)", 'is', [$contractor_id, $so]);
+                }
+            }
+            // 2. Save for customer's virtual contractor profile
+            if ($is_customer_submission && !empty($customer_code)) {
+                $c_cust = db_single($conn, "SELECT id FROM contractors WHERE vendor_code = ?", 's', ['CUST-' . $customer_code]);
+                if ($c_cust && $c_cust['id'] != $contractor_id) {
+                    $cust_contractor_id = $c_cust['id'];
+                    $conn->query("DELETE FROM contractor_so_selection WHERE contractor_id = $cust_contractor_id");
+                    foreach ($selected_sales_arr as $so) {
+                        db_execute($conn, "INSERT INTO contractor_so_selection (contractor_id, sale_order_no) VALUES (?,?)", 'is', [$cust_contractor_id, $so]);
+                    }
+                }
+            }
+        }
+    }
+
     successJson([
         'success' => true,
         'message' => $action === 'draft' ? 'Annexure 3A draft saved successfully' : ($action === 'resubmit' ? 'Annexure 3A resubmitted successfully' : 'Annexure 3A and compliance documents submitted successfully'),

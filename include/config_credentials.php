@@ -10,3 +10,11 @@ define('EMAIL_SMTP_PASSWORD', 'crwujlqxeypdwcye');
 define('EMAIL_FROM', 'arjunprajapati8595@gmail.com');
 define('EMAIL_FROM_NAME', 'CLMS');
 define('EMAIL_DEMO_RECIPIENT', 'arjunprajapati8595@gmail.com');
+
+// --- SAP MS SQL SERVER DATABASE CREDENTIALS ---
+define('SAP_DB_DRIVER', 'sqlsrv');
+define('SAP_DB_SERVER', 'CHANGE_TO_REAL_SAP_IP_OR_SERVER_NAME'); // e.g., '192.168.1.50'
+define('SAP_DB_USER', 'CHANGE_TO_REAL_SAP_USER');
+define('SAP_DB_PASS', 'CHANGE_TO_REAL_SAP_PASSWORD');
+define('SAP_DB_NAME', 'commondb');
+

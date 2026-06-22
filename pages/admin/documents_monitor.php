@@ -86,7 +86,7 @@ function renderContent() {
                     $fpath = "../../uploads/workers/" . $fpath;
                 }
                 ?>
-                <a href="<?= $fpath ?>" target="_blank" class="btn btn-sm btn-outline">
+                <a href="<?= $fpath ?>" target="_blank" class="btn-view">
                   <i class="fas fa-eye"></i> View
                 </a>
               </td>

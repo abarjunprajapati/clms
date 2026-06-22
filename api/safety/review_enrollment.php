@@ -39,12 +39,20 @@ try {
         safetyEnrollmentJson(['success' => false, 'message' => 'Invalid request payload.'], 400);
     }
 
-    $workmanId = (int)($input['workman_id'] ?? 0);
+    $workmanIds = [];
+    if (isset($input['workman_ids']) && is_array($input['workman_ids'])) {
+        foreach ($input['workman_ids'] as $id) {
+            $workmanIds[] = (int)$id;
+        }
+    } elseif (isset($input['workman_id'])) {
+        $workmanIds[] = (int)$input['workman_id'];
+    }
+
     $decision = strtolower(trim((string)($input['decision'] ?? '')));
     $remarks = trim((string)($input['remarks'] ?? ''));
     $reviewerId = (int)($_SESSION['user_id'] ?? 0);
 
-    if (!$workmanId || !in_array($decision, ['approved', 'rejected'], true)) {
+    if (empty($workmanIds) || !in_array($decision, ['approved', 'rejected'], true)) {
         safetyEnrollmentJson(['success' => false, 'message' => 'Worker and decision are required.'], 422);
     }
     if ($decision === 'rejected' && $remarks === '') {
@@ -53,97 +61,106 @@ try {
 
     clms_training_ensure_schema($conn);
 
-    $worker = db_single(
-        $conn,
-        "SELECT w.id, w.name, w.contractor_id, w.execution_training_status,
-                COALESCE(w.safety_enrollment_status, 'pending') AS safety_enrollment_status
-         FROM workmen w
-         WHERE w.id = ?
-         LIMIT 1",
-        'i',
-        [$workmanId]
-    );
-    if (!$worker) {
-        safetyEnrollmentJson(['success' => false, 'message' => 'Worker not found.'], 404);
-    }
-    if (strtolower((string)$worker['execution_training_status']) !== 'approved') {
-        safetyEnrollmentJson(['success' => false, 'message' => 'Executing Officer approval is required first.'], 409);
-    }
-    if (strtolower((string)$worker['safety_enrollment_status']) === 'approved') {
-        safetyEnrollmentJson(['success' => false, 'message' => 'Safety enrollment is already approved.'], 409);
-    }
-
-    $request = db_single(
-        $conn,
-        "SELECT id, status
-         FROM training_requests
-         WHERE workman_id = ?
-           AND LOWER(COALESCE(status, '')) IN ('pending_safety', 'welfare_pending')
-         ORDER BY id DESC
-         LIMIT 1",
-        'i',
-        [$workmanId]
-    );
-    if (!$request) {
-        safetyEnrollmentJson(['success' => false, 'message' => 'Pending Safety approval request not found.'], 409);
-    }
-
     $conn->begin_transaction();
+    $processedCount = 0;
 
-    db_execute(
-        $conn,
-        "UPDATE workmen
-         SET safety_enrollment_status = ?,
-             safety_enrollment_remarks = ?,
-             safety_enrollment_reviewed_by = ?,
-             safety_enrollment_reviewed_at = NOW()
-         WHERE id = ?",
-        'ssii',
-        [$decision, $remarks, $reviewerId, $workmanId]
-    );
-
-    $requestStatus = $decision === 'approved' ? 'pending' : 'safety_rejected';
-    db_execute(
-        $conn,
-        "UPDATE training_requests
-         SET status = ?, safety_remarks = ?, updated_at = NOW()
-         WHERE id = ?",
-        'ssi',
-        [$requestStatus, $remarks, (int)$request['id']]
-    );
-
-    if (
-        safetyEnrollmentTableExists($conn, 'notifications') &&
-        safetyEnrollmentColumnExists($conn, 'notifications', 'user_id') &&
-        safetyEnrollmentColumnExists($conn, 'notifications', 'message') &&
-        safetyEnrollmentColumnExists($conn, 'notifications', 'type') &&
-        safetyEnrollmentColumnExists($conn, 'notifications', 'is_read') &&
-        safetyEnrollmentTableExists($conn, 'contractors') &&
-        safetyEnrollmentColumnExists($conn, 'contractors', 'user_id')
-    ) {
-        $contractor = db_single(
+    foreach ($workmanIds as $workmanId) {
+        $worker = db_single(
             $conn,
-            "SELECT user_id FROM contractors WHERE id = ? LIMIT 1",
+            "SELECT w.id, w.name, w.contractor_id, w.execution_training_status,
+                    COALESCE(w.safety_enrollment_status, 'pending') AS safety_enrollment_status
+             FROM workmen w
+             WHERE w.id = ?
+             LIMIT 1",
             'i',
-            [(int)$worker['contractor_id']]
+            [$workmanId]
         );
-        $contractorUserId = (int)($contractor['user_id'] ?? 0);
-        if ($contractorUserId > 0) {
-            $message = $decision === 'approved'
-                ? "Safety Department approved enrollment for {$worker['name']}. The worker is released for safety training scheduling."
-                : "Safety Department rejected enrollment for {$worker['name']}. Please correct and resubmit. Remarks: {$remarks}";
-            $type = $decision === 'approved' ? 'safety_enrollment_approved' : 'safety_enrollment_rejected';
-            try {
-                db_execute(
-                    $conn,
-                    "INSERT INTO notifications (user_id, message, type, is_read) VALUES (?, ?, ?, 0)",
-                    'iss',
-                    [$contractorUserId, $message, $type]
-                );
-            } catch (Throwable $notificationError) {
-                error_log('[SAFETY_ENROLLMENT_NOTIFICATION] ' . $notificationError->getMessage());
+        if (!$worker) {
+            continue; // Skip if worker not found
+        }
+        if (strtolower((string)$worker['execution_training_status']) !== 'approved') {
+            continue; // Skip if EO approval is missing
+        }
+        if (strtolower((string)$worker['safety_enrollment_status']) === 'approved') {
+            continue; // Skip if already approved
+        }
+
+        $request = db_single(
+            $conn,
+            "SELECT id, status
+             FROM training_requests
+             WHERE workman_id = ?
+               AND LOWER(COALESCE(status, '')) IN ('pending_safety', 'welfare_pending')
+             ORDER BY id DESC
+             LIMIT 1",
+            'i',
+            [$workmanId]
+        );
+        if (!$request) {
+            continue; // Skip if no pending request
+        }
+
+        db_execute(
+            $conn,
+            "UPDATE workmen
+             SET safety_enrollment_status = ?,
+                 safety_enrollment_remarks = ?,
+                 safety_enrollment_reviewed_by = ?,
+                 safety_enrollment_reviewed_at = NOW()
+             WHERE id = ?",
+            'ssii',
+            [$decision, $remarks, $reviewerId, $workmanId]
+        );
+
+        $requestStatus = $decision === 'approved' ? 'pending' : 'safety_rejected';
+        db_execute(
+            $conn,
+            "UPDATE training_requests
+             SET status = ?, safety_remarks = ?, updated_at = NOW()
+             WHERE id = ?",
+            'ssi',
+            [$requestStatus, $remarks, (int)$request['id']]
+        );
+
+        if (
+            safetyEnrollmentTableExists($conn, 'notifications') &&
+            safetyEnrollmentColumnExists($conn, 'notifications', 'user_id') &&
+            safetyEnrollmentColumnExists($conn, 'notifications', 'message') &&
+            safetyEnrollmentColumnExists($conn, 'notifications', 'type') &&
+            safetyEnrollmentColumnExists($conn, 'notifications', 'is_read') &&
+            safetyEnrollmentTableExists($conn, 'contractors') &&
+            safetyEnrollmentColumnExists($conn, 'contractors', 'user_id')
+        ) {
+            $contractor = db_single(
+                $conn,
+                "SELECT user_id FROM contractors WHERE id = ? LIMIT 1",
+                'i',
+                [(int)$worker['contractor_id']]
+            );
+            $contractorUserId = (int)($contractor['user_id'] ?? 0);
+            if ($contractorUserId > 0) {
+                $message = $decision === 'approved'
+                    ? "Safety Department approved enrollment for {$worker['name']}. The worker is released for safety training scheduling."
+                    : "Safety Department rejected enrollment for {$worker['name']}. Please correct and resubmit. Remarks: {$remarks}";
+                $type = $decision === 'approved' ? 'safety_enrollment_approved' : 'safety_enrollment_rejected';
+                try {
+                    db_execute(
+                        $conn,
+                        "INSERT INTO notifications (user_id, message, type, is_read) VALUES (?, ?, ?, 0)",
+                        'iss',
+                        [$contractorUserId, $message, $type]
+                    );
+                } catch (Throwable $notificationError) {
+                    error_log('[SAFETY_ENROLLMENT_NOTIFICATION] ' . $notificationError->getMessage());
+                }
             }
         }
+        $processedCount++;
+    }
+
+    if ($processedCount === 0) {
+        $conn->rollback();
+        safetyEnrollmentJson(['success' => false, 'message' => 'No eligible pending enrollments could be processed.'], 400);
     }
 
     $conn->commit();
@@ -151,8 +168,8 @@ try {
     safetyEnrollmentJson([
         'success' => true,
         'message' => $decision === 'approved'
-            ? 'Enrollment approved by Safety Department and released for training scheduling.'
-            : 'Enrollment rejected and returned to Contractor for correction/resubmission.',
+            ? "{$processedCount} enrollment(s) approved by Safety Department and released for training scheduling."
+            : "{$processedCount} enrollment(s) rejected and returned to Contractor for correction/resubmission.",
     ]);
 } catch (Throwable $e) {
     if (isset($conn) && method_exists($conn, 'rollback')) {

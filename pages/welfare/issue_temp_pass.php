@@ -285,6 +285,19 @@ function renderContent() {
           </div>
         </div>
 
+        <div class="card glass mt-4">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-cog"></i> Master Pass Validity</div>
+          </div>
+          <div class="card-body">
+            <p style="font-size:12px; margin-bottom:10px; color:var(--text-muted);">The default maximum validity limit for temporary gate passes is currently set to:</p>
+            <div style="display:flex; align-items:center; gap:12px;">
+              <h3 style="margin:0; font-size:20px; font-weight:800; color:#1e293b;"><span id="masterValidityText"><?= $tempValidityDays ?></span> Days</h3>
+              <button type="button" class="btn btn-sm btn-outline" onclick="changeMasterValidity()"><i class="fas fa-edit"></i> Edit Limit</button>
+            </div>
+          </div>
+        </div>
+
         <div class="alert alert-info mt-4" style="font-size:13px;">
           <i class="fas fa-info-circle"></i> After temporary pass issuance, you can proceed to generate the Permanent ACC number.
         </div>
@@ -296,7 +309,61 @@ function renderContent() {
       const fromInput = form.querySelector('input[name="valid_from"]');
       const toInput = form.querySelector('input[name="valid_to"]');
       const durationInput = document.getElementById('duration');
-      const maxTempValidityDays = <?= (int)$tempValidityDays ?>;
+      let maxTempValidityDays = <?= (int)$tempValidityDays ?>;
+
+      async function changeMasterValidity() {
+        const { value: days } = await Swal.fire({
+          title: 'Change Master Validity Limit',
+          input: 'number',
+          inputLabel: 'Default validity period (in days) for temporary gate passes:',
+          inputValue: maxTempValidityDays,
+          showCancelButton: true,
+          inputValidator: (value) => {
+            if (!value || parseInt(value) < 1) {
+              return 'Please enter a valid number of days (minimum 1)';
+            }
+          }
+        });
+
+        if (days) {
+          Swal.fire({
+            title: 'Updating...',
+            didOpen: () => { Swal.showLoading(); }
+          });
+
+          try {
+            const res = await fetch('../../api/welfare/update_temporary_pass_validity.php', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+              },
+              body: JSON.stringify({
+                validity_days: parseInt(days),
+                validity_from_date: new Date().toISOString().split('T')[0]
+              })
+            });
+            const data = await res.json();
+            if (data.success) {
+              maxTempValidityDays = parseInt(days);
+              document.getElementById('masterValidityText').innerText = days;
+              
+              // Also update the Valid To default input date field to match the new duration
+              const fromDate = new Date(fromInput.value);
+              const toDate = new Date(fromDate.getTime() + (maxTempValidityDays - 1) * 24 * 60 * 60 * 1000);
+              toInput.value = toDate.toISOString().split('T')[0];
+              calculateDuration();
+
+              Swal.fire('Success', data.message || 'Validity limit updated successfully.', 'success');
+            } else {
+              Swal.fire('Error', data.message || 'Failed to update validity limit.', 'error');
+            }
+          } catch (err) {
+            console.error(err);
+            Swal.fire('Error', 'An error occurred during updating.', 'error');
+          }
+        }
+      }
 
       function calculateDuration() {
         const from = new Date(fromInput.value);

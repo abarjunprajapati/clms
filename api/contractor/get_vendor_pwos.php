@@ -16,7 +16,7 @@ if (empty($vendor_code)) {
 $pwos = db_fetch_all($conn,
     "SELECT pwo_number, vessel, work_completion_date, pwo_description, project, status
      FROM sap_pwo_master
-     WHERE vendor_code = ?
+     WHERE TRIM(vendor_code) = TRIM(?)
      ORDER BY created_at DESC",
     's',
     [$vendor_code]

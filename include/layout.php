@@ -193,7 +193,7 @@ function renderLayout($page_title, $content_callback, $role, $name) {
 
     <?php if($success_msg): ?>
       <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        window.addEventListener('DOMContentLoaded', () => {
           Swal.fire({
             icon: 'success',
             title: 'Success',
@@ -206,12 +206,12 @@ function renderLayout($page_title, $content_callback, $role, $name) {
 
     <?php if($error_msg): ?>
       <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        window.addEventListener('DOMContentLoaded', () => {
           Swal.fire({
             icon: 'error',
             title: 'Error',
             text: <?= json_encode($error_msg) ?>,
-            confirmButtonColor: '#1e3a8a'
+            confirmButtonColor: '#ef4444'
           });
         });
       </script>
@@ -448,6 +448,7 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'acc_return_queue.php" class="sidebar-item"><i class="fas fa-undo"></i> Relieving Management</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Monitor</div>';
             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Verification</a>';
+            echo '<a href="'.$wb.'muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
             echo '<a href="'.$wb.'certified_wages.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Certified Wage Rate</a>';
             echo '<a href="'.$wb.'gatepass_monitor.php" class="sidebar-item"><i class="fas fa-id-card"></i> Gate Pass Monitoring</a>';
             echo '<a href="'.$wb.'attendance_monitor.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance Monitor</a>';
@@ -482,11 +483,12 @@ function renderSidebar($role) {
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Operations & Compliance</div>';
                 echo '<a href="attendance.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance</a>';
                 echo '<a href="compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';
+                echo '<a href="muster_roll.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll</a>';
                 echo '<a href="documents.php" class="sidebar-item"><i class="fas fa-folder-open"></i> Documents</a>';
                 echo '<a href="reports.php" class="sidebar-item"><i class="fas fa-chart-bar"></i> Reports</a>';
             } else {
                 echo '<div class="sidebar-item text-muted" style="font-size:12px; padding:10px 15px; background:rgba(0,0,0,0.03); margin-top:10px; border-radius:8px;">';
-                echo '<i class="fas fa-lock me-2"></i> Annexure 2A approval ke baad dashboard aur modules unlock honge.';
+                echo '<i class="fas fa-lock me-2"></i> Once Contractor Registration is approved, the corresponding dashboard and system modules will be unlocked and accessible.';
                 echo '</div>';
             }
             break;
@@ -536,7 +538,7 @@ function renderSidebar($role) {
 
             if (!$onboardingComplete) {
                 echo '<div class="sidebar-item text-muted" style="font-size:12px; padding:10px 15px; background:rgba(0,0,0,0.03); margin-top:10px; border-radius:8px;">';
-                echo '<i class="fas fa-lock me-2"></i> Annexure 3A approval ke baad dashboard aur modules unlock honge.';
+                echo '<i class="fas fa-lock me-2"></i> Dashboard and additional modules will unlock once Annexure 3A is approved.';
                 echo '</div>';
                 break;
             }

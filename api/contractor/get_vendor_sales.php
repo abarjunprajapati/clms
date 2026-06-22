@@ -18,7 +18,7 @@ $sales = db_fetch_all(
     "SELECT sale_order_no, customer_code, customer_name, amount, currency,
             doc_date, sales_organization, '' AS department, description
      FROM sap_sale_order_master
-     WHERE customer_code = ?
+     WHERE TRIM(customer_code) = TRIM(?)
      ORDER BY doc_date DESC",
     's',
     [$vendor_code]

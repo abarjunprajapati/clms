@@ -1,4 +1,7 @@
 <?php
-include 'd:/Xampp/htdocs/clms/include/config.php';
-$res = mysqli_query($conn, "DESCRIBE contractors status");
-print_r(mysqli_fetch_assoc($res));
+require_once __DIR__ . '/../include/config.php';
+header('Content-Type: text/plain; charset=utf-8');
+$res = mysqli_query($conn, "DESCRIBE sap_sale_order_master");
+while ($row = mysqli_fetch_assoc($res)) {
+    print_r($row);
+}

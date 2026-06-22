@@ -19,7 +19,7 @@ $pos = db_fetch_all($conn,
             msme_type, msme_type_text, release_status, contract_number,
             company_code, purchasing_organization, document_type
      FROM sap_po_master
-     WHERE vendor_code = ?
+     WHERE TRIM(vendor_code) = TRIM(?)
      ORDER BY document_date DESC",
     's',
     [$vendor_code]

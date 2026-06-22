@@ -158,18 +158,30 @@ function renderContent() {
                 );
                 $trainingType = $batch ? (string)$batch['training_type'] : 'Safety Induction';
                 $trainingDate = $batch ? (string)$batch['training_date'] : $manualDate;
+                // Determine new status before updating training_request so the EO
+                // queue EXISTS check on training_requests.status can match the row.
+                $newExecutionStatus = $isPwo && !$isPaid ? 'pending_payment' : 'pending_eo';
+                $newExecutionRemarks = $isPwo && !$isPaid
+                    ? 'Waiting for Safety fee payment verification.'
+                    : 'Safety seat booking submitted. Waiting for Executing Officer approval.';
+                // Map workman execution status → training_request status
+                $newRequestStatus = $newExecutionStatus; // 'pending_eo' or 'pending_payment'
+
                 if ($active) {
                     db_execute(
                         $conn,
                         "UPDATE training_requests
-                          SET training_type = ?, preferred_date = ?, preferred_shift = ?, remarks = ?, source = 'contractor_later_booking', updated_at = NOW()
+                          SET training_type = ?, preferred_date = ?, preferred_shift = ?,
+                              remarks = ?, source = 'contractor_later_booking',
+                              status = ?, updated_at = NOW()
                           WHERE id = ?",
-                        'ssssi',
+                        'sssssi',
                         [
                             $trainingType,
                             $trainingDate,
                             $preferredShift,
                             $batch ? 'Contractor selected this scheduled safety training batch from Book Safety Training.' : 'Contractor selected a preferred safety training date from Book Safety Training.',
+                            $newRequestStatus,
                             (int)$active['id']
                         ]
                     );
@@ -179,8 +191,8 @@ function renderContent() {
                         $conn,
                         "INSERT INTO training_requests
                           (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
-                          VALUES (?, ?, ?, CURDATE(), ?, ?, ?, 'contractor_later_booking', ?, 'pending', NOW(), NOW())",
-                        'iissssi',
+                          VALUES (?, ?, ?, CURDATE(), ?, ?, ?, 'contractor_later_booking', ?, ?, NOW(), NOW())",
+                        'iisssssi',
                         [
                             $workerId,
                             $contractorId,
@@ -188,16 +200,12 @@ function renderContent() {
                             $trainingDate,
                             $preferredShift,
                             $batch ? 'Contractor selected this scheduled safety training batch from Book Safety Training.' : 'Contractor selected a preferred safety training date from Book Safety Training.',
-                            $user_id
+                            $user_id,
+                            $newRequestStatus
                         ]
                     );
                     $requestIds[] = (int)mysqli_insert_id($conn);
                 }
-
-                $newExecutionStatus = $isPwo && !$isPaid ? 'pending_payment' : 'pending_eo';
-                $newExecutionRemarks = $isPwo && !$isPaid 
-                    ? 'Waiting for Safety fee payment verification.' 
-                    : 'Safety seat booking submitted. Waiting for Executing Officer approval.';
 
                 db_execute(
                     $conn,
@@ -259,7 +267,7 @@ function renderContent() {
             GROUP BY batch_id
         ) x ON x.batch_id = b.id
         WHERE b.training_date >= CURDATE()
-          AND LOWER(COALESCE(b.status, 'open')) IN ('open','scheduled','active')
+          AND LOWER(COALESCE(b.status, 'draft')) IN ('open','scheduled','active')
         ORDER BY b.training_date ASC, b.session_name ASC, b.id ASC
     ");
     foreach ($batches as &$batchRow) {
@@ -320,7 +328,7 @@ function renderContent() {
           AND NOT (
               LOWER(COALESCE(tr.status, '')) IN ('pending','pending_eo','pending_safety','welfare_pending','scheduled','contractor_confirmed','passed')
               AND LOWER(COALESCE(w.training_status, 'pending')) NOT IN ('training_failed','fail','failed','absent')
-              AND tr.batch_number IS NOT NULL AND tr.batch_number <> ''
+              AND tr.batch_number IS NOT NULL AND tr.batch_number != ''
           )
         ORDER BY COALESCE(tr.requested_date, DATE(w.created_at), CURDATE()) ASC, w.id ASC
     ", 'ii', [$contractorId, $contractorId]) : [];
@@ -784,8 +792,6 @@ function renderContent() {
         if (!matched && languageSelect.options.length > 1) {
           languageSelect.selectedIndex = 1;
         }
-      } else if (languageSelect && languageSelect.options.length > 1) {
-        languageSelect.selectedIndex = 1;
       }
       populateDates();
     </script>

@@ -348,7 +348,7 @@ function renderContent() {
                    name="<?= htmlspecialchars($doc['key']) ?>"
                    accept=".pdf,.jpg,.jpeg,.png"
                    <?= $doc['required'] ? 'required' : '' ?>>
-            <button type="button" class="btn btn-sm btn-outline btn-view-doc hidden" title="View Document">
+            <button type="button" class="btn-view btn-view-doc hidden" title="View Document">
               <i class="fas fa-eye"></i> View
             </button>
             <span class="gp-file-badge" data-file-state><i class="fas fa-clock"></i> Pending</span>

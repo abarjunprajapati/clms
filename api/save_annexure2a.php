@@ -725,27 +725,27 @@ if ($check_app) {
 // 8. Handle PO/PWO/SO selections from basic tab (unchanged)
 if (isset($_POST['selected_pos'])) {
     $conn->query("DELETE FROM contractor_po_selection WHERE contractor_id = $contractor_id");
-    $pos_arr = json_decode($_POST['selected_pos'], true);
-    if (is_array($pos_arr)) {
-        foreach ($pos_arr as $po) {
+    $pos = json_decode($_POST['selected_pos'], true);
+    if (is_array($pos)) {
+        foreach ($pos as $po) {
             db_execute($conn, "INSERT INTO contractor_po_selection (contractor_id, po_number) VALUES (?,?)", 'is', [$contractor_id, $po]);
         }
     }
 }
 if (isset($_POST['selected_pwos'])) {
     $conn->query("DELETE FROM contractor_pwo_selection WHERE contractor_id = $contractor_id");
-    $pwos_arr = json_decode($_POST['selected_pwos'], true);
-    if (is_array($pwos_arr)) {
-        foreach ($pwos_arr as $pwo) {
+    $pwos = json_decode($_POST['selected_pwos'], true);
+    if (is_array($pwos)) {
+        foreach ($pwos as $pwo) {
             db_execute($conn, "INSERT INTO contractor_pwo_selection (contractor_id, pwo_number) VALUES (?,?)", 'is', [$contractor_id, $pwo]);
         }
     }
 }
 if (isset($_POST['selected_sales'])) {
     $conn->query("DELETE FROM contractor_so_selection WHERE contractor_id = $contractor_id");
-    $sales_arr = json_decode($_POST['selected_sales'], true);
-    if (is_array($sales_arr)) {
-        foreach ($sales_arr as $so) {
+    $sos = json_decode($_POST['selected_sales'], true);
+    if (is_array($sos)) {
+        foreach ($sos as $so) {
             db_execute($conn, "INSERT INTO contractor_so_selection (contractor_id, sale_order_no) VALUES (?,?)", 'is', [$contractor_id, $so]);
         }
     }

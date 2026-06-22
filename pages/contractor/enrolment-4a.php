@@ -345,7 +345,8 @@ function renderContent() {
     $c_id = $contractor['id'] ?? null;
     $contractorWhere = $c_id ? "contractor_id = " . (int)$c_id : '1=0';
     if ($role === 'customer') {
-        $customerContractorIds = $customerContractorIds ?? enrolment_customer_contractor_ids($conn);
+        $customerCode = $_SESSION['customer_code'] ?? $_SESSION['contractor_id'] ?? '';
+        $customerContractorIds = $customerContractorIds ?? enrolment_customer_contractor_ids($conn, $customerCode);
         $contractorWhere = $customerContractorIds ? "contractor_id IN (" . implode(',', $customerContractorIds) . ")" : '1=0';
     }
 
@@ -359,6 +360,9 @@ function renderContent() {
     $project_name = '';
     $department_name = $contractor['work_awarding_department'] ?? '';
     $vendorCodeForSap = $contractor['vendor_code'] ?? ($_SESSION['contractor_id'] ?? '');
+    if ($role === 'customer') {
+        $vendorCodeForSap = $_SESSION['customer_code'] ?? $vendorCodeForSap;
+    }
     $workOptions = [];
     $seenWorkOrders = [];
     $selectedContractorWhere = $role === 'customer'
@@ -626,14 +630,6 @@ function renderContent() {
                 " . $roleTypeExpr . ",
                 " . enrolment_expr($conn, 'workmen', 'training_status', 'safety_status') . ",
                 (
-                    SELECT IF(pr.status = 'paid', 1, 0)
-                    FROM training_payment_request_workers pw
-                    JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
-                    WHERE pw.workman_id = workmen.id
-                    ORDER BY pr.id DESC
-                    LIMIT 1
-                ) AS is_safety_paid,
-                (
                     SELECT tr.status
                     FROM training_requests tr
                     WHERE tr.workman_id = workmen.id
@@ -666,6 +662,15 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
                 " . enrolment_expr($conn, 'workmen', 'is_blocked', 'is_blocked', '0') . ",
                 " . enrolment_expr($conn, 'workmen', 'blocked_source', 'blocked_source') . ",
+                (
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM training_payment_request_workers pw
+                        JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                        WHERE pw.workman_id = workmen.id
+                          AND pr.status = 'paid'
+                    )
+                ) AS is_safety_paid,
                 " . enrolment_expr($conn, 'workmen', 'created_at', 'created_at') . "
             FROM workmen
             WHERE $contractorWhere AND $typeWhere $nonDraftWhere
@@ -737,14 +742,6 @@ function renderContent() {
                 " . $roleTypeExpr . ",
                 " . enrolment_expr($conn, 'workmen', 'training_status', 'safety_status') . ",
                 (
-                    SELECT IF(pr.status = 'paid', 1, 0)
-                    FROM training_payment_request_workers pw
-                    JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
-                    WHERE pw.workman_id = workmen.id
-                    ORDER BY pr.id DESC
-                    LIMIT 1
-                ) AS is_safety_paid,
-                (
                     SELECT tr.status
                     FROM training_requests tr
                     WHERE tr.workman_id = workmen.id
@@ -777,6 +774,15 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
                 " . enrolment_expr($conn, 'workmen', 'is_blocked', 'is_blocked', '0') . ",
                 " . enrolment_expr($conn, 'workmen', 'blocked_source', 'blocked_source') . ",
+                (
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM training_payment_request_workers pw
+                        JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                        WHERE pw.workman_id = workmen.id
+                          AND pr.status = 'paid'
+                    )
+                ) AS is_safety_paid,
                 " . enrolment_expr($conn, 'workmen', 'created_at', 'created_at') . "
             FROM workmen
             WHERE id = $editId AND $contractorWhere
@@ -902,8 +908,7 @@ function renderContent() {
     .preview-section .preview-item strong { display:block; overflow-wrap:anywhere; line-height:1.35; }
     .preview-doc-value { display:flex; align-items:center; justify-content:space-between; gap:10px; }
     .preview-doc-value strong { min-width:0; flex:1; }
-    .preview-doc-view { flex:0 0 auto; border:1px solid #cbd5e1; background:#f8fafc; color:#1e293b; border-radius:6px; padding:5px 9px; font-size:11px; font-weight:800; cursor:pointer; }
-    .preview-doc-view:hover { border-color:#2563eb; color:#1d4ed8; background:#eff6ff; }
+    /* .preview-doc-view now uses global .btn-view from style.css */
     .preview-question { margin:16px 0 0; padding:10px 12px; border:1px solid #bfdbfe; border-radius:8px; background:#eff6ff; color:#1e3a8a; font-weight:800; }
     #enrollForm .form-control {
       min-height: 42px;
@@ -940,51 +945,50 @@ function renderContent() {
       <button class="btn btn-primary" id="btnOpenModal"><i class="fas fa-plus"></i> New <?= htmlspecialchars($selectedType['pass']) ?></button>
     </div>
 
-    <div class="card glass" style="margin-bottom: 16px;">
-      <div class="card-body" style="padding: 12px;">
+    <div class="card shadow-sm mb-4" style="border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; background: #ffffff;">
+      <div class="card-header bg-light py-3 border-bottom d-flex align-items-center gap-2">
+        <i class="fas fa-chart-line text-primary"></i>
+        <h5 class="mb-0 text-dark fw-bold" style="font-size: 14px;">Workmen Enrolment Dashboard</h5>
+      </div>
+      <div class="card-body p-3">
         <div class="row g-3">
-          <!-- Left Column: Summary Stats -->
-          <div class="col-md-6">
-            <div class="stats-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; height: 100%;">
-              <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px; margin-bottom:0;">
-                <div class="stat-icon" style="background:rgba(99,102,241,0.1);color:#6366f1; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-users"></i></div>
+          <!-- Summary Stats Column -->
+          <div class="col-lg-7">
+            <div class="stats-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; height: 100%;">
+              <div class="stat-card glass" style="padding:10px; min-height:0; display:flex; align-items:center; gap:8px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
+                <div class="stat-icon" style="background:rgba(99,102,241,0.1);color:#6366f1; width:32px; height:32px; font-size:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas fa-users"></i></div>
                 <div>
-                  <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count($workers) ?></div>
-                  <div class="stat-label" style="font-size:10px;"><?= htmlspecialchars($selectedType['plural']) ?> Enrolled</div>
+                  <div class="stat-value" style="font-size:18px; font-weight:700; color:#1e293b; line-height:1; margin-bottom:2px;"><?= count($workers) ?></div>
+                  <div class="stat-label" style="font-size:10px; color:#64748b; font-weight:500;"><?= htmlspecialchars($selectedType['plural']) ?> Enrolled</div>
                 </div>
               </div>
-              <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px; margin-bottom:0;">
-                <div class="stat-icon" style="background:rgba(16,185,129,0.1);color:#10b981; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-check"></i></div>
+              <div class="stat-card glass" style="padding:10px; min-height:0; display:flex; align-items:center; gap:8px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
+                <div class="stat-icon" style="background:rgba(16,185,129,0.1);color:#10b981; width:32px; height:32px; font-size:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas fa-check"></i></div>
                 <div>
-                  <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return ($w['safety_status']??'')==='pass'; })) ?></div>
-                  <div class="stat-label" style="font-size:10px;">Safety Passed</div>
+                  <div class="stat-value" style="font-size:18px; font-weight:700; color:#1e293b; line-height:1; margin-bottom:2px;"><?= count(array_filter($workers, function($w) { return ($w['safety_status']??'')==='pass'; })) ?></div>
+                  <div class="stat-label" style="font-size:10px; color:#64748b; font-weight:500;">Safety Passed</div>
                 </div>
               </div>
-              <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px; margin-bottom:0;">
-                <div class="stat-icon" style="background:rgba(245,158,11,0.1);color:#f59e0b; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-id-badge"></i></div>
+              <div class="stat-card glass" style="padding:10px; min-height:0; display:flex; align-items:center; gap:8px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
+                <div class="stat-icon" style="background:rgba(245,158,11,0.1);color:#f59e0b; width:32px; height:32px; font-size:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas fa-id-badge"></i></div>
                 <div>
-                  <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return !empty($w['temp_id']); })) ?></div>
-                  <div class="stat-label" style="font-size:10px;">Temp IDs Issued</div>
+                  <div class="stat-value" style="font-size:18px; font-weight:700; color:#1e293b; line-height:1; margin-bottom:2px;"><?= count(array_filter($workers, function($w) { return !empty($w['temp_id']); })) ?></div>
+                  <div class="stat-label" style="font-size:10px; color:#64748b; font-weight:500;">Temp IDs Issued</div>
                 </div>
               </div>
-              <div class="stat-card glass" style="padding:8px 10px; min-height:0; display:flex; align-items:center; gap:8px; margin-bottom:0;">
-                <div class="stat-icon" style="background:rgba(239,68,68,0.1);color:#ef4444; width:26px; height:26px; font-size:12px; flex-shrink:0; margin-bottom:0;"><i class="fas fa-door-open"></i></div>
+              <div class="stat-card glass" style="padding:10px; min-height:0; display:flex; align-items:center; gap:8px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
+                <div class="stat-icon" style="background:rgba(239,68,68,0.1);color:#ef4444; width:32px; height:32px; font-size:14px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas fa-door-open"></i></div>
                 <div>
-                  <div class="stat-value" style="font-size:16px; line-height:1; margin-bottom:1px;"><?= count(array_filter($workers, function($w) { return ($w['gate_pass_status']??'')==='active'; })) ?></div>
-                  <div class="stat-label" style="font-size:10px;">Active Passes</div>
+                  <div class="stat-value" style="font-size:18px; font-weight:700; color:#1e293b; line-height:1; margin-bottom:2px;"><?= count(array_filter($workers, function($w) { return ($w['gate_pass_status']??'')==='active'; })) ?></div>
+                  <div class="stat-label" style="font-size:10px; color:#64748b; font-weight:500;">Active Passes</div>
                 </div>
               </div>
             </div>
           </div>
-          <!-- Right Column: Pass Limits -->
-          <div class="col-md-6 border-start border-light">
-            <div style="padding-left: 10px;">
-              <div class="d-flex align-items-center gap-2 mb-2" style="font-size:12px; font-weight:700; color:var(--primary-color);">
-                <i class="fas fa-shield-alt" style="color:#6366f1;"></i> PASS LIMITS (ANNEXURE 5/A)
-              </div>
-              <div id="passLimitsWidget" style="font-size:12px;">
-                <p style="color:var(--text-muted);font-size:12px;margin:0;">Loading pass limits...</p>
-              </div>
+          <!-- Pass Limits Column -->
+          <div class="col-lg-5">
+            <div class="p-2 border rounded-3 bg-light" id="passLimitsWidget" style="font-size:12px; height: 100%; min-height: 56px;">
+              <p class="text-muted mb-0">Loading pass limits...</p>
             </div>
           </div>
         </div>
@@ -1177,12 +1181,40 @@ function renderContent() {
                   <?php endif; ?>
                 </div>
               </td>
+              <?php
+                // Determine if this worker's form is locked (submitted, in approval pipeline)
+                // Worker is editable ONLY when rejected OR never submitted (draft)
+                $latestReqStatus  = strtolower(trim((string)($w['latest_training_request_status'] ?? '')));
+                $eoStatus2        = strtolower(trim((string)($w['execution_training_status'] ?? '')));
+                $safetyStatus2    = strtolower(trim((string)($w['safety_enrollment_status'] ?? '')));
+                $hasTempId        = !empty($w['temp_id']);  // temp_id is only generated on Submit (not Save Draft)
+
+                // Rejected by EO or Safety → editable (contractor can correct and resubmit)
+                $isRejected = $eoStatus2 === 'rejected'
+                           || $safetyStatus2 === 'rejected'
+                           || $latestReqStatus === 'safety_rejected';
+
+                // Worker is submitted if they have a temp_id OR a non-empty training request status
+                // OR their execution_training_status is something other than empty/pending
+                $isSubmitted = $hasTempId
+                            || ($latestReqStatus !== '')
+                            || !in_array($eoStatus2, ['', 'pending'], true);
+
+                // Locked = submitted AND not rejected
+                $workerIsLocked = $isSubmitted && !$isRejected;
+              ?>
               <td>
-                <div style="display:flex;gap:5px;">
+                <div style="display:flex;gap:5px;flex-wrap:wrap;">
                   <button class="btn btn-sm btn-outline" title="View Profile" onclick="viewWorker(<?= htmlspecialchars(json_encode($w)) ?>)"><i class="fas fa-eye"></i></button>
+                  <?php if ($workerIsLocked): ?>
+                  <button class="btn btn-sm btn-outline" title="Enrollment submitted — non-editable until reviewed" style="opacity:.55;cursor:not-allowed;" onclick="showLockedMsg(<?= htmlspecialchars(json_encode(['name'=>$w['name'],'status'=>$latestReqStatus]), ENT_QUOTES) ?>)">
+                    <i class="fas fa-lock"></i>
+                  </button>
+                  <?php else: ?>
                   <button class="btn btn-sm btn-outline" title="Edit Worker" onclick="editWorker(<?= htmlspecialchars(json_encode($w)) ?>)">
                     <i class="fas fa-edit"></i>
                   </button>
+                  <?php endif; ?>
                   <?php if (($w['worker_status'] ?? 'active') === 'active'): ?>
                     <button class="btn btn-sm btn-success" title="Deactivate Worker (Currently Active)" onclick="toggleWorkerStatus(<?= (int)$w['id'] ?>, 'inactive', '<?= htmlspecialchars($w['name'], ENT_QUOTES) ?>')">
                       <i class="fas fa-toggle-on"></i>
@@ -2158,6 +2190,17 @@ function renderContent() {
             tabId = 'payment';
             notify('Safety Fee Required', 'Pay Safety Fee first. Safety Training & Seat Booking will open after payment.', 'warning');
           }
+          if (tabId === 'training') {
+            if (isPwoWorkOrder() && pwoPaymentCompleted && !hasShownPaymentSuccessPopup) {
+              hasShownPaymentSuccessPopup = true;
+              Swal.fire({
+                icon: 'success',
+                title: 'Payment Completed',
+                text: 'Payment completed successfully. You may now proceed with the safety booking.',
+                confirmButtonColor: '#1e3a8a'
+              });
+            }
+          }
           document.querySelectorAll('.square-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
           document.querySelectorAll('.modal-tab-content').forEach(c => c.classList.toggle('hidden', c.id !== 'tab-' + tabId));
           const index = visibleTabs.indexOf(tabId);
@@ -2679,11 +2722,43 @@ function renderContent() {
           return 'Workman';
         }
 
+        // Show lock message when form is non-editable
+        function showLockedMsg(info) {
+          const statusLabels = {
+            'pending_eo'           : 'EO Approval Pending',
+            'pending_safety'       : 'Safety Approval Pending',
+            'welfare_pending'      : 'Safety Approval Pending',
+            'scheduled'            : 'Training Scheduled',
+            'contractor_confirmed' : 'Booking Confirmed',
+            'passed'               : 'Training Passed',
+            'pass'                 : 'Training Passed',
+            'failed'               : 'Training Failed',
+          };
+          const label = statusLabels[info.status] || info.status.replace(/_/g,' ').toUpperCase();
+          Swal.fire({
+            icon : 'info',
+            title: '\uD83D\uDD12 Enrollment Locked',
+            html : `<div style="text-align:left;font-size:14px;line-height:1.8;">
+                      <p>The enrollment for <strong>${info.name}</strong> has been <strong>submitted</strong> and is currently under review.</p>
+                      <div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-top:8px;">
+                        <span style="font-size:12px;color:#64748b;font-weight:700;">CURRENT STATUS</span><br>
+                        <span style="font-size:15px;font-weight:800;color:#2563eb;">${label}</span>
+                      </div>
+                      <p style="margin-top:12px;font-size:13px;color:#64748b;">Editing is <strong>not allowed</strong> while the enrollment is under approval. The form will become editable again only if the enrollment is <strong>rejected</strong> by the Executing Officer or Safety Department.</p>
+                    </div>`,
+            confirmButtonText : 'OK, Understood',
+            confirmButtonColor: '#2563eb'
+          });
+        }
+
         function editWorker(worker) {
           form.reset();
           resetInlineSafetyPaymentState();
           document.getElementById('workerEditId').value = worker.id || '';
           document.getElementById('enrollFormTitle').textContent = ' Edit ' + requestedPassLabel;
+
+          pwoPaymentCompleted = !!(worker.is_safety_paid && (parseInt(worker.is_safety_paid) || worker.is_safety_paid === '1' || worker.is_safety_paid === true));
+          hasShownPaymentSuccessPopup = false;
 
           const values = {
             work_order_no: worker.work_order_no,
@@ -2868,7 +2943,6 @@ function renderContent() {
           if (worker.safety_fee_payment_option) {
             setFieldValue('safety_fee_payment_option', worker.safety_fee_payment_option);
           }
-          pwoPaymentCompleted = (parseInt(worker.is_safety_paid) === 1);
           refreshWorkflowPaymentState(false);
           formSection.scrollIntoView({ behavior: 'smooth' });
           activateTab(rejectedByEO ? 'docs' : 'basic');
@@ -2985,6 +3059,7 @@ function renderContent() {
         let inlineSafetyPaymentToken = '';
         let inlineSafetyPaymentWorkerId = '';
         let pwoPaymentCompleted = false;
+        let hasShownPaymentSuccessPopup = false;
 
         function resetInlineSafetyPaymentState() {
           inlineSafetyPaymentToken = '';
@@ -3027,6 +3102,10 @@ function renderContent() {
 
         function selectedSafetyFeeOption() {
           return form.querySelector('[name="safety_fee_payment_option"]:checked')?.value || '';
+        }
+
+        function isPwoPayNow() {
+          return isPwoWorkOrder() && selectedSafetyFeeOption() === 'pay_now';
         }
 
         function isPwoPayLater() {
@@ -3104,26 +3183,21 @@ function renderContent() {
               ? 'Enrollment Complete. Please do safety payment for proceeding further.'
               : 'Save Draft will not submit this entitlement for processing. Training can be booked later from the Book Safety Training menu.';
           }
-          const payOption = selectedSafetyFeeOption();
-          if (isPwo && payOption === 'pay_now') {
-            if (laterInput) {
-              laterInput.disabled = true;
-              laterInput.checked = false;
-            }
+          if (isPwo && isPwoPayNow()) {
             if (bookNowInput) {
-              bookNowInput.disabled = !canBookPwoTrainingInline();
               bookNowInput.checked = true;
+              bookNowInput.disabled = false;
+            }
+            if (laterInput) {
+              laterInput.checked = false;
+              laterInput.disabled = true;
             }
           } else {
+            if (isPwo && laterInput && !canBookPwoTrainingInline() && !isPwoPayLater()) laterInput.checked = true;
             if (bookNowInput) {
               bookNowInput.disabled = isPwo && !canBookPwoTrainingInline() && !isPwoPayLater();
             }
-            if (laterInput) {
-              laterInput.disabled = false;
-            }
-            if (isPwo && laterInput && !canBookPwoTrainingInline() && !isPwoPayLater()) {
-              laterInput.checked = true;
-            }
+            if (laterInput) laterInput.disabled = false;
           }
           // Do NOT force book_now for non-PWO — let the user choose freely
           const activeTab = document.querySelector('.square-tab.active')?.dataset.tab || '';
@@ -3299,7 +3373,7 @@ function renderContent() {
                   <span>${escapePreviewHtml(label)}</span>
                   <div class="preview-doc-value">
                     <strong>${escapePreviewHtml(value || '-')}</strong>
-                    <button type="button" class="preview-doc-view" onclick="viewPreviewDocument('${escapePreviewHtml(item.fileInputName || '')}', '${escapePreviewHtml(item.viewUrl || '')}')">View</button>
+                    <button type="button" class="btn-view" onclick="viewPreviewDocument('${escapePreviewHtml(item.fileInputName || '')}', '${escapePreviewHtml(item.viewUrl || '')}')"><i class='fas fa-eye'></i> View</button>
                   </div>
                 </div>
               `;
@@ -3442,7 +3516,6 @@ function renderContent() {
             const bookNowInput = form.querySelector('[name="training_booking_choice"][value="book_now"]');
             if (bookNowInput) bookNowInput.disabled = false;
             refreshWorkflowPaymentState(true);
-            notify('Payment Verified', 'Safety Fee Payment for this worker is already completed.', 'success');
             activateTab('training');
             return;
           }
@@ -3826,28 +3899,11 @@ function renderContent() {
           }
 
           const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
-          if (isPwoWorkOrder()) {
-            const payOption = selectedSafetyFeeOption();
-            if (payOption === 'pay_now') {
-              if (bookingChoice === 'not_now') {
-                activateTab('payment');
-                notify('Invalid Configuration', 'You have selected "Pay Safety Fee Now". You must choose "Book Safety Training Now" and complete the seat booking.', 'warning');
-                return;
-              }
-              if (!canBookPwoTrainingInline()) {
-                activateTab('payment');
-                notify('Payment Required', 'Please complete the safety fee payment inline before submitting your enrollment.', 'warning');
-                return;
-              }
-            } else if (payOption === 'pay_later') {
-              if (bookingChoice === 'book_now') {
-                activateTab('payment');
-                notify('Invalid Configuration', 'For "Pay Safety Fee Later", you cannot book safety training now. Please select "I don\'t need to book now".', 'warning');
-                return;
-              }
-            }
+          if (isPwoWorkOrder() && selectedSafetyFeeOption() === 'pay_now' && bookingChoice === 'not_now') {
+            activateTab('training');
+            notify('Safety Booking Required', 'Safety Fee Payment Now requires booking a training seat. Please select "I need to book an appointment" and schedule it.', 'warning');
+            return;
           }
-
           if (bookingChoice === 'book_now' && (!previewValue('training_booking_date') || !previewValue('training_booking_session'))) {
             activateTab('training');
             notify('Training Booking Required', 'Please select safety training date and session.', 'warning');
@@ -3921,10 +3977,12 @@ function renderContent() {
                 successMessage += 'Safety Training not booked.';
               }
               successMessage += '\nTemp ID: ' + result.temp_id;
-              if (selectedSafetyFeeOption() === 'pay_later') {
-                successMessage += '\n\nNote: Safety Fee payment is pending. Please complete payment to proceed with training booking.';
-              } else if (result.payment && result.payment.payment_link) {
-                successMessage += '\nPayment Ref: ' + result.payment.payment_ref + '\nAmount: Rs. ' + result.payment.amount;
+              if (result.payment && result.payment.payment_link) {
+                if (selectedSafetyFeeOption() === 'pay_later') {
+                  successMessage += '\nSafety Fee Payment: Pending';
+                } else {
+                  successMessage += '\nPayment Ref: ' + result.payment.payment_ref + '\nAmount: Rs. ' + result.payment.amount;
+                }
               }
               notify('Success', successMessage, 'success').then(() => {
                 if (result.booking_menu_link) {
