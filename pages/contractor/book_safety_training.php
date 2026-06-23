@@ -301,7 +301,7 @@ function renderContent() {
             SELECT tr2.id
             FROM training_requests tr2
             WHERE tr2.workman_id = w.id
-              AND LOWER(COALESCE(tr2.status, 'pending')) IN ('pending_eo','pending_safety','welfare_pending','pending','scheduled','contractor_confirmed','passed')
+              AND LOWER(COALESCE(tr2.status, 'pending')) IN ('pending_payment','pending_eo','pending_safety','welfare_pending','pending','scheduled','contractor_confirmed','passed')
             ORDER BY tr2.id DESC
             LIMIT 1
         )
@@ -326,9 +326,9 @@ function renderContent() {
               AND (w.training_valid_till IS NULL OR w.training_valid_till >= CURDATE())
           )
           AND NOT (
-              LOWER(COALESCE(tr.status, '')) IN ('pending','pending_eo','pending_safety','welfare_pending','scheduled','contractor_confirmed','passed')
-              AND LOWER(COALESCE(w.training_status, 'pending')) NOT IN ('training_failed','fail','failed','absent')
-              AND tr.batch_number IS NOT NULL AND tr.batch_number != ''
+              LOWER(COALESCE(tr.status, '')) IN ('pending_payment','pending','pending_eo','pending_safety','welfare_pending','scheduled','contractor_confirmed','passed')
+              AND LOWER(COALESCE(w.training_status, 'pending')) NOT IN ('training_failed','fail','failed','absent','training_expired','expired')
+              AND (w.training_valid_till IS NULL OR w.training_valid_till >= CURDATE())
           )
         ORDER BY COALESCE(tr.requested_date, DATE(w.created_at), CURDATE()) ASC, w.id ASC
     ", 'ii', [$contractorId, $contractorId]) : [];

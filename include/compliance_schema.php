@@ -120,6 +120,26 @@ function ensureComplianceSchema($conn) {
     compliance_add_column_if_not_exists($conn, 'workmen', 'compliance_status', "ENUM('pending','verified','non_compliant') DEFAULT 'pending' AFTER training_status");
     compliance_add_column_if_not_exists($conn, 'workmen', 'last_compliance_month', "VARCHAR(7) DEFAULT NULL AFTER compliance_status");
     compliance_add_column_if_not_exists($conn, 'contractors', 'compliance_status', "ENUM('pending','verified','non_compliant') DEFAULT 'pending' AFTER status");
+    compliance_add_column_if_not_exists($conn, 'compliance', 'type', 'VARCHAR(50) DEFAULT NULL AFTER contractor_id');
+
+    $conn->query("CREATE TABLE IF NOT EXISTS compliance_epf_records (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        compliance_id INT NOT NULL,
+        uan VARCHAR(20) NOT NULL,
+        member_name VARCHAR(150),
+        gross_wages DECIMAL(12,2) DEFAULT 0.00,
+        epf_wages DECIMAL(12,2) DEFAULT 0.00,
+        eps_wages DECIMAL(12,2) DEFAULT 0.00,
+        edli_wages DECIMAL(12,2) DEFAULT 0.00,
+        epf_contribution DECIMAL(10,2) DEFAULT 0.00,
+        eps_contribution DECIMAL(10,2) DEFAULT 0.00,
+        diff_contribution DECIMAL(10,2) DEFAULT 0.00,
+        ncp_days INT DEFAULT 0,
+        refund_advances DECIMAL(10,2) DEFAULT 0.00,
+        KEY idx_ecr_compliance (compliance_id),
+        KEY idx_ecr_uan (uan)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
     ensureMusterRollSchema($conn);
 }
 

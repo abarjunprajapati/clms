@@ -123,7 +123,7 @@ function renderContent() {
                     FROM training_class_batches tb2
                     WHERE LOWER(TRIM(tb2.language_name)) = LOWER(TRIM(COALESCE(w.safety_language, '')))
                       AND tb2.training_date >= CURDATE()
-                      AND LOWER(tb2.status) IN ('scheduled', 'draft', 'open')
+                      AND LOWER(tb2.status) IN ('scheduled', 'draft', 'open', 'active')
                     ORDER BY tb2.training_date ASC, tb2.id ASC
                     LIMIT 1
                 )
@@ -158,8 +158,8 @@ function renderContent() {
                   ORDER BY tr2.id DESC
                   LIMIT 1
               )
-            ORDER BY COALESCE(LOWER(w.safety_language), 'zzz') ASC,
-                     $batchOrderExpr ASC,
+            ORDER BY $batchOrderExpr ASC,
+                     COALESCE(LOWER(w.safety_language), 'zzz') ASC,
                      COALESCE(tr.updated_at, tr.created_at) ASC, tr.id ASC
         ");
 
@@ -202,11 +202,9 @@ function renderContent() {
     }
 
     $safetyApprovalPending = count($safetyApprovalRequests);
-    $languageGroupCount    = count($groups);
-    // Count total distinct batches across all language groups (excluding "No Batch Assigned")
     $batchCount = 0;
-    foreach ($groups as $lg) {
-        foreach ($lg['batches'] as $bk => $b) {
+    foreach ($groups as $langGroup) {
+        foreach ($langGroup['batches'] as $bk => $b) {
             if ($bk !== '__no_batch__') $batchCount++;
         }
     }
@@ -256,7 +254,6 @@ function renderContent() {
 .btn-row-approve:hover{background:#bbf7d0}
 .btn-row-reject{background:#fee2e2;color:#991b1b}
 .btn-row-reject:hover{background:#fecaca}
-/* .btn-row-view now uses global .btn-view from style.css */
 
 /* ── Floating batch panel ── */
 .batch-action-panel{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;
@@ -329,7 +326,7 @@ function renderContent() {
       $workerIdsJson = htmlspecialchars(json_encode(array_values(array_map('intval', $workerIds))), ENT_QUOTES);
       $groupId       = 'batch-group-' . preg_replace('/[^a-zA-Z0-9]/', '_', $langKey . '_' . $groupKey);
   ?>
-  <div class="batch-group" id="<?= $groupId ?>">
+  <div class="batch-group" id="<?= $groupId ?>" style="margin-bottom: 20px;">
 
     <!-- Batch group header -->
     <div class="batch-group-header <?= $isNoBatch ? 'no-batch' : '' ?>">
@@ -413,7 +410,7 @@ function renderContent() {
             <?php if (!empty($approval['training_approval_doc'])): ?>
               <a class="btn btn-row btn-row-view" style="margin-top:5px" target="_blank"
                  href="../../uploads/workers/<?= rawurlencode(basename((string)$approval['training_approval_doc'])) ?>">
-                <i class="fas fa-file-pdf"></i> Doc
+                 <i class="fas fa-file-pdf"></i> Doc
               </a>
             <?php endif; ?>
           </td>

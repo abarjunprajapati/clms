@@ -372,6 +372,7 @@ function renderSidebar($role) {
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
             echo '<a href="'.BASE_URL.'pages/welfare/muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
             echo '<a href="'.BASE_URL.'pages/welfare/check_esi_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check ESI Compliance</a>';
+            echo '<a href="'.BASE_URL.'pages/welfare/check_epf_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check EPF Compliance</a>';
 
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Enterprise Governance</div>';
             echo '<a href="'.BASE_URL.'pages/amc/dashboard.php" class="sidebar-item"><i class="fas fa-handshake"></i> AMC & SLA</a>';
@@ -423,6 +424,7 @@ function renderSidebar($role) {
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
             echo '<a href="'.$wb.'muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
             echo '<a href="'.$wb.'check_esi_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check ESI Compliance</a>';
+            echo '<a href="'.$wb.'check_epf_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check EPF Compliance</a>';
 
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Lifecycle</div>';
             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';
@@ -458,6 +460,7 @@ function renderSidebar($role) {
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
             echo '<a href="'.$wb.'muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
             echo '<a href="'.$wb.'check_esi_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check ESI Compliance</a>';
+            echo '<a href="'.$wb.'check_epf_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check EPF Compliance</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Monitor</div>';
             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Verification</a>';
             echo '<a href="'.$wb.'certified_wages.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Certified Wage Rate</a>';
@@ -494,6 +497,7 @@ function renderSidebar($role) {
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
                 echo '<a href="muster_roll.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll</a>';
                 echo '<a href="esi_contribution.php" class="sidebar-item"><i class="fas fa-hand-holding-dollar"></i> ESI Contribution</a>';
+                echo '<a href="epf_compliance.php" class="sidebar-item"><i class="fas fa-file-invoice-dollar"></i> EPF Compliance</a>';
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Operations & Compliance</div>';
                 echo '<a href="attendance.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance</a>';
                 echo '<a href="compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';
