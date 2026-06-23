@@ -94,7 +94,7 @@ function renderContent() {
               </td>
               <td>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                  <button class="btn btn-sm btn-outline" onclick='viewDetails(<?= json_encode($c) ?>)'><i class="fas fa-eye"></i> View</button>
+                  <button class="btn btn-sm btn-outline" onclick="viewDetails(<?= htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8') ?>)"><i class="fas fa-eye"></i> View</button>
                   <button class="btn btn-sm btn-primary" onclick="openActionModal(<?= $c['cid'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>
                   <button class="btn btn-sm btn-warning" onclick="openActionModal(<?= $c['cid'] ?>, 'correction_required')"><i class="fas fa-edit"></i> Correction</button>
                   <button class="btn btn-sm btn-secondary" onclick="openActionModal(<?= $c['cid'] ?>, 'hold')"><i class="fas fa-pause"></i> Hold</button>
@@ -206,8 +206,10 @@ function renderContent() {
       }
 
       .modal-body { color: var(--text-primary); padding: 20px 28px; overflow-y: auto; }
-      /* Force all text inside the Details modal to white for maximum readability */
-      #detailsModal, #detailsModal * { color: #ffffff !important; }
+      /* Force all text inside the Details modal to white for maximum readability, except custom colored elements */
+      #detailsModal { color: #ffffff; }
+      #detailsModal h3, #detailsModal label, #detailsModal th { color: #ffffff; }
+      #detailsModal td { color: #ffffff; }
 
       .hidden { display: none !important; visibility: hidden !important; }
       .modal-header { display: flex; justify-content: space-between; align-items: center; background: rgba(255, 255, 255, 0.01); padding: 18px 24px; }
