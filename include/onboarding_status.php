@@ -23,13 +23,25 @@ function clms_onboarding_is_complete($conn, $role, $account_code = '', $user_id 
         if (!clms_onboarding_table_exists($conn, 'contractors')) return false;
 
         if ($account_code !== '') {
-            $row = db_single($conn, "SELECT status FROM contractors WHERE vendor_code = ? ORDER BY id DESC LIMIT 1", 's', [$account_code]);
-            if ($row && strtolower((string)($row['status'] ?? '')) === 'approved') return true;
+            $row = db_single($conn, "SELECT id, status FROM contractors WHERE vendor_code = ? ORDER BY id DESC LIMIT 1", 's', [$account_code]);
+            if ($row) {
+                if (strtolower((string)($row['status'] ?? '')) === 'approved') return true;
+                if (clms_onboarding_table_exists($conn, 'contractor_status_history')) {
+                    $hist = db_single($conn, "SELECT COUNT(*) AS c FROM contractor_status_history WHERE contractor_id = ? AND status = 'approved'", 'i', [(int)$row['id']]);
+                    if ($hist && $hist['c'] > 0) return true;
+                }
+            }
         }
 
         if ($user_id > 0) {
-            $row = db_single($conn, "SELECT status FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [$user_id]);
-            if ($row && strtolower((string)($row['status'] ?? '')) === 'approved') return true;
+            $row = db_single($conn, "SELECT id, status FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [$user_id]);
+            if ($row) {
+                if (strtolower((string)($row['status'] ?? '')) === 'approved') return true;
+                if (clms_onboarding_table_exists($conn, 'contractor_status_history')) {
+                    $hist = db_single($conn, "SELECT COUNT(*) AS c FROM contractor_status_history WHERE contractor_id = ? AND status = 'approved'", 'i', [(int)$row['id']]);
+                    if ($hist && $hist['c'] > 0) return true;
+                }
+            }
         }
 
         return false;

@@ -7,7 +7,7 @@ include '../../include/config.php';
 
 // Accept both 'welfare_user' and 'welfare_user' (normalized by session.php)
 $_welfareRole = $_SESSION['role'] ?? '';
-if (!in_array($_welfareRole, ['welfare_user', 'welfare_user', 'welfare_admin', 'admin'])) {
+if (!in_array($_welfareRole, ['welfare_user', 'welfare_admin', 'super_admin', 'admin'])) {
     header('Location: ../index.php');
     exit('Unauthorized - Welfare access required');
 }

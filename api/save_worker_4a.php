@@ -706,10 +706,19 @@ function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $r
 function worker4a_detect_work_order_source($conn, $contractor_id, $work_order_no, $posted_source = '') {
     $work_order_no = trim((string)$work_order_no);
     $posted_source = strtoupper(trim((string)$posted_source));
+    // Point 8: Handle comma-separated work orders — detect source using first non-empty value
+    if (strpos($work_order_no, ',') !== false) {
+        $parts = array_filter(array_map('trim', explode(',', $work_order_no)));
+        $work_order_no = reset($parts) ?: '';
+    }
     if ($work_order_no === '') return $posted_source ?: 'WO';
     $upperWorkOrder = strtoupper($work_order_no);
     if ($posted_source === 'PWO' || strpos($upperWorkOrder, 'PWO') === 0 || strpos($upperWorkOrder, '-PWO') !== false) {
         return 'PWO';
+    }
+    // Point 8: Detect PO source if work order string starts with 'PO'
+    if (strpos($upperWorkOrder, 'PO') === 0 || strpos($upperWorkOrder, 'PO -') === 0) {
+        $posted_source = 'PO';
     }
 
     $checks = [
@@ -793,6 +802,14 @@ worker4a_ensure_schema($conn);
 
     $contractor_row = worker4a_get_contractor_row($conn, $data);
     $editing_worker_id = (int)($data['worker_id'] ?? 0);
+
+    // Point 19: Enforce pass limit for Representative (and Supervisor) on new enrollments
+    if ($contractor_row && $editing_worker_id === 0 && $action !== 'draft') {
+        $cid_for_limit = (int)$contractor_row['id'];
+        if (in_array($limit_type, ['Representative', 'Supervisor', 'Contractor'], true)) {
+            validatePassLimit($conn, $cid_for_limit, $limit_type, 1, false);
+        }
+    }
 
     // ========== END ANNEXURE 5/A VALIDATION ==========
 

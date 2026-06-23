@@ -191,7 +191,7 @@ function enrolment_worker_type_condition($conn, $table, $type) {
     }
 
     if ($type === 'workmen' || $type === 'workman') {
-        return "worker_type IN ('workman', 'workmen', 'Workman', 'Workmen', 'Workman Pass', 'Workmen Pass')";
+        return "1=1";
     }
 
     $map = [
@@ -805,6 +805,10 @@ function renderContent() {
     }
     ?>
     <style>
+    .invalid-border {
+      border-color: #ef4444 !important;
+      box-shadow: 0 0 0 1px #ef4444 !important;
+    }
     .modal-overlay {
       position: fixed;
       inset: 0;
@@ -1300,18 +1304,22 @@ function renderContent() {
               </div>
               <div class="form-group">
                 <label class="form-label required">Work Order No</label>
-                <select class="form-control" name="work_order_no" id="workOrderSelect" required>
-                  <option value="">Select work order</option>
+                <div id="workOrderContainer" style="height: 120px; overflow-y: auto; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background-color: #fff;">
                   <?php foreach ($workOptions as $wo): ?>
-                    <option value="<?= htmlspecialchars($wo['work_order_no']) ?>"
-                            data-project="<?= htmlspecialchars($wo['project_name'] ?? '') ?>"
-                            data-project-no="<?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>"
-                            data-department="<?= htmlspecialchars($wo['department'] ?? '') ?>"
-                            data-source="<?= htmlspecialchars($wo['source'] ?? '') ?>">
-                      <?= !empty($wo['source']) ? '[' . htmlspecialchars($wo['source']) . '] ' : '' ?><?= htmlspecialchars($wo['work_order_no']) ?>
-                    </option>
+                    <div style="display: flex; align-items: center; margin-bottom: 4px;">
+                      <input type="checkbox" class="work-order-cb" id="wo_<?= htmlspecialchars(str_replace(' ', '_', $wo['work_order_no'])) ?>" value="<?= htmlspecialchars($wo['work_order_no']) ?>"
+                             data-project="<?= htmlspecialchars($wo['project_name'] ?? '') ?>"
+                             data-project-no="<?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>"
+                             data-department="<?= htmlspecialchars($wo['department'] ?? '') ?>"
+                             data-source="<?= htmlspecialchars($wo['source'] ?? '') ?>"
+                             style="margin-right: 8px; width: 16px; height: 16px; min-width: 16px;">
+                      <label for="wo_<?= htmlspecialchars(str_replace(' ', '_', $wo['work_order_no'])) ?>" style="margin: 0; font-weight: normal; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        <?= !empty($wo['source']) ? '[' . htmlspecialchars($wo['source']) . '] ' : '' ?><?= htmlspecialchars($wo['work_order_no']) ?>
+                      </label>
+                    </div>
                   <?php endforeach; ?>
-                </select>
+                </div>
+                <input type="hidden" name="work_order_no" id="workOrderSelect" required>
               </div>
               <div class="form-group">
                 <label class="form-label required">Project No / WBS No</label>
@@ -1333,9 +1341,14 @@ function renderContent() {
                 <input type="text" class="form-control" name="aadhaar" id="aadhaarInput" maxlength="12" inputmode="numeric" autocomplete="off" required>
               </div>
               <div class="form-group">
-                <label class="form-label required">Full Name</label>
-                <input type="text" class="form-control" name="name" required>
+                <label class="form-label required">First Name</label>
+                <input type="text" class="form-control" name="first_name" id="firstNameInput" required>
               </div>
+              <div class="form-group">
+                <label class="form-label required">Last Name</label>
+                <input type="text" class="form-control" name="last_name" id="lastNameInput" required>
+              </div>
+              <input type="hidden" name="name" id="fullNameHidden">
               <div class="form-group">
                 <label class="form-label required">Father Name</label>
                 <input type="text" class="form-control" name="father_name" required>
@@ -1388,12 +1401,12 @@ function renderContent() {
               </div>
               <div class="form-group">
                 <label class="form-label">Religion</label>
-                <input type="text" class="form-control" name="region" list="religionList">
-                <datalist id="religionList">
+                <select class="form-control" name="region">
+                  <option value="">Select Religion</option>
                   <?php foreach ($religionOptions as $religion): ?>
-                    <option value="<?= htmlspecialchars($religion) ?>"></option>
+                    <option value="<?= htmlspecialchars($religion) ?>"><?= htmlspecialchars($religion) ?></option>
                   <?php endforeach; ?>
-                </datalist>
+                </select>
               </div>
               <div class="form-group">
                 <label class="form-label required">Person with Disability</label>
@@ -1470,7 +1483,7 @@ function renderContent() {
             <div class="form-grid-3">
               <div class="form-group">
                 <label class="form-label required">Department</label>
-                <input type="text" class="form-control" name="department" value="<?= htmlspecialchars($department_name) ?>" <?= $department_name !== '' ? 'readonly style="background-color: #f1f5f9;"' : '' ?> required>
+                <input type="text" class="form-control" name="department" value="<?= htmlspecialchars($department_name) ?>" required>
               </div>
               <div class="form-group">
                 <label class="form-label">Years of Experience</label>
@@ -1561,7 +1574,7 @@ function renderContent() {
                 <input type="file" class="form-control" name="aadhaar_doc" accept=".pdf,application/pdf" data-max-size="5242880" required>
                 <small class="form-hint">PDF only, max 5 MB.</small>
               </div>
-              <div class="doc-card">
+              <div class="doc-card" style="display:none;">
                 <label class="form-label">Training Attendance Approval by Executing Officer / Mentor</label>
                 <input type="file" class="form-control" name="training_approval_doc" id="trainingApprovalDocInput" accept=".pdf,application/pdf" data-max-size="5242880">
                 <small class="form-hint">PDF only, max 5 MB.</small>
@@ -1968,8 +1981,17 @@ function renderContent() {
               dobInput.setCustomValidity('');
             }
           }
-          if (showMessage && !dobInput.checkValidity()) {
-            dobInput.reportValidity();
+          if (!dobInput.checkValidity()) {
+            dobInput.classList.add('invalid-border');
+            if (showMessage) {
+              activateTab('personal');
+              setTimeout(() => {
+                dobInput.focus();
+                dobInput.reportValidity();
+              }, 120);
+            }
+          } else {
+            dobInput.classList.remove('invalid-border');
           }
           return dobInput.checkValidity();
         }
@@ -1979,14 +2001,22 @@ function renderContent() {
           aadhaarInput.value = aadhaarInput.value.replace(/\D/g, '').slice(0, 12);
           if (!aadhaarInput.value) {
             aadhaarInput.setCustomValidity('');
+            aadhaarInput.classList.remove('invalid-border');
             return true;
           }
           const isValid = /^\d{12}$/.test(aadhaarInput.value);
           aadhaarInput.setCustomValidity(isValid ? '' : 'Please enter correct Aadhar number');
-          if (!isValid && showMessage) {
-            activateTab('basic');
-            notify('Invalid Aadhar Number', 'Please enter correct Aadhar number', 'warning');
-            setTimeout(() => aadhaarInput.focus(), 120);
+          if (!isValid) {
+            aadhaarInput.classList.add('invalid-border');
+            if (showMessage) {
+              activateTab('basic');
+              setTimeout(() => {
+                aadhaarInput.focus();
+                aadhaarInput.reportValidity();
+              }, 120);
+            }
+          } else {
+            aadhaarInput.classList.remove('invalid-border');
           }
           return isValid;
         }
@@ -2041,6 +2071,8 @@ function renderContent() {
           if (!code) {
             if (executingOfficerNameInput) executingOfficerNameInput.value = '';
             setExecutingOfficerStatus('', '');
+            executingOfficerCodeInput?.setCustomValidity('');
+            executingOfficerCodeInput?.classList.remove('invalid-border');
             return false;
           }
 
@@ -2053,20 +2085,28 @@ function renderContent() {
             if (data.success && data.data) {
               if (executingOfficerNameInput) executingOfficerNameInput.value = data.data.name || '';
               setExecutingOfficerStatus('Verified', 'badge-success');
+              executingOfficerCodeInput?.setCustomValidity('');
+              executingOfficerCodeInput?.classList.remove('invalid-border');
               return true;
             }
             if (executingOfficerNameInput) executingOfficerNameInput.value = '';
             setExecutingOfficerStatus('Invalid', 'badge-danger');
+            executingOfficerCodeInput?.setCustomValidity('Invalid E-Code. User Master/SAP/SQL Server mein nahi mila.');
+            executingOfficerCodeInput?.classList.add('invalid-border');
             if (showMessage) {
               activateTab('work');
-              notify('Invalid E-Code', data.message || 'Executing Officer E-Code User Master/SAP/SQL Server mein nahi mila.', 'error');
+              setTimeout(() => {
+                executingOfficerCodeInput.focus();
+                executingOfficerCodeInput.reportValidity();
+              }, 120);
             }
             return false;
           } catch (err) {
             if (requestId !== executingOfficerVerifyRequest) return false;
             if (executingOfficerNameInput) executingOfficerNameInput.value = '';
             setExecutingOfficerStatus('Error', 'badge-danger');
-            if (showMessage) notify('E-Code Check Failed', err.message || 'Unable to verify E-Code.', 'error');
+            executingOfficerCodeInput?.setCustomValidity('Unable to verify E-Code.');
+            executingOfficerCodeInput?.classList.add('invalid-border');
             return false;
           }
         }
@@ -2083,11 +2123,8 @@ function renderContent() {
 
         function showInvalidFieldMessage(field) {
           if (!field) return;
-          const label = getFieldLabel(field);
-          const message = field.validity.valueMissing
-            ? `${label} is required. Please fill this field before submitting.`
-            : (field.validationMessage || `${label} is invalid.`);
-          notify('Required Field Missing', message, 'warning');
+          field.classList.add('invalid-border');
+          field.reportValidity();
         }
 
         function focusInvalidField(field) {
@@ -2114,6 +2151,72 @@ function renderContent() {
           input.addEventListener('change', () => validateWorkerFile(input, true));
         });
 
+        // Setup blur and focusout validation
+        const inputsToValidate = form.querySelectorAll('input, select, textarea');
+        inputsToValidate.forEach(input => {
+          const checkInputValidity = () => {
+            if (input.name === 'dob') {
+              validateDobAge(false);
+            } else if (input.name === 'aadhaar') {
+              validateAadhaarNumber(false);
+            } else if (input.name === 'certified_wage_rate') {
+              validateCertifiedWage(false);
+            } else if (input.name === 'executing_officer_code') {
+              verifyExecutingOfficerCode(false);
+            }
+            
+            if (!input.checkValidity()) {
+              input.classList.add('invalid-border');
+            } else {
+              input.classList.remove('invalid-border');
+            }
+          };
+          
+          input.addEventListener('blur', checkInputValidity);
+          input.addEventListener('focusout', checkInputValidity);
+          input.addEventListener('input', () => {
+            if (input.checkValidity()) {
+              input.classList.remove('invalid-border');
+            }
+          });
+        });
+        
+        // Handle work order checkboxes
+        document.addEventListener('change', function(e) {
+          if (e.target && e.target.classList.contains('work-order-cb')) {
+            updateWorkOrderHiddenValue();
+          }
+        });
+
+        function updateWorkOrderHiddenValue() {
+          const checkboxes = document.querySelectorAll('.work-order-cb:checked');
+          const values = Array.from(checkboxes).map(cb => cb.value);
+          const hiddenInput = document.getElementById('workOrderSelect');
+          if (hiddenInput) {
+            hiddenInput.value = values.join(',');
+            hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          if (values.length > 0) {
+            syncWorkOrderFields(values[0]);
+          } else {
+            syncWorkOrderFields('');
+          }
+        }
+        
+        // Split name inputs
+        const firstNameInput = document.getElementById('firstNameInput');
+        const lastNameInput = document.getElementById('lastNameInput');
+        const fullNameHidden = document.getElementById('fullNameHidden');
+        
+        function updateFullName() {
+          if (firstNameInput && lastNameInput && fullNameHidden) {
+            fullNameHidden.value = (firstNameInput.value.trim() + ' ' + lastNameInput.value.trim()).trim();
+          }
+        }
+        
+        firstNameInput?.addEventListener('input', updateFullName);
+        lastNameInput?.addEventListener('input', updateFullName);
+
         document.getElementById('btnOpenModal').onclick = () => {
           form.reset();
           resetInlineSafetyPaymentState();
@@ -2126,13 +2229,15 @@ function renderContent() {
           const deptField = form.querySelector('[name="department"]');
           if (deptField && defaultDepartment) {
             deptField.value = defaultDepartment;
-            deptField.setAttribute('readonly', true);
-            deptField.style.backgroundColor = '#f1f5f9';
           }
-          const woSelect = form.querySelector('[name="work_order_no"]');
-          if (woSelect && workOptions.length === 1) {
-            woSelect.value = workOptions[0].work_order_no;
-            syncWorkOrderFields(woSelect.value);
+          // Reset checkboxes
+          document.querySelectorAll('.work-order-cb').forEach(cb => cb.checked = false);
+          if (workOptions.length === 1) {
+            const cb = document.querySelector(`.work-order-cb[value="${CSS.escape(workOptions[0].work_order_no)}"]`);
+            if (cb) { cb.checked = true; }
+            const hiddenInput = document.getElementById('workOrderSelect');
+            if (hiddenInput) hiddenInput.value = workOptions[0].work_order_no;
+            syncWorkOrderFields(workOptions[0].work_order_no);
           } else {
             refreshWorkflowPaymentState(false);
           }
@@ -2263,8 +2368,6 @@ function renderContent() {
           }
           if (deptField && option && option.department) {
             deptField.value = option.department;
-            deptField.setAttribute('readonly', true);
-            deptField.style.backgroundColor = '#f1f5f9';
           }
           refreshWorkflowTabs();
           refreshWorkflowPaymentState();
@@ -2772,6 +2875,8 @@ function renderContent() {
               return todayStr;
             })(),
             aadhaar: worker.aadhaar,
+            first_name: (worker.name || '').split(' ')[0] || '',
+            last_name: (worker.name || '').split(' ').slice(1).join(' ') || '',
             name: worker.name,
             father_name: worker.father_name,
             gender: worker.gender,
@@ -2812,26 +2917,18 @@ function renderContent() {
             ,execution_training_reviewed_by: worker.execution_training_reviewed_by
           };
 
-          // Ensure Work Order No and Project Name exist as options in select boxes
-          const woSelect = document.getElementById('workOrderSelect');
-          if (woSelect && values.work_order_no) {
-            let hasOption = false;
-            for (let i = 0; i < woSelect.options.length; i++) {
-              if (String(woSelect.options[i].value).trim() === String(values.work_order_no).trim()) {
-                hasOption = true;
-                break;
-              }
-            }
-            if (!hasOption) {
-              const opt = document.createElement('option');
-              opt.value = values.work_order_no;
-              opt.textContent = (values.work_order_source ? '[' + values.work_order_source + '] ' : '') + values.work_order_no;
-              opt.setAttribute('data-project', values.project_name || '');
-              opt.setAttribute('data-project-no', values.project_name || values.work_order_no);
-              opt.setAttribute('data-department', values.department || '');
-              opt.setAttribute('data-source', values.work_order_source || '');
-              woSelect.appendChild(opt);
-            }
+          // Restore work order checkboxes for editing
+          document.querySelectorAll('.work-order-cb').forEach(cb => cb.checked = false);
+          if (values.work_order_no) {
+            // work_order_no may be comma-separated
+            const selectedWOs = String(values.work_order_no).split(',').map(s => s.trim()).filter(Boolean);
+            selectedWOs.forEach(woVal => {
+              const cb = document.querySelector(`.work-order-cb[value="${CSS.escape(woVal)}"]`);
+              if (cb) cb.checked = true;
+            });
+            // Set hidden input
+            const hiddenInput = document.getElementById('workOrderSelect');
+            if (hiddenInput) hiddenInput.value = selectedWOs.join(',');
           }
 
           const projSelect = document.getElementById('projectWbsSelect');
@@ -2851,7 +2948,23 @@ function renderContent() {
             }
           }
 
-          Object.entries(values).forEach(([name, value]) => setFieldValue(name, value));
+          // Populate name fields
+          if (values.name) {
+            const nameParts = String(values.name).trim().split(/\s+/);
+            const fn = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : nameParts[0];
+            const ln = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+            const fiEl = document.getElementById('firstNameInput');
+            const laEl = document.getElementById('lastNameInput');
+            const fhEl = document.getElementById('fullNameHidden');
+            if (fiEl) fiEl.value = fn;
+            if (laEl) laEl.value = ln;
+            if (fhEl) fhEl.value = values.name;
+          }
+          
+          Object.entries(values).forEach(([name, value]) => {
+            if (name === 'name') return; // handled separately above
+            setFieldValue(name, value);
+          });
           executingOfficerNameInput?.setAttribute('readonly', 'readonly');
           if (executingOfficerNameInput) executingOfficerNameInput.style.backgroundColor = '#f1f5f9';
           setStateDistrictValues(values.state || '', values.district || '');
@@ -2859,8 +2972,9 @@ function renderContent() {
           toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
           const deptField = form.querySelector('[name="department"]');
           if (deptField && defaultDepartment) {
-            deptField.setAttribute('readonly', true);
-            deptField.style.backgroundColor = '#f1f5f9';
+            // Department field should be editable as per user request
+            // deptField.setAttribute('readonly', true);
+            // deptField.style.backgroundColor = '#f1f5f9';
           }
           document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => input.removeAttribute('required'));
           const existingDocumentMap = {
@@ -3183,20 +3297,13 @@ function renderContent() {
               ? 'Enrollment Complete. Please do safety payment for proceeding further.'
               : 'Save Draft will not submit this entitlement for processing. Training can be booked later from the Book Safety Training menu.';
           }
-          if (isPwo && isPwoPayNow()) {
-            if (bookNowInput) {
-              bookNowInput.checked = true;
-              bookNowInput.disabled = false;
-            }
-            if (laterInput) {
-              laterInput.checked = false;
-              laterInput.disabled = true;
-            }
+          // Point 20: Always allow both Book Now and Book Later regardless of payment option
+          if (bookNowInput) bookNowInput.disabled = false;
+          if (laterInput)   laterInput.disabled   = false;
+          if (isPwo && !canBookPwoTrainingInline() && !isPwoPayLater()) {
+            // Default to later if inline booking not available, but don't lock
+            if (laterInput && !bookNowInput?.checked) laterInput.checked = true;
           } else {
-            if (isPwo && laterInput && !canBookPwoTrainingInline() && !isPwoPayLater()) laterInput.checked = true;
-            if (bookNowInput) {
-              bookNowInput.disabled = isPwo && !canBookPwoTrainingInline() && !isPwoPayLater();
-            }
             if (laterInput) laterInput.disabled = false;
           }
           // Do NOT force book_now for non-PWO — let the user choose freely
@@ -3899,11 +4006,7 @@ function renderContent() {
           }
 
           const bookingChoice = form.querySelector('[name="training_booking_choice"]:checked')?.value || 'not_now';
-          if (isPwoWorkOrder() && selectedSafetyFeeOption() === 'pay_now' && bookingChoice === 'not_now') {
-            activateTab('training');
-            notify('Safety Booking Required', 'Safety Fee Payment Now requires booking a training seat. Please select "I need to book an appointment" and schedule it.', 'warning');
-            return;
-          }
+          // Point 21: Allow pay_now with not_now (Book Later) — do not block submission
           if (bookingChoice === 'book_now' && (!previewValue('training_booking_date') || !previewValue('training_booking_session'))) {
             activateTab('training');
             notify('Training Booking Required', 'Please select safety training date and session.', 'warning');

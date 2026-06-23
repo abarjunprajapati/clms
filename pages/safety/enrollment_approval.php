@@ -96,26 +96,29 @@ function renderContent() {
         $hasBatches = safetyApprovalTableExists($conn, 'training_class_batches');
 
         $batchJoin   = '';
-        $batchSelect = "NULL AS pre_batch_number, NULL AS pre_batch_date, NULL AS pre_batch_label";
+        $batchSelect = "NULL AS pre_batch_number, NULL AS pre_batch_date, NULL AS batch_language, NULL AS pre_batch_label";
 
         if ($hasBatches) {
             // LEFT JOIN to find the best matching batch:
-            // 1. If mapping exists in training_batch_workers, use that batch.
-            // 2. If tr.batch_number is set, match the batch with that batch_number.
+            // 1. If mapping exists in training_batch_workers, use that batch (if active).
+            // 2. If tr.batch_number is set, match the batch with that batch_number (if active).
             // 3. Otherwise, match by worker's safety_language to the earliest upcoming batch of that language.
             $batchJoin = "
             LEFT JOIN training_class_batches tcb ON tcb.id = COALESCE(
                 (
                     SELECT tbw.batch_id 
                     FROM training_batch_workers tbw 
+                    JOIN training_class_batches b ON b.id = tbw.batch_id
                     WHERE tbw.training_request_id = tr.id 
                       AND tbw.ticked = 1 
+                      AND LOWER(COALESCE(b.status, '')) IN ('open', 'scheduled', 'active')
                     LIMIT 1
                 ),
                 (
                     SELECT tb_asg.id 
                     FROM training_class_batches tb_asg 
                     WHERE tb_asg.batch_number = tr.batch_number 
+                      AND LOWER(COALESCE(tb_asg.status, '')) IN ('open', 'scheduled', 'active')
                     LIMIT 1
                 ),
                 (
@@ -123,19 +126,20 @@ function renderContent() {
                     FROM training_class_batches tb2
                     WHERE LOWER(TRIM(tb2.language_name)) = LOWER(TRIM(COALESCE(w.safety_language, '')))
                       AND tb2.training_date >= CURDATE()
-                      AND LOWER(tb2.status) IN ('scheduled', 'draft', 'open', 'active')
+                      AND LOWER(COALESCE(tb2.status, '')) IN ('open', 'scheduled', 'active')
                     ORDER BY tb2.training_date ASC, tb2.id ASC
                     LIMIT 1
                 )
             )";
             $batchSelect = "tcb.batch_number AS pre_batch_number,
                    tcb.training_date AS pre_batch_date,
+                   tcb.language_name AS batch_language,
                    CONCAT(tcb.batch_number, ' — ', DATE_FORMAT(tcb.training_date, '%d %b %Y'), ' (', tcb.language_name, ')') AS pre_batch_label";
         }
 
         $batchOrderExpr = $hasBatches
-            ? "COALESCE(tcb.batch_number, tr.batch_number, 'ZZZZ')"
-            : "COALESCE(tr.batch_number, 'ZZZZ')";
+            ? "COALESCE(tcb.batch_number, 'ZZZZ')"
+            : "'ZZZZ'";
 
         $safetyApprovalRequests = db_fetch_all($conn, "
             SELECT tr.id AS request_id, tr.status AS request_status, tr.source, tr.remarks AS request_remarks,
@@ -171,16 +175,15 @@ function renderContent() {
     // fall back to batch_number stored on the training_request row itself.
     $groups = []; // [ lang_key => [ 'language'=>..., 'batches'=> [ batchKey => [...] ] ] ]
     foreach ($safetyApprovalRequests as $req) {
-        $lang    = trim((string)($req['safety_language'] ?? ''));
+        $lang    = trim((string)($req['batch_language'] ?? $req['safety_language'] ?? ''));
         $langKey = $lang !== '' ? strtolower($lang) : '__no_language__';
 
-        // Use pre-assigned batch (from training_class_batches) first, then tr.batch_number
+        // Use pre-assigned active batch (from training_class_batches)
         $bn = trim((string)($req['pre_batch_number'] ?? ''));
-        if ($bn === '') $bn = trim((string)($req['assigned_batch_number'] ?? ''));
         $bnKey = $bn !== '' ? $bn : '__no_batch__';
 
         $batchLabel = trim((string)($req['pre_batch_label'] ?? ''));
-        if ($batchLabel === '') $batchLabel = $bn !== '' ? $bn : 'No Batch Assigned';
+        if ($batchLabel === '') $batchLabel = 'No Batch Assigned';
 
         if (!isset($groups[$langKey])) {
             $groups[$langKey] = [

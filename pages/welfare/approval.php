@@ -7,7 +7,7 @@ include '../../include/config.php';
 require_once '../../include/labour_license_threshold.php';
 
 $_role = $_SESSION['role'] ?? '';
-if (!in_array($_role, ['welfare_user', 'authority', 'admin'])) {
+if (!in_array($_role, ['welfare_user', 'welfare_admin', 'super_admin', 'authority', 'admin'])) {
     header('Location: ../index.php');
     exit('Unauthorized');
 }

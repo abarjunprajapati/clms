@@ -50,6 +50,7 @@ function renderContent() {
             FROM training_batch_workers
             GROUP BY batch_id
         ) wc ON wc.batch_id = b.id
+        WHERE LOWER(COALESCE(b.status, '')) IN ('open', 'scheduled', 'active')
         ORDER BY b.training_date DESC, b.id DESC
         LIMIT 100
     ");

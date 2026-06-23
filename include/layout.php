@@ -498,6 +498,7 @@ function renderSidebar($role) {
                 echo '<a href="muster_roll.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll</a>';
                 echo '<a href="esi_contribution.php" class="sidebar-item"><i class="fas fa-hand-holding-dollar"></i> ESI Contribution</a>';
                 echo '<a href="epf_compliance.php" class="sidebar-item"><i class="fas fa-file-invoice-dollar"></i> EPF Compliance</a>';
+                echo '<a href="compliance.php?tab=klwf" class="sidebar-item"><i class="fas fa-balance-scale"></i> KLWF Contribution</a>';
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Operations & Compliance</div>';
                 echo '<a href="attendance.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance</a>';
                 echo '<a href="compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';

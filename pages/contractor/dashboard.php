@@ -294,6 +294,11 @@ function renderContent() {
             ['label' => 'Contractor Registration', 'detail' => 'Submit contractor details for Welfare approval', 'icon' => 'fa-file-signature', 'link' => 'annexure-2a.php', 'status' => $contractor_status === 'approved' ? 'done' : 'pending', 'count' => ucfirst(str_replace('_', ' ', $display_contractor_status))],
             ['label' => 'Awaiting Approval', 'detail' => 'Please wait for Welfare user to verify your registration.', 'icon' => 'fa-clock', 'link' => '#', 'status' => 'active', 'count' => 'WAITING'],
         ];
+        
+        $workerCount = contractorSafeCount($conn, 'workmen', "{$cidWhere}");
+        if ($workerCount > 0) {
+            $flow[] = ['label' => 'Workmen', 'detail' => 'View already registered workers', 'icon' => 'fa-users', 'link' => 'enrolment-4a.php?type=workmen', 'status' => 'active', 'count' => $workerCount];
+        }
 
         // Approval Timeline configuration
         $timeline = [
@@ -364,20 +369,24 @@ function renderContent() {
     </div>
     <?php endif; ?>
 
+    <?php
+    // Point 24: 6 Dashboard counts
+    $activeWorkmen   = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND status IN ('active','acc_generated','permanent_issued','temporary_issued','trained','verified') AND " . contractorWorkerTypeWhere('workmen'));
+    $inactiveWorkmen = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND (status IN ('inactive','blocked') OR (is_blocked IS NOT NULL AND is_blocked=1)) AND " . contractorWorkerTypeWhere('workmen'));
+    $contractorPass  = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND " . contractorWorkerTypeWhere('contractor'));
+    $repPass         = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND " . contractorWorkerTypeWhere('representative'));
+    $supPass         = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND " . contractorWorkerTypeWhere('supervisor'));
+    $workmenCount    = contractorSafeCount($conn, $workmenTable, "{$workerContractorWhere} AND " . contractorWorkerTypeWhere('workmen'));
+    ?>
     <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:22px;gap:15px;">
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(59,130,246,.12);color:#2563eb"><i class="fas fa-users"></i></div><div class="stat-value"><?= $totalWorkers ?></div><div class="stat-label">Total Workmen</div></div>
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(16,185,129,.12);color:#059669"><i class="fas fa-user-check"></i></div><div class="stat-value"><?= $trainingPassed ?></div><div class="stat-label">Safety Passed</div></div>
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(245,158,11,.14);color:#d97706"><i class="fas fa-hourglass-half"></i></div><div class="stat-value"><?= $pendingTraining ?></div><div class="stat-label">Training Pending</div></div>
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(99,102,241,.12);color:#4f46e5"><i class="fas fa-id-card"></i></div><div class="stat-value"><?= $approvedPasses ?></div><div class="stat-label">Gate Passes</div></div>
-      
-      <!-- Additional KPIs -->
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(236,72,153,.12);color:#db2777"><i class="fas fa-user-tie"></i></div><div class="stat-value"><?= $representatives ?></div><div class="stat-label">Representatives</div></div>
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(139,92,246,.12);color:#7c3aed"><i class="fas fa-user-shield"></i></div><div class="stat-value"><?= $supervisors ?></div><div class="stat-label">Supervisors</div></div>
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(239,68,68,.12);color:#dc2626"><i class="fas fa-user-slash"></i></div><div class="stat-value"><?= $blockedWorkers ?></div><div class="stat-label">Blocked Workers</div></div>
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(14,165,233,.12);color:#0284c7"><i class="fas fa-ship"></i></div><div class="stat-value"><?= $activePWOs ?></div><div class="stat-label">Active PWOs</div></div>
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(16,185,129,.12);color:#059669"><i class="fas fa-fingerprint"></i></div><div class="stat-value"><?= $activeACCCards ?></div><div class="stat-label">ACC Cards</div></div>
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(245,158,11,.12);color:#d97706"><i class="fas fa-clock"></i></div><div class="stat-value"><?= $temporaryPasses ?></div><div class="stat-label">Temp Passes</div></div>
+      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(16,185,129,.12);color:#059669"><i class="fas fa-user-check"></i></div><div class="stat-value"><?= $activeWorkmen ?></div><div class="stat-label">Active Workmen</div></div>
+      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(239,68,68,.12);color:#dc2626"><i class="fas fa-user-slash"></i></div><div class="stat-value"><?= $inactiveWorkmen ?></div><div class="stat-label">Inactive / Blocked</div></div>
+      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(59,130,246,.12);color:#2563eb"><i class="fas fa-user-check"></i></div><div class="stat-value"><?= $contractorPass ?></div><div class="stat-label">Contractors</div></div>
+      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(236,72,153,.12);color:#db2777"><i class="fas fa-user-tie"></i></div><div class="stat-value"><?= $repPass ?></div><div class="stat-label">Representatives</div></div>
+      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(139,92,246,.12);color:#7c3aed"><i class="fas fa-user-shield"></i></div><div class="stat-value"><?= $supPass ?></div><div class="stat-label">Supervisors</div></div>
+      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(245,158,11,.14);color:#d97706"><i class="fas fa-users"></i></div><div class="stat-value"><?= $workmenCount ?></div><div class="stat-label">Workmen</div></div>
     </div>
+
 
     <div class="contractor-flow">
       <?php foreach ($flow as $index => $step):

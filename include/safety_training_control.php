@@ -979,12 +979,12 @@ function clms_safety_schedule_batch($conn, $batchId, $selectedRequestIds, $userI
                 db_execute(
                     $conn,
                     "UPDATE training_requests
-                     SET status = 'pending',
+                     SET status = 'pending_safety',
                          contractor_confirmed = 0,
                          scheduled_session_id = NULL,
                          batch_number = NULL,
                          updated_at = NOW()
-                     WHERE id = ? AND status IN ('scheduled', 'pending', 'welfare_pending')",
+                     WHERE id = ? AND status IN ('scheduled', 'pending', 'welfare_pending', 'pending_safety', 'contractor_confirmed')",
                     'i',
                     array($existingRequestId)
                 );

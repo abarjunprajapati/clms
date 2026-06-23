@@ -134,6 +134,10 @@ function annexure2a_ensure_submit_schema($conn) {
         'contact_person' => 'VARCHAR(100) NULL',
         'remarks' => 'TEXT NULL',
         'application_no' => 'VARCHAR(50) NULL',
+        // Point 2/3: PO/PWO/SO summary columns for direct access
+        'po_number'           => 'TEXT NULL',
+        'pwo_number'          => 'TEXT NULL',
+        'sales_order_number'  => 'TEXT NULL',
     ];
     foreach ($contractorColumns as $column => $definition) {
         annexure2a_ensure_column($conn, 'contractors', $column, $definition);
@@ -563,13 +567,13 @@ if ($is_final_submit) {
     }
 
     if (empty($mobile)) {
-        annexure2a_json_response(['success' => false, 'message' => 'Mobile Number is mandatory.'], 400);
+        annexure2a_json_response(['success' => false, 'message' => 'Enter correct mobile number.'], 400);
     }
     if (!preg_match("/^[0-9]{10}$/", $mobile)) {
-        annexure2a_json_response(['success' => false, 'message' => 'Mobile Number must be exactly 10 numeric digits.'], 400);
+        annexure2a_json_response(['success' => false, 'message' => 'Enter correct mobile number.'], 400);
     }
     if (!empty($vendor_mob2) && !preg_match("/^[0-9]{10}$/", $vendor_mob2)) {
-        annexure2a_json_response(['success' => false, 'message' => 'Alternate Mobile Number must be exactly 10 numeric digits.'], 400);
+        annexure2a_json_response(['success' => false, 'message' => 'Enter correct mobile number.'], 400);
     }
     if (!empty($labour_identification_no) && !preg_match("/^[0-9]+$/", $labour_identification_no)) {
         annexure2a_json_response(['success' => false, 'message' => 'Labour Identification No must contain digits only.'], 400);
@@ -722,7 +726,7 @@ if ($check_app) {
     );
 }
 
-// 8. Handle PO/PWO/SO selections from basic tab (unchanged)
+// 8. Handle PO/PWO/SO selections from basic tab
 if (isset($_POST['selected_pos'])) {
     $conn->query("DELETE FROM contractor_po_selection WHERE contractor_id = $contractor_id");
     $pos = json_decode($_POST['selected_pos'], true);
@@ -731,6 +735,10 @@ if (isset($_POST['selected_pos'])) {
             db_execute($conn, "INSERT INTO contractor_po_selection (contractor_id, po_number) VALUES (?,?)", 'is', [$contractor_id, $po]);
         }
     }
+    // Also save comma-separated string to contractors.po_number (Point 2/3)
+    $pos_str = is_array($pos) ? implode(',', array_filter($pos)) : '';
+    annexure2a_ensure_column($conn, 'contractors', 'po_number', 'TEXT NULL');
+    db_execute($conn, "UPDATE contractors SET po_number = ? WHERE id = ?", 'si', [$pos_str, $contractor_id]);
 }
 if (isset($_POST['selected_pwos'])) {
     $conn->query("DELETE FROM contractor_pwo_selection WHERE contractor_id = $contractor_id");
@@ -740,6 +748,10 @@ if (isset($_POST['selected_pwos'])) {
             db_execute($conn, "INSERT INTO contractor_pwo_selection (contractor_id, pwo_number) VALUES (?,?)", 'is', [$contractor_id, $pwo]);
         }
     }
+    // Also save comma-separated string to contractors.pwo_number (Point 2/3)
+    $pwos_str = is_array($pwos) ? implode(',', array_filter($pwos)) : '';
+    annexure2a_ensure_column($conn, 'contractors', 'pwo_number', 'TEXT NULL');
+    db_execute($conn, "UPDATE contractors SET pwo_number = ? WHERE id = ?", 'si', [$pwos_str, $contractor_id]);
 }
 if (isset($_POST['selected_sales'])) {
     $conn->query("DELETE FROM contractor_so_selection WHERE contractor_id = $contractor_id");
@@ -749,6 +761,10 @@ if (isset($_POST['selected_sales'])) {
             db_execute($conn, "INSERT INTO contractor_so_selection (contractor_id, sale_order_no) VALUES (?,?)", 'is', [$contractor_id, $so]);
         }
     }
+    // Also save comma-separated string to contractors.sales_order_number (Point 2/3)
+    $sos_str = is_array($sos) ? implode(',', array_filter($sos)) : '';
+    annexure2a_ensure_column($conn, 'contractors', 'sales_order_number', 'TEXT NULL');
+    db_execute($conn, "UPDATE contractors SET sales_order_number = ? WHERE id = ?", 'si', [$sos_str, $contractor_id]);
 }
 
 if (in_array($status, ['pending', 'resubmitted'], true)) {

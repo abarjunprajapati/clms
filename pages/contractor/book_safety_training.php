@@ -108,7 +108,7 @@ function renderContent() {
             foreach ($workerIds as $workerId) {
                 $worker = db_single(
                     $conn,
-                    "SELECT id, name, safety_language, training_status, safety_training_status, training_valid_till, work_order_source FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
+                    "SELECT id, name, safety_language, training_status, safety_training_status, training_valid_till, work_order_source, execution_training_status FROM workmen WHERE id = ? AND contractor_id = ? LIMIT 1",
                     'ii',
                     [$workerId, $contractorId]
                 );
@@ -160,12 +160,23 @@ function renderContent() {
                 $trainingDate = $batch ? (string)$batch['training_date'] : $manualDate;
                 // Determine new status before updating training_request so the EO
                 // queue EXISTS check on training_requests.status can match the row.
-                $newExecutionStatus = $isPwo && !$isPaid ? 'pending_payment' : 'pending_eo';
-                $newExecutionRemarks = $isPwo && !$isPaid
-                    ? 'Waiting for Safety fee payment verification.'
-                    : 'Safety seat booking submitted. Waiting for Executing Officer approval.';
-                // Map workman execution status → training_request status
-                $newRequestStatus = $newExecutionStatus; // 'pending_eo' or 'pending_payment'
+                $existingExecutionStatus = strtolower(trim((string)($worker['execution_training_status'] ?? '')));
+                $existingRequestStatus = $active ? strtolower(trim((string)$active['status'])) : '';
+                
+                $isPreApproved = ($existingExecutionStatus === 'approved') 
+                    || in_array($existingRequestStatus, ['pending_safety', 'welfare_pending', 'pending', 'scheduled', 'contractor_confirmed'], true);
+
+                if ($isPreApproved) {
+                    $newExecutionStatus = 'approved';
+                    $newExecutionRemarks = 'Safety seat booking submitted. Pre-approved by Executing Officer.';
+                    $newRequestStatus = 'pending_safety';
+                } else {
+                    $newExecutionStatus = $isPwo && !$isPaid ? 'pending_payment' : 'pending_eo';
+                    $newExecutionRemarks = $isPwo && !$isPaid
+                        ? 'Waiting for Safety fee payment verification.'
+                        : 'Safety seat booking submitted. Waiting for Executing Officer approval.';
+                    $newRequestStatus = $newExecutionStatus;
+                }
 
                 if ($active) {
                     db_execute(
@@ -192,7 +203,7 @@ function renderContent() {
                         "INSERT INTO training_requests
                           (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
                           VALUES (?, ?, ?, CURDATE(), ?, ?, ?, 'contractor_later_booking', ?, ?, NOW(), NOW())",
-                        'iisssssi',
+                        'iissssis',
                         [
                             $workerId,
                             $contractorId,
@@ -534,7 +545,7 @@ function renderContent() {
                 <?php endif; ?>
                 <?php foreach ($workers as $idx => $worker):
                   $checked = $preselectWorkerId && (int)$worker['id'] === $preselectWorkerId;
-                  $safeLanguage = $worker['safety_language'] ?: 'Malayalam';
+                  $safeLanguage = $worker['safety_language'] ?: '';
                   $entitlement = $worker['temp_id'] ?: ('W-' . $worker['id']);
                   $paymentPending = (int)($worker['payment_pending'] ?? 0) === 1;
                 ?>
@@ -661,6 +672,10 @@ function renderContent() {
           seatAvailability.textContent = batch ? remainingSeats(batch) : '0';
           sessionDisplay.value = batch?.session_name || '';
           batchNumberDisplay.value = batch?.batch_number || '';
+
+          if (batch && batch.language_name && languageSelect.value !== batch.language_name) {
+            languageSelect.value = batch.language_name;
+          }
         }
 
         filterWorkers();
@@ -674,12 +689,12 @@ function renderContent() {
         const aadhaarTerm = norm(workerAadhaarSearch.value);
         const tempTerm = norm(workerTempSearch.value);
         document.querySelectorAll('[data-worker-row]').forEach(row => {
-          const visible = (!language || row.dataset.language === language)
+          const visible = (!language || !row.dataset.language || row.dataset.language === language)
             && (!nameTerm || row.dataset.name.includes(nameTerm))
             && (!aadhaarTerm || row.dataset.aadhaar.includes(aadhaarTerm))
             && (!tempTerm || row.dataset.temp.includes(tempTerm));
           row.style.display = visible ? '' : 'none';
-          if (!visible && row.dataset.language !== language) {
+          if (!visible && row.dataset.language && row.dataset.language !== language) {
             const checkbox = row.querySelector('.worker-check');
             if (checkbox) checkbox.checked = false;
           }
@@ -693,7 +708,7 @@ function renderContent() {
         const limit = isManual ? 99999 : remainingSeats(batch);
         const language = norm(languageSelect.value);
         const rows = Array.from(document.querySelectorAll('[data-worker-row]'))
-          .filter(row => row.dataset.language === language);
+          .filter(row => !row.dataset.language || row.dataset.language === language);
         rows.forEach(row => {
           const checkbox = row.querySelector('.worker-check');
           if (checkbox) checkbox.checked = false;
@@ -702,9 +717,12 @@ function renderContent() {
         let selected = 0;
         if (preselectWorkerId) {
           const preselected = document.querySelector(`.worker-check[value="${preselectWorkerId}"]`);
-          if (preselected && preselected.closest('[data-worker-row]')?.dataset.language === language) {
-            preselected.checked = true;
-            selected = 1;
+          if (preselected) {
+            const rowLang = preselected.closest('[data-worker-row]')?.dataset.language;
+            if (!rowLang || rowLang === language) {
+              preselected.checked = true;
+              selected = 1;
+            }
           }
         }
         rows.forEach(row => {

@@ -17,7 +17,20 @@ function renderContent() {
 
     // Fetch existing registration data by vendor_code
     $c = db_single($conn, "SELECT * FROM contractors WHERE vendor_code = ?", 's', [$vendor_code]);
-    
+
+    // Point 1 (First Time Registration Login): If no profile exists, create a draft stub
+    if (empty($c) && $vendor_code !== '') {
+        $sap_vendor    = @db_single($conn, "SELECT * FROM sap_vendor_master WHERE vendor_code = ? LIMIT 1", 's', [$vendor_code]);
+        $draft_name    = $sap_vendor['vendor_name']  ?? $sap_vendor['name']   ?? '';
+        $draft_address = $sap_vendor['address']      ?? $sap_vendor['street'] ?? '';
+        $draft_email   = $sap_vendor['email']        ?? '';
+        $draft_mobile  = $sap_vendor['mobile']       ?? $sap_vendor['phone']  ?? '';
+        $uid           = (int)($_SESSION['user_id']  ?? 0);
+        @db_execute($conn, "INSERT IGNORE INTO contractors (user_id, vendor_code, vendor_name, address, email, mobile, status) VALUES (?, ?, ?, ?, ?, ?, 'draft')",
+            'isssss', [$uid, $vendor_code, $draft_name, $draft_address, $draft_email, $draft_mobile]);
+        $c = db_single($conn, "SELECT * FROM contractors WHERE vendor_code = ?", 's', [$vendor_code]);
+    }
+
     $selected_pos = [];
     $selected_pwos = [];
     $selected_sos = [];
@@ -407,11 +420,11 @@ function renderContent() {
                             </div>
                             <div class="col-md-3 mb-3">
                                 <label class="form-label required">Mobile No 1</label>
-                                <input type="text" class="form-control" name="mobile_legacy" value="<?= htmlspecialchars($c['mobile'] ?? '') ?>" <?= $sap_readonly ?> required>
+                                <input type="text" class="form-control" name="mobile_legacy" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['mobile'] ?? '') ?>" <?= $sap_readonly ?> required oninvalid="this.setCustomValidity('Enter correct mobile number.')" oninput="this.setCustomValidity('')">
                             </div>
                             <div class="col-md-3 mb-3">
                                 <label class="form-label">Mobile No 2</label>
-                                <input type="text" class="form-control" name="vendor_mob2" value="<?= htmlspecialchars($c['vendor_mob2'] ?? '') ?>" <?= $sap_readonly ?>>
+                                <input type="text" class="form-control" name="vendor_mob2" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['vendor_mob2'] ?? '') ?>" <?= $sap_readonly ?> oninvalid="this.setCustomValidity('Enter correct mobile number.')" oninput="this.setCustomValidity('')">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label required">Email Address</label>
@@ -703,8 +716,8 @@ function renderContent() {
                 <div class="registration-card">
                     <div class="registration-section-header">13. Mobile Number </div>
                     <div class="registration-grid">
-                        <div><label class="form-label required">Mobile Number 1</label><input type="text" class="form-control" name="mobile" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['mobile'] ?? '') ?>" required <?= $readonly_attr ?>></div>
-                        <div><label class="form-label">Mobile Number 2</label><input type="text" class="form-control" name="vendor_mob2" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['vendor_mob2'] ?? '') ?>" <?= $readonly_attr ?>></div>
+                        <div><label class="form-label required">Mobile Number 1</label><input type="text" class="form-control" name="mobile" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['mobile'] ?? '') ?>" required oninvalid="this.setCustomValidity('Enter correct mobile number.')" oninput="this.setCustomValidity('')" <?= $readonly_attr ?>></div>
+                        <div><label class="form-label">Mobile Number 2</label><input type="text" class="form-control" name="vendor_mob2" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['vendor_mob2'] ?? '') ?>" oninvalid="this.setCustomValidity('Enter correct mobile number.')" oninput="this.setCustomValidity('')" <?= $readonly_attr ?>></div>
                     </div>
                 </div>
                 <div class="registration-card"><div class="registration-section-header">14. Remarks</div><textarea class="form-control" name="remarks" placeholder="Enter remarks" <?= $readonly_attr ?>><?= htmlspecialchars($c['remarks'] ?? '') ?></textarea></div>
@@ -1511,12 +1524,19 @@ function renderContent() {
     document.addEventListener('change', (e) => {
         if (e.target && e.target.id === 'selectAllPO') {
             document.querySelectorAll('.po-check:not(:disabled)').forEach(cb => cb.checked = e.target.checked);
+            collectData();
         }
         if (e.target && e.target.id === 'selectAllPWO') {
             document.querySelectorAll('.pwo-check:not(:disabled)').forEach(cb => cb.checked = e.target.checked);
+            collectData();
         }
         if (e.target && e.target.id === 'selectAllSO') {
             document.querySelectorAll('.so-check:not(:disabled)').forEach(cb => cb.checked = e.target.checked);
+            collectData();
+        }
+        // Point 2/3: Immediately sync hidden inputs on any individual PO/PWO/SO checkbox change
+        if (e.target && (e.target.classList.contains('po-check') || e.target.classList.contains('pwo-check') || e.target.classList.contains('so-check'))) {
+            collectData();
         }
     });
 

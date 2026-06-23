@@ -95,10 +95,10 @@ function renderContent() {
               <td>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button class="btn btn-sm btn-outline" onclick="viewDetails(<?= htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8') ?>)"><i class="fas fa-eye"></i> View</button>
+                  <?php if ($role === 'welfare_admin' || $role === 'super_admin'): ?>
                   <button class="btn btn-sm btn-primary" onclick="openActionModal(<?= $c['cid'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>
-                  <button class="btn btn-sm btn-warning" onclick="openActionModal(<?= $c['cid'] ?>, 'correction_required')"><i class="fas fa-edit"></i> Correction</button>
-                  <button class="btn btn-sm btn-secondary" onclick="openActionModal(<?= $c['cid'] ?>, 'hold')"><i class="fas fa-pause"></i> Hold</button>
                   <button class="btn btn-sm btn-danger" onclick="openActionModal(<?= $c['cid'] ?>, 'rejected')"><i class="fas fa-times"></i> Reject</button>
+                  <?php endif; ?>
                 </div>
               </td>
             </tr>
@@ -206,10 +206,17 @@ function renderContent() {
       }
 
       .modal-body { color: var(--text-primary); padding: 20px 28px; overflow-y: auto; }
-      /* Force all text inside the Details modal to white for maximum readability, except custom colored elements */
-      #detailsModal { color: #ffffff; }
-      #detailsModal h3, #detailsModal label, #detailsModal th { color: #ffffff; }
-      #detailsModal td { color: #ffffff; }
+      /* Details Modal white background and blue headings */
+      #detailsModal .modal-content { background: #ffffff; color: #1e293b; border: 1px solid #cbd5e1; }
+      #detailsModal h3 { color: #1e3a8a !important; }
+      #detailsModal .modal-header { border-bottom: 1px solid #cbd5e1; }
+      #detailsModal label { color: #475569 !important; }
+      #detailsModal th { color: #1e293b !important; background-color: #f1f5f9; border: 1px solid #cbd5e1; }
+      #detailsModal td { color: #334155 !important; border: 1px solid #cbd5e1; }
+      #detailsModal .form-section-card { background: #f8fafc; border: 1px solid #e2e8f0; }
+      #detailsModal .form-section-header { color: #1e3a8a !important; border-bottom: 1px solid #cbd5e1; }
+      #detailsModal .value-box { background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important; }
+      #detailsModal code { color: #0f172a !important; }
 
       .hidden { display: none !important; visibility: hidden !important; }
       .modal-header { display: flex; justify-content: space-between; align-items: center; background: rgba(255, 255, 255, 0.01); padding: 18px 24px; }
@@ -579,8 +586,6 @@ function renderContent() {
         switch(status) {
             case 'approved': title = 'Approve Contractor'; label = 'Approval Remarks'; placeholder = 'Enter approval remarks...'; break;
             case 'rejected': title = 'Reject Contractor'; label = 'Rejection Reason'; placeholder = 'Enter reason for rejection...'; break;
-            case 'correction_required': title = 'Request Correction'; label = 'Correction Notes'; placeholder = 'What needs to be fixed?'; break;
-            case 'hold': title = 'Hold Application'; label = 'Reason for Hold'; placeholder = 'Why is this on hold?'; break;
             case 'block': title = 'Block Contractor'; label = 'Blocking Reason'; placeholder = 'Reason for blocking...'; break;
         }
 
