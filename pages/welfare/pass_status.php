@@ -62,6 +62,7 @@ function renderContent() {
         <table class="data-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>Workman</th>
               <th>Contractor</th>
               <th>Pass Type</th>
@@ -72,8 +73,9 @@ function renderContent() {
             </tr>
           </thead>
           <tbody>
-            <?php foreach($passes as $p): ?>
+            <?php $sno = 1; foreach($passes as $p): ?>
             <tr>
+              <td><?= $sno++ ?></td>
               <td>
                 <div style="font-weight:600"><?= htmlspecialchars($p['name']) ?></div>
                 <div style="font-size:11px; opacity:0.6"><?= ucfirst($p['worker_type']) ?></div>
@@ -132,7 +134,7 @@ function renderContent() {
             </tr>
             <?php endforeach; ?>
             <?php if(empty($passes)): ?>
-            <tr><td colspan="7" class="text-center" style="padding:40px;">No pass records match the filters.</td></tr>
+            <tr><td colspan="8" class="text-center" style="padding:40px;">No pass records match the filters.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>

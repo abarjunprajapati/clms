@@ -36,12 +36,39 @@ function renderContent() {
             COALESCE(w.safety_training_status, '') AS safety_training_status,
             (
                 SELECT gpr.status
-                FROM gate_pass_request_workers gprw
-                JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
+                FROM gate_pass_requests gpr
+                JOIN gate_pass_request_workers gprw ON gprw.request_id = gpr.id
+                WHERE gprw.workman_id = w.id
+                  AND LOWER(COALESCE(gpr.status, 'pending')) IN ('draft','pending','submitted','reupload_required','issued','approved','active','under_review','processing')
+                ORDER BY 
+                   CASE LOWER(COALESCE(gpr.status, 'pending'))
+                       WHEN 'issued' THEN 1
+                       WHEN 'active' THEN 1
+                       WHEN 'approved' THEN 2
+                       WHEN 'processing' THEN 3
+                       WHEN 'under_review' THEN 3
+                       WHEN 'pending' THEN 3
+                       WHEN 'submitted' THEN 3
+                       WHEN 'reupload_required' THEN 4
+                       WHEN 'draft' THEN 5
+                       ELSE 6
+                   END ASC, gpr.id DESC LIMIT 1
+            ) AS gate_pass_request_status,
+            (
+                SELECT gpr.status
+                FROM gate_pass_requests gpr
+                JOIN gate_pass_request_workers gprw ON gprw.request_id = gpr.id
                 WHERE gprw.workman_id = w.id
                   AND LOWER(COALESCE(gpr.status, 'pending')) IN ('draft','pending','submitted','reupload_required')
                 ORDER BY gpr.id DESC LIMIT 1
-            ) AS gate_pass_request_status
+            ) AS active_request_status,
+            EXISTS (
+                SELECT 1
+                FROM gate_pass_requests gpr
+                JOIN gate_pass_request_workers gprw ON gprw.request_id = gpr.id
+                WHERE gprw.workman_id = w.id
+                  AND LOWER(COALESCE(gpr.status, 'pending')) IN ('draft','pending','submitted','reupload_required')
+            ) AS has_active_request
          FROM workmen w
          WHERE w.contractor_id = ?
            AND LOWER($safetyEnrollmentExpr) = 'approved'
@@ -79,7 +106,7 @@ function renderContent() {
 .gp-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px}
 .gp-title{display:flex;align-items:center;gap:12px}
 .gp-title-icon{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:grid;place-items:center;color:#fff;font-size:18px;flex-shrink:0;box-shadow:0 4px 14px rgba(37,99,235,.3)}
-.gp-title h2{font-size:20px;font-weight:800;margin:0 0 3px}
+.gp-title h2{font-size:20px;font-weight:800;margin:0 0 3px;color:#2563eb;}
 .gp-title p{font-size:12px;color:var(--text-muted);margin:0}
 
 /* Steps */
@@ -98,7 +125,7 @@ function renderContent() {
 /* Panel */
 .gp-panel{background:var(--card-bg,#fff);border:1px solid var(--border-color);border-radius:12px;margin-bottom:20px;overflow:hidden}
 .gp-panel-hd{padding:15px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.gp-panel-hd h3{font-size:15px;font-weight:700;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+.gp-panel-hd h3{font-size:15px;font-weight:700;margin:0 0 2px;display:flex;align-items:center;gap:8px;color:#2563eb;}
 .gp-panel-hd p{font-size:12px;color:var(--text-muted);margin:0}
 .gp-count{display:inline-flex;align-items:center;gap:6px;padding:5px 14px;background:linear-gradient(135deg,#eff6ff,#eef2ff);color:#2563eb;border-radius:20px;font-weight:800;font-size:13px;border:1px solid rgba(37,99,235,.15);white-space:nowrap}
 
@@ -132,10 +159,12 @@ function renderContent() {
 .gp-pill.info{background:#eff6ff;color:#1d4ed8}
 .gp-pill.danger{background:#fef2f2;color:#991b1b}
 .gp-pill.muted{background:#f1f5f9;color:#334155}
+.gp-pill.issued{background:#dcfce7;color:#166534;border:1px solid #bbf7d0;}
 .gp-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
 
 /* Doc Upload */
 .gp-sel-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding:14px 20px;border-bottom:1px solid var(--border-color);background:linear-gradient(135deg,rgba(37,99,235,.03),rgba(124,58,237,.03))}
+.gp-sel-item { background: white; border: 1px solid var(--border-color, #e5e7eb); border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
 .gp-sel-item label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;display:block;margin-bottom:3px}
 .gp-sel-item strong{font-size:14px;font-weight:700}
 
@@ -149,12 +178,7 @@ function renderContent() {
 .gp-doc-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .gp-file-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#94a3b8;padding:4px 10px;background:#f1f5f9;border-radius:20px;white-space:nowrap;transition:all .2s;max-width:180px;overflow:hidden;text-overflow:ellipsis}
 .gp-file-badge.uploaded{background:#ecfdf5;color:#065f46}
-.gate-doc-input{display:none}
-
-.gp-remarks{padding:0 20px 14px}
-.gp-remarks label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:12px 0 6px}
-.gp-remarks textarea{width:100%;padding:10px 14px;border:1px solid var(--border-color);border-radius:8px;font-size:13px;background:var(--card-bg,#fff);color:var(--text-primary);resize:vertical;min-height:54px;box-sizing:border-box;transition:border .2s,box-shadow .2s}
-.gp-remarks textarea:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.gate-doc-input{opacity:0;position:absolute;z-index:-1;width:0.1px;height:0.1px;overflow:hidden;left:-9999px;top:-9999px;}
 
 .gp-footer{display:flex;align-items:center;justify-content:space-between;padding:13px 20px;border-top:1px solid var(--border-color);background:var(--hover-bg,#f8fafc);gap:10px;flex-wrap:wrap}
 .gp-footer-right{display:flex;gap:10px;flex-wrap:wrap}
@@ -165,6 +189,21 @@ function renderContent() {
 .gp-empty span{font-size:12px}
 .hidden{display:none!important}
 
+.blue-header {
+    background: linear-gradient(to right, #1e3a8a, #2563eb) !important;
+    color: white !important;
+}
+.blue-header h3, .blue-header p, .blue-header i, .blue-header h2, .blue-header .gp-count {
+    color: white !important;
+}
+.blue-header .gp-count { background: rgba(255,255,255,0.2); border-color: transparent; }
+.blue-header .gp-step-num { background: rgba(255,255,255,0.2); color: white; border-color: transparent; }
+.blue-header .gp-step.active .gp-step-num { background: white; color: #2563eb; }
+.blue-header .gp-step-info strong, .blue-header .gp-step-info small { color: rgba(255,255,255,0.9); }
+.blue-header .gp-step.active .gp-step-info strong { color: white; }
+.blue-header .gp-line { background: rgba(255,255,255,0.2); }
+.blue-header .gp-line.done { background: #10b981; }
+
 @media(max-width:700px){
   .gp-doc-row{flex-direction:column;align-items:flex-start}
   .gp-footer{flex-direction:column}
@@ -173,50 +212,50 @@ function renderContent() {
 </style>
 
 <!-- Header -->
-<div class="gp-header">
-  <div class="gp-title">
-    <div class="gp-title-icon"><i class="fas fa-id-badge"></i></div>
-    <div>
-      <h2>Gate Pass Creation Request</h2>
-      <p>Select an eligible employee, upload documents, and submit for approval.</p>
+<div class="gp-panel blue-header" style="padding: 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; border-radius: 12px;">
+  <div class="gp-header" style="margin-bottom: 0; display: flex; align-items: center; gap: 12px; border: none; padding: 0;">
+    <div class="gp-title">
+      <div class="gp-title-icon" style="background: rgba(255,255,255,0.2); box-shadow: none;"><i class="fas fa-id-badge"></i></div>
+      <div>
+        <h2 style="margin: 0; font-size: 20px;">Gate Pass Creation Request</h2>
+      </div>
     </div>
   </div>
-  <a href="pass_status.php" class="btn btn-outline"><i class="fas fa-list-check"></i> Request Tracker</a>
-</div>
 
-<?php if (!$contractorId): ?>
-  <div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i><div>Complete contractor registration first.</div></div>
-<?php return; endif; ?>
+  <?php if (!$contractorId): ?>
+    <div class="alert alert-warning" style="margin-bottom:0;"><i class="fas fa-exclamation-triangle"></i><div>Complete contractor registration first.</div></div>
+  <?php return; endif; ?>
 
-<!-- Step Tracker -->
-<div class="gp-steps">
-  <div class="gp-step active" data-step-indicator="1">
-    <div class="gp-step-num">1</div>
-    <div class="gp-step-info"><strong>Select Employee</strong><small>Safety-cleared only</small></div>
-  </div>
-  <div class="gp-line" id="gpLine1"></div>
-  <div class="gp-step" data-step-indicator="2">
-    <div class="gp-step-num">2</div>
-    <div class="gp-step-info"><strong>Upload Documents</strong><small>Required supporting files</small></div>
-  </div>
-  <div class="gp-line" id="gpLine2"></div>
-  <div class="gp-step" data-step-indicator="3">
-    <div class="gp-step-num">3</div>
-    <div class="gp-step-info"><strong>Approval Process</strong><small>Starts after submit</small></div>
+  <!-- Step Tracker -->
+  <div class="gp-steps" style="background:transparent; border:none; padding:0; margin-bottom:0;">
+    <div class="gp-step active" data-step-indicator="1">
+      <div class="gp-step-num">1</div>
+      <div class="gp-step-info"><strong>Select Employee</strong><small>Safety-cleared only</small></div>
+    </div>
+    <div class="gp-line" id="gpLine1"></div>
+    <div class="gp-step" data-step-indicator="2">
+      <div class="gp-step-num">2</div>
+      <div class="gp-step-info"><strong>Upload Documents</strong><small>Required supporting files</small></div>
+    </div>
+    <div class="gp-line" id="gpLine2"></div>
+    <div class="gp-step" data-step-indicator="3">
+      <div class="gp-step-num">3</div>
+      <div class="gp-step-info"><strong>Approval Process</strong><small>Starts after submit</small></div>
+    </div>
   </div>
 </div>
 
 <!-- Step 1: Employee Selection -->
 <section id="employeeStep" class="gp-panel">
-  <div class="gp-panel-hd">
+  <div class="gp-panel-hd blue-header" style="border-radius: 12px 12px 0 0;">
     <div>
-      <h3><i class="fas fa-users" style="color:#2563eb;"></i> Select Employee</h3>
+      <h3><i class="fas fa-users"></i> Select Employee</h3>
       <p>Only enrollment-approved employees with completed Safety Training are listed.</p>
     </div>
     <div class="gp-count"><i class="fas fa-circle-check"></i> <?= $availableWorkerCount ?> Available</div>
   </div>
 
-  <div class="gp-search">
+  <div class="gp-search" style="padding: 15px 20px;">
     <div class="gp-inp-wrap">
       <i class="fas fa-fingerprint"></i>
       <input type="search" id="aadhaarSearch" placeholder="Search Aadhaar No.">
@@ -225,8 +264,6 @@ function renderContent() {
       <i class="fas fa-user"></i>
       <input type="search" id="nameSearch" placeholder="Search Employee Name">
     </div>
-    <button type="button" class="btn btn-primary" id="searchEmployees"><i class="fas fa-search"></i> Search</button>
-    <button type="button" class="btn btn-outline" id="resetSearch"><i class="fas fa-rotate-left"></i> Reset</button>
   </div>
 
   <div class="gp-tw">
@@ -255,18 +292,31 @@ function renderContent() {
         <?php foreach ($workers as $idx => $worker):
           $category     = $worker['worker_type'] ?: ($worker['role_type'] ?: ($worker['skill'] ?: 'Worker'));
           $reqStatus    = strtolower(trim((string)($worker['gate_pass_request_status'] ?? '')));
-          $isDraft      = $reqStatus === 'draft';
-          $hasActive    = $reqStatus !== '' && !$isDraft;
-          $pillCls      = $reqStatus === '' ? 'ok' : ($isDraft ? 'muted' : 'warn');
-          $pillLbl      = $reqStatus === '' ? '<i class="fas fa-check"></i> Eligible' : strtoupper(str_replace('_',' ',$reqStatus));
+          $hasActive    = ((int)$worker['has_active_request'] > 0);
+          $activeStatus = strtolower((string)($worker['active_request_status'] ?? ''));
+          $isIssued     = in_array($reqStatus, ['issued','approved','active']);
+          
+          if ($reqStatus === '') $pillCls = 'ok';
+          elseif ($reqStatus === 'draft') $pillCls = 'muted';
+          elseif ($reqStatus === 'approved') $pillCls = 'ok';
+          elseif (in_array($reqStatus, ['issued','active'])) $pillCls = 'issued';
+          elseif (in_array($reqStatus, ['reupload_required','rejected'])) $pillCls = 'danger';
+          else $pillCls = 'warn';
+
+          $displayStatus = $reqStatus;
+          if ($reqStatus === 'pending') $displayStatus = 'Submitted';
+          elseif ($reqStatus === 'approved') $displayStatus = 'Approved';
+          elseif ($reqStatus === 'issued' || $reqStatus === 'active') $displayStatus = 'Issued';
+          
+          $pillLbl      = $reqStatus === '' ? '<i class="fas fa-check"></i> Eligible' : ($isIssued ? '<i class="fas fa-id-badge"></i> ' . strtoupper($displayStatus) : strtoupper(str_replace('_',' ',$displayStatus)));
           $initial      = strtoupper(mb_substr($worker['name'], 0, 1));
-          $workerJson   = htmlspecialchars(json_encode(['id'=>(int)$worker['id'],'name'=>$worker['name'],'aadhaar'=>$worker['aadhaar'],'category'=>$category,'temp_id'=>$worker['temp_id']]), ENT_QUOTES,'UTF-8');
+          $workerJson   = htmlspecialchars(json_encode(['id'=>(int)$worker['id'],'name'=>$worker['name'],'aadhaar'=>$worker['aadhaar'],'category'=>$category,'temp_id'=>$worker['temp_id'], 'request_status' => $reqStatus]), ENT_QUOTES,'UTF-8');
         ?>
           <tr data-name="<?= htmlspecialchars(strtolower((string)$worker['name'])) ?>"
               data-aadhaar="<?= htmlspecialchars(strtolower((string)$worker['aadhaar'])) ?>">
             <td style="text-align:center;font-size:12px;color:var(--text-muted);"><?= $idx+1 ?></td>
             <td style="text-align:center;">
-              <input type="checkbox" class="gp-chk worker-checkbox" value="<?= (int)$worker['id'] ?>" <?= $hasActive?'disabled':'' ?>>
+              <input type="checkbox" class="gp-chk worker-checkbox" value="<?= (int)$worker['id'] ?>" <?= $hasActive && $reqStatus !== 'reupload_required' && $reqStatus !== 'draft' ?'disabled':'' ?>>
             </td>
             <td>
               <div class="gp-worker">
@@ -279,14 +329,30 @@ function renderContent() {
             </td>
             <td><span class="gp-code"><?= htmlspecialchars($worker['aadhaar'] ?: '-') ?></span></td>
             <td><span class="gp-tag"><?= htmlspecialchars($category) ?></span></td>
-            <td><span class="gp-pill <?= $pillCls ?>"><?= $pillLbl ?></span></td>
             <td>
-              <?php if ($hasActive): ?>
-                <a class="btn btn-sm btn-outline" href="pass_status.php"><i class="fas fa-eye"></i> View</a>
+              <?php if ($reqStatus !== ''): ?>
+                <span class="gp-pill <?= $pillCls ?>" onclick="showStatusInfo('<?= $reqStatus ?>')" style="cursor:pointer;" title="Click for details"><?= $pillLbl ?></span>
+              <?php else: ?>
+                <span class="gp-pill <?= $pillCls ?>"><?= $pillLbl ?></span>
+              <?php endif; ?>
+            </td>
+            <td>
+              <?php if ($isIssued): ?>
+                <a class="btn btn-sm btn-outline" href="pass_status.php?worker_id=<?= (int)$worker['id'] ?>"><i class="fas fa-eye"></i> View</a>
+              <?php elseif ($hasActive): ?>
+                <div style="display:flex; gap:8px;">
+                    <?php if ($activeStatus !== 'draft'): ?>
+                        <a class="btn btn-sm btn-outline" href="pass_status.php?worker_id=<?= (int)$worker['id'] ?>"><i class="fas fa-eye"></i> View</a>
+                    <?php endif; ?>
+                    <?php if ($activeStatus === 'reupload_required' || $activeStatus === 'draft'): ?>
+                        <button type="button" class="btn btn-sm btn-primary select-worker" data-worker='<?= $workerJson ?>'>
+                          <i class="fas fa-upload"></i> <?= $activeStatus === 'draft' ? 'Continue' : 'Reupload' ?>
+                        </button>
+                    <?php endif; ?>
+                </div>
               <?php else: ?>
                 <button type="button" class="btn btn-sm btn-primary select-worker" data-worker='<?= $workerJson ?>'>
-                  <i class="fas fa-<?= $isDraft?'edit':'arrow-right' ?>"></i>
-                  <?= $isDraft ? 'Continue Draft' : 'Select' ?>
+                  <i class="fas fa-upload"></i> Upload
                 </button>
               <?php endif; ?>
             </td>
@@ -299,12 +365,12 @@ function renderContent() {
 
 <!-- Step 2: Document Upload -->
 <section id="documentStep" class="gp-panel hidden">
-  <div class="gp-panel-hd">
+  <div class="gp-panel-hd blue-header" style="border-radius: 12px 12px 0 0;">
     <div>
-      <h3><i class="fas fa-file-arrow-up" style="color:#7c3aed;"></i> Upload Supporting Documents</h3>
+      <h3><i class="fas fa-file-arrow-up"></i> Upload Supporting Documents</h3>
       <p>Upload all mandatory documents before submitting the request.</p>
     </div>
-    <span class="gp-pill muted" id="documentProgress" style="font-size:12px;">0 / <?= count($documents) ?> uploaded</span>
+    <span class="gp-pill" id="documentProgress" style="font-size:12px; background: rgba(255,255,255,0.2); color: white; border-color: transparent;">0 / <?= count($documents) ?> uploaded</span>
   </div>
 
   <div class="gp-sel-bar">
@@ -321,26 +387,26 @@ function renderContent() {
 
     <div class="gp-docs">
       <?php foreach ($documents as $i => $doc): ?>
-        <div class="gp-doc-row">
+        <div class="gp-doc-row" data-key="<?= htmlspecialchars($doc['key']) ?>" data-id="<?= htmlspecialchars($doc['id']) ?>" data-required="<?= $doc['required'] ? 'true' : 'false' ?>">
           <div class="gp-doc-no"><?= $i+1 ?></div>
           <div class="gp-doc-info">
             <strong>
               <?= htmlspecialchars($doc['label']) ?>
               <?php if ($doc['required']): ?>
                 <span style="color:#ef4444;font-size:10px;margin-left:4px;font-weight:600;">*Required</span>
-              <?php else: ?>
-                <span style="color:#94a3b8;font-size:10px;margin-left:4px;">Optional</span>
               <?php endif; ?>
             </strong>
             <small><?= htmlspecialchars($doc['hint']) ?></small>
           </div>
-          <div class="gp-doc-acts">
+          <div class="gp-inp-wrap gp-doc-acts" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
             <?php if (!empty($doc['format_file_path'])): ?>
-              <button type="button" class="btn btn-sm btn-outline download-format" data-filepath="<?= htmlspecialchars($doc['format_file_path']) ?>">
+              <a href="../../<?= ltrim(htmlspecialchars($doc['format_file_path']), '/') ?>" target="_blank" class="btn btn-sm btn-outline" style="white-space:nowrap;" download>
                 <i class="fas fa-download"></i> Format
-              </button>
+              </a>
             <?php endif; ?>
-            <label class="btn btn-sm btn-outline" for="gate-doc-<?= htmlspecialchars($doc['id']) ?>" style="cursor:pointer;margin:0;">
+            <a href="#" target="_blank" class="btn btn-sm btn-outline btn-view-uploaded hidden" style="white-space:nowrap;"><i class="fas fa-eye"></i> View</a>
+            
+            <label class="btn btn-sm btn-outline btn-choose-file" for="gate-doc-<?= htmlspecialchars($doc['id']) ?>" style="cursor:pointer;margin:0;white-space:nowrap;">
               <i class="fas fa-upload"></i> Choose File
             </label>
             <input class="gate-doc-input" type="file"
@@ -348,22 +414,21 @@ function renderContent() {
                    name="<?= htmlspecialchars($doc['key']) ?>"
                    accept=".pdf,.jpg,.jpeg,.png"
                    <?= $doc['required'] ? 'required' : '' ?>>
-            <button type="button" class="btn-view btn-view-doc hidden" title="View Document">
-              <i class="fas fa-eye"></i> View
+            
+            <button type="button" class="btn btn-sm btn-outline btn-view-doc hidden" style="white-space:nowrap;">
+              <i class="fas fa-eye"></i> Preview
             </button>
-            <span class="gp-file-badge" data-file-state><i class="fas fa-clock"></i> Pending</span>
+            <span class="gp-file-badge" data-file-state style="white-space:nowrap;"><i class="fas fa-clock"></i> Pending</span>
           </div>
         </div>
       <?php endforeach; ?>
     </div>
 
-    <!-- Remarks removed as per request -->
-
     <div class="gp-footer">
       <button type="button" class="btn btn-outline" id="backToEmployees"><i class="fas fa-arrow-left"></i> Back</button>
       <div class="gp-footer-right">
         <button type="button" class="btn btn-outline" id="saveGatePassDraft"><i class="fas fa-floppy-disk"></i> Save Draft</button>
-        <button type="submit" class="btn btn-primary" id="submitGatePass"><i class="fas fa-paper-plane"></i> Submit Gate Pass Request</button>
+        <button type="submit" class="btn btn-primary" id="submitGatePass"><i class="fas fa-paper-plane"></i> Submit Request</button>
       </div>
     </div>
   </form>
@@ -371,17 +436,18 @@ function renderContent() {
 
 <!-- Recent Requests -->
 <section class="gp-panel">
-  <div class="gp-panel-hd">
+  <div class="gp-panel-hd blue-header" style="border-radius: 12px 12px 0 0;">
     <div>
-      <h3><i class="fas fa-clock-rotate-left" style="color:#0ea5e9;"></i> Recent Gate Pass Requests</h3>
+      <h3><i class="fas fa-clock-rotate-left"></i> Recent Gate Pass Requests</h3>
       <p>Last 10 submitted requests and their current approval status.</p>
     </div>
-    <a href="pass_status.php" class="btn btn-sm btn-outline"><i class="fas fa-external-link-alt"></i> View All</a>
+    <a href="pass_status.php" class="btn btn-sm btn-outline" style="background: rgba(255,255,255,0.1); color: white; border-color: rgba(255,255,255,0.3);"><i class="fas fa-external-link-alt"></i> View All</a>
   </div>
   <div class="gp-tw">
-    <table class="gp-tbl">
+    <table class="gp-tbl" id="recentRequestsTable">
       <thead>
         <tr>
+          <th style="width: 40px;">#</th>
           <th>Request No.</th>
           <th>Employee</th>
           <th>Temp ID</th>
@@ -391,28 +457,25 @@ function renderContent() {
       </thead>
       <tbody>
         <?php if (!$requests): ?>
-          <tr><td colspan="5">
+          <tr><td colspan="6">
             <div class="gp-empty">
               <i class="fas fa-inbox"></i>
               <strong>No requests submitted yet</strong>
-              <span>Your submitted gate pass requests will appear here.</span>
             </div>
           </td></tr>
         <?php endif; ?>
-        <?php foreach ($requests as $req):
+        <?php foreach ($requests as $idx => $req):
           $st  = strtolower($req['status'] ?? '');
           $cls = in_array($st, ['approved','active']) ? 'ok' : (in_array($st, ['rejected','reupload_required']) ? 'danger' : 'warn');
           $dot = $cls === 'ok' ? '#16a34a' : ($cls === 'danger' ? '#dc2626' : '#d97706');
         ?>
           <tr>
+            <td style="color:var(--text-muted);font-size:12px;"><?= $idx + 1 ?></td>
             <td><strong class="gp-code"><?= htmlspecialchars($req['request_no']) ?></strong></td>
             <td><?= htmlspecialchars($req['worker_name']) ?></td>
             <td><span class="gp-code"><?= htmlspecialchars($req['temp_id'] ?: '-') ?></span></td>
             <td>
-              <span class="gp-pill <?= $cls ?>">
-                <span class="gp-dot" style="background:<?= $dot ?>;"></span>
-                <?= htmlspecialchars(strtoupper(str_replace('_',' ',$req['status']))) ?>
-              </span>
+              <span class="gp-pill <?= $cls ?>"><span class="gp-dot" style="background:<?= $dot ?>;"></span><?= strtoupper($st) ?></span>
             </td>
             <td style="font-size:12px;color:var(--text-muted);">
               <?= !empty($req['created_at']) ? date('d M Y, h:i A', strtotime($req['created_at'])) : '-' ?>
@@ -428,14 +491,21 @@ function renderContent() {
 const employeeStep  = document.getElementById('employeeStep');
 const documentStep  = document.getElementById('documentStep');
 const documentForm  = document.getElementById('documentForm');
-const aadhaarSearch = document.getElementById('aadhaarSearch');
-const nameSearch    = document.getElementById('nameSearch');
 
 function fireMessage(icon, title, text) {
-  if (typeof Swal !== 'undefined' && Swal.fire)
-    return Swal.fire({icon, title, text, confirmButtonColor:'#2563eb'});
+  if (typeof Swal !== 'undefined' && Swal.fire) return Swal.fire({icon, title, text, confirmButtonColor:'#2563eb'});
   alert(title + ': ' + text);
-  return Promise.resolve();
+}
+
+function showStatusInfo(status) {
+  const info = {
+    'pending': { title: 'Submitted', text: 'Waiting for verification.', icon: 'info' },
+    'reupload_required': { title: 'Re-upload Required', text: 'Some documents rejected.', icon: 'warning' },
+    'approved': { title: 'Approved', text: 'Ready to be issued.', icon: 'success' }
+  };
+  const data = info[status] || { title: status.toUpperCase(), text: 'Current status: ' + status, icon: 'info' };
+  if (typeof Swal !== 'undefined' && Swal.fire) Swal.fire({title: data.title, text: data.text, icon: data.icon, confirmButtonColor: '#1e3a8a'});
+  else alert(data.title + ': ' + data.text);
 }
 
 function setStep(step) {
@@ -444,32 +514,128 @@ function setStep(step) {
     el.classList.toggle('active', v === step);
     el.classList.toggle('done', v < step);
   });
-  const l1 = document.getElementById('gpLine1');
-  const l2 = document.getElementById('gpLine2');
-  if (l1) l1.classList.toggle('done', step > 1);
-  if (l2) l2.classList.toggle('done', step > 2);
 }
 
 async function selectEmployee(worker, btn) {
   const orig = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...'; }
   try {
     const body = new FormData();
     body.append('action', 'prepare');
     body.append('workman_id', worker.id);
-    const res    = await fetch('../../api/save_gate_pass_request.php', {method:'POST', body});
+    const res = await fetch('../../api/save_gate_pass_request.php', {method:'POST', body});
     const result = await res.json();
-    if (!result.success) throw new Error(result.message || 'Unable to prepare Gate Pass request.');
-    const reqId = (result.data && result.data.request_id) || result.request_id || '';
-    document.getElementById('requestId').value        = reqId;
+    if (!result.success) throw new Error(result.message);
+    document.getElementById('requestId').value = result.data.request_id || '';
     document.getElementById('selectedWorkerId').value = worker.id;
     document.getElementById('selectedName').textContent     = worker.name     || '-';
     document.getElementById('selectedAadhaar').textContent  = worker.aadhaar  || '-';
     document.getElementById('selectedCategory').textContent = worker.category || '-';
     document.getElementById('selectedTempId').textContent   = worker.temp_id  || '-';
+
+    // Reset previous uploads in UI
+    document.querySelectorAll('.gp-doc-row').forEach(row => {
+      const wrap = row.querySelector('.gp-inp-wrap');
+      const isReq = row.dataset.required === 'true';
+      if (wrap) {
+        const viewUp = wrap.querySelector('.btn-view-uploaded');
+        if (viewUp) viewUp.classList.add('hidden');
+        
+        const chooseBtn = wrap.querySelector('.btn-choose-file');
+        if (chooseBtn) {
+            chooseBtn.classList.remove('hidden');
+            chooseBtn.innerHTML = '<i class="fas fa-upload"></i> Choose File';
+        }
+        
+        const fileInp = wrap.querySelector('.gate-doc-input');
+        if (fileInp) {
+            fileInp.value = '';
+            fileInp.disabled = false;
+            if (isReq) fileInp.setAttribute('required', 'required');
+            else fileInp.removeAttribute('required');
+        }
+        
+        const viewDoc = wrap.querySelector('.btn-view-doc');
+        if (viewDoc) viewDoc.classList.add('hidden');
+        
+        const badge = wrap.querySelector('.gp-file-badge');
+        if (badge) {
+            badge.innerHTML = '<i class="fas fa-clock"></i> Pending';
+            badge.style.color = '';
+            badge.classList.remove('hidden');
+        }
+      }
+    });
+
+    const docs = (result.data && result.data.uploaded_docs) || result.uploaded_docs;
+    if (docs) {
+      Object.entries(docs).forEach(([key, doc]) => {
+        const row = document.querySelector(`.gp-doc-row[data-key="${key}"]`);
+        if (row) {
+          const wrap = row.querySelector('.gp-inp-wrap');
+          const viewUp = wrap.querySelector('.btn-view-uploaded');
+          const chooseBtn = wrap.querySelector('.btn-choose-file');
+          const fileInp = wrap.querySelector('.gate-doc-input');
+          const badge = wrap.querySelector('.gp-file-badge');
+
+          if (viewUp) {
+              viewUp.href = `../../uploads/documents/${doc.file_path}`;
+              viewUp.classList.remove('hidden');
+          }
+          
+          if (doc.status === 'approved') {
+              if (badge) {
+                  badge.innerHTML = `<i class="fas fa-check-circle"></i> Approved`;
+                  badge.style.color = '#10b981';
+              }
+              if (chooseBtn) chooseBtn.classList.add('hidden');
+              if (fileInp) {
+                  fileInp.disabled = true;
+                  fileInp.removeAttribute('required');
+              }
+          } else if (doc.status === 'rejected' || doc.status === 'reupload_required') {
+              if (badge) {
+                  badge.innerHTML = `<i class="fas fa-times-circle"></i> Rejected`;
+                  badge.style.color = '#ef4444';
+              }
+              if (chooseBtn) {
+                  chooseBtn.classList.remove('hidden');
+                  chooseBtn.innerHTML = '<i class="fas fa-upload"></i> Reupload';
+              }
+              if (fileInp) {
+                  fileInp.disabled = false;
+                  fileInp.setAttribute('required', 'required');
+              }
+          } else {
+              if (badge) {
+                  badge.innerHTML = `<i class="fas fa-clock"></i> Pending`;
+                  badge.style.color = '#f59e0b';
+              }
+              if (!worker.request_status || worker.request_status === 'draft') {
+                  if (chooseBtn) {
+                      chooseBtn.classList.remove('hidden');
+                      chooseBtn.innerHTML = '<i class="fas fa-upload"></i> Change';
+                  }
+                  if (fileInp) {
+                      fileInp.disabled = false;
+                      fileInp.removeAttribute('required'); // File already exists on server
+                  }
+              } else {
+                  if (chooseBtn) chooseBtn.classList.add('hidden');
+                  if (fileInp) {
+                      fileInp.disabled = true;
+                      fileInp.removeAttribute('required');
+                  }
+              }
+          }
+        }
+      });
+    }
+
     employeeStep.classList.add('hidden');
     documentStep.classList.remove('hidden');
     setStep(2);
+    updateDocProgress();
     window.scrollTo({top:0, behavior:'smooth'});
   } catch(err) {
     fireMessage('error', 'Gate Pass Request', err.message);
@@ -479,26 +645,32 @@ async function selectEmployee(worker, btn) {
 }
 
 document.querySelectorAll('.select-worker').forEach(btn => {
-  btn.addEventListener('click', e => selectEmployee(JSON.parse(e.currentTarget.dataset.worker), e.currentTarget));
+  btn.addEventListener('click', e => {
+    const tr = e.currentTarget.closest('tr');
+    const cb = tr.querySelector('.worker-checkbox');
+    if (!cb || !cb.checked) {
+       fireMessage('warning', 'Selection Required', 'Please tick the checkbox first before clicking Upload Document.');
+       return;
+    }
+    selectEmployee(JSON.parse(e.currentTarget.dataset.worker), e.currentTarget);
+  });
 });
 document.querySelectorAll('.worker-checkbox').forEach(cb => {
   cb.addEventListener('change', e => {
     document.querySelectorAll('.worker-checkbox').forEach(o => { if (o !== e.currentTarget) o.checked = false; });
-    const btn = e.currentTarget.closest('tr')?.querySelector('.select-worker');
-    if (btn) btn.click();
   });
 });
 
+const aadhaarSearch = document.getElementById('aadhaarSearch');
+const nameSearch    = document.getElementById('nameSearch');
 function filterEmployees() {
-  const a = aadhaarSearch.value.trim().toLowerCase();
-  const n = nameSearch.value.trim().toLowerCase();
+  const a = aadhaarSearch ? aadhaarSearch.value.trim().toLowerCase() : '';
+  const n = nameSearch ? nameSearch.value.trim().toLowerCase() : '';
   document.querySelectorAll('#employeeRows tr[data-name]').forEach(row => {
     row.classList.toggle('hidden', !row.dataset.aadhaar.includes(a) || !row.dataset.name.includes(n));
   });
 }
-document.getElementById('searchEmployees')?.addEventListener('click', filterEmployees);
 [aadhaarSearch, nameSearch].forEach(inp => inp?.addEventListener('input', filterEmployees));
-document.getElementById('resetSearch')?.addEventListener('click', () => { aadhaarSearch.value=''; nameSearch.value=''; filterEmployees(); });
 document.getElementById('backToEmployees')?.addEventListener('click', () => {
   documentStep.classList.add('hidden');
   employeeStep.classList.remove('hidden');
@@ -507,53 +679,73 @@ document.getElementById('backToEmployees')?.addEventListener('click', () => {
 
 function updateDocProgress() {
   const inputs   = Array.from(document.querySelectorAll('.gate-doc-input'));
-  const uploaded = inputs.filter(i => i.files.length > 0).length;
+  let total = 0;
+  let uploaded = 0;
+  inputs.forEach(i => {
+     if(i.hasAttribute('required') || i.closest('.gp-doc-row').dataset.required === 'true') {
+         total++;
+         const row = i.closest('.gp-doc-row');
+         const state = row?.querySelector('[data-file-state]');
+         const hasFile = i.files.length > 0;
+         const isApproved = row.innerHTML.includes('Approved');
+         const isPending = row.innerHTML.includes('Pending') && !row.innerHTML.includes('type="file"');
+         const isOldPending = row.innerHTML.includes('Pending</span>');
+         if (hasFile || isApproved || isOldPending) uploaded++;
+     }
+  });
+  
   const el = document.getElementById('documentProgress');
   if (el) {
-    el.textContent = `${uploaded} / ${inputs.length} uploaded`;
-    el.className   = 'gp-pill ' + (uploaded > 0 && uploaded === inputs.length ? 'ok' : 'muted');
+    el.textContent = `${uploaded} / ${total} uploaded`;
+    el.className   = 'gp-pill ' + (uploaded > 0 && uploaded >= total ? 'ok' : 'muted');
   }
 }
-
-document.querySelectorAll('.gate-doc-input').forEach(input => {
-  input.addEventListener('change', () => {
+// Event delegation for file inputs
+documentForm?.addEventListener('change', e => {
+  if (e.target && e.target.classList.contains('gate-doc-input')) {
+    const input = e.target;
     const row = input.closest('.gp-doc-row');
-    const state = row?.querySelector('[data-file-state]');
-    const viewBtn = row?.querySelector('.btn-view-doc');
+    const badge = row?.querySelector('.gp-file-badge');
+    const viewDoc = row?.querySelector('.btn-view-doc');
     const file = input.files[0];
     
-    if (state) {
+    if (badge) {
       const fname = file?.name || '';
-      state.innerHTML = fname
-        ? `<i class="fas fa-check-circle"></i> ${fname.length > 20 ? fname.substring(0,20)+'…' : fname}`
-        : '<i class="fas fa-clock"></i> Pending';
-      state.classList.toggle('uploaded', Boolean(file));
+      if (fname) {
+          badge.innerHTML = `<i class="fas fa-check-circle"></i> ${fname.length > 20 ? fname.substring(0,20)+'…' : fname}`;
+          badge.style.color = '#10b981';
+          badge.classList.add('uploaded');
+          badge.classList.remove('hidden');
+      } else {
+          badge.innerHTML = '';
+          badge.style.color = '';
+          badge.classList.remove('uploaded');
+      }
     }
     
-    if (viewBtn) {
+    if (viewDoc) {
       if (file) {
         const url = URL.createObjectURL(file);
-        viewBtn.dataset.url = url;
-        viewBtn.classList.remove('hidden');
+        viewDoc.dataset.url = url;
+        viewDoc.classList.remove('hidden');
       } else {
-        viewBtn.classList.add('hidden');
-        if (viewBtn.dataset.url) {
-          URL.revokeObjectURL(viewBtn.dataset.url);
-          delete viewBtn.dataset.url;
+        viewDoc.classList.add('hidden');
+        if (viewDoc.dataset.url) {
+          URL.revokeObjectURL(viewDoc.dataset.url);
+          delete viewDoc.dataset.url;
         }
       }
     }
     
     updateDocProgress();
-  });
+  }
 });
 
-document.querySelectorAll('.btn-view-doc').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (btn.dataset.url) {
-      window.open(btn.dataset.url, '_blank');
+documentForm?.addEventListener('click', e => {
+    const viewBtn = e.target.closest('.btn-view-doc');
+    if (viewBtn && viewBtn.dataset.url) {
+        window.open(viewBtn.dataset.url, '_blank');
     }
-  });
 });
 
 document.querySelectorAll('.download-format').forEach(btn => {
@@ -596,6 +788,24 @@ async function saveGatePass(action) {
 }
 document.getElementById('saveGatePassDraft')?.addEventListener('click', () => saveGatePass('save_draft'));
 documentForm?.addEventListener('submit', async e => { e.preventDefault(); if (!documentForm.reportValidity()) return; saveGatePass('submit'); });
+
+document.addEventListener("DOMContentLoaded", function() {
+    const initDT = function() {
+        if (typeof $ !== 'undefined' && $.fn.DataTable) {
+            $('#recentRequestsTable').DataTable({
+                "pageLength": 10,
+                "lengthChange": false,
+                "searching": false,
+                "ordering": true,
+                "info": false,
+                "paging": false // They are already max 10
+            });
+        } else {
+            setTimeout(initDT, 50);
+        }
+    };
+    initDT();
+});
 </script>
 <?php
 }

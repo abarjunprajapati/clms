@@ -1,7 +1,7 @@
 <?php
 // pages/welfare/muster_roll_monitor.php
 require_once '../../include/auth.php';
-checkAuth(['welfare_user', 'welfare', 'super_admin', 'admin']);
+checkAuth(['welfare_user', 'welfare_admin', 'welfare', 'super_admin', 'admin']);
 include '../../include/config.php';
 include '../../include/layout.php';
 include '../../include/compliance_schema.php';

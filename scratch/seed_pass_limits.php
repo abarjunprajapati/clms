@@ -16,7 +16,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS pass_limits (
 $defaults = [
     ['Contractor', 2, null, 'Contractor Pass (Max 2)'],
     ['Representative', 2, null, 'Representative Pass (Max 2)'],
-    ['Supervisor', null, 50, 'Supervisor Pass (1 per 50 workers)'],
+    ['Supervisor', null, 10, 'Supervisor Pass (1 per 10 workers)'],
     ['Workman', null, null, 'Workmen Pass (No limit)']
 ];
 

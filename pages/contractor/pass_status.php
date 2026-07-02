@@ -19,6 +19,7 @@ function renderContent() {
     // Fetch from gate_pass_request_workers joined with gate_pass_requests
     $passes = $c_id ? db_fetch_all($conn,
         "SELECT 
+            gpr.id as request_id,
             gprw.id,
             gpr.status as status,
             gpr.request_no,
@@ -76,7 +77,8 @@ function renderContent() {
                 WHERE pgp.worker_id = w.id
                   AND LOWER(COALESCE(pgp.status, '')) = 'active'
             ) AS has_permanent_pass,
-            '' as rejection_reason
+            '' as rejection_reason,
+            0 as request_id
          FROM gate_passes gp
          JOIN workmen w ON gp.workman_id = w.id
          WHERE w.contractor_id = ?
@@ -111,6 +113,23 @@ function renderContent() {
     $status_filter = $_GET['status'] ?? 'all';
     if ($status_filter !== 'all') {
         $passes = array_filter($passes, function($p) use ($status_filter) { return ($p['status'] ?? '') === $status_filter; });
+    }
+
+    if (!empty($_GET['worker_id'])) {
+        $passes = array_filter($passes, function($p) { return $p['worker_id'] == $_GET['worker_id']; });
+    }
+
+    // Fetch all documents for this contractor's workmen
+    $docs_raw = $c_id ? db_fetch_all($conn,
+        "SELECT d.workman_id, d.document_type, d.file_path, d.status, d.gate_pass_request_id
+         FROM documents d
+         JOIN workmen w ON d.workman_id = w.id
+         WHERE w.contractor_id = ? AND d.gate_pass_request_id IS NOT NULL",
+        'i', [$c_id]) : [];
+    
+    $docs_by_request = [];
+    foreach ($docs_raw as $d) {
+        $docs_by_request[$d['gate_pass_request_id']][] = $d;
     }
     ?>
 
@@ -213,10 +232,38 @@ function renderContent() {
           <div><span class="pil">Valid To</span><span class="piv"><?= $gp['valid_to'] ? date('d M Y', strtotime($gp['valid_to'])) : '—' ?></span></div>
           <div><span class="pil">Applied</span><span class="piv"><?= $gp['created_at'] ? date('d M Y', strtotime($gp['created_at'])) : '—' ?></span></div>
         </div>
-        <?php if ($st === 'active' || $st === 'approved'): ?>
+
+        <?php $w_docs = $docs_by_request[$gp['request_id']] ?? []; ?>
+        <?php if (!empty($w_docs)): ?>
+        <div class="pass-docs-section" style="margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border-color);">
+          <h5 style="font-size:11px; color:var(--text-muted); margin:0 0 10px; text-transform:uppercase; letter-spacing:0.05em; font-weight:700;"><i class="fas fa-folder-open"></i> Uploaded Documents</h5>
+          <div style="display:flex; flex-wrap:wrap; gap:10px;">
+            <?php foreach ($w_docs as $d): 
+              $dst = strtolower($d['status'] ?? 'pending');
+              $d_color = '#f59e0b'; $d_icon = 'fa-clock'; $d_bg = '#fffbeb'; $d_border = '#fcd34d';
+              if ($dst === 'approved') { $d_color = '#10b981'; $d_icon = 'fa-check-circle'; $d_bg = '#ecfdf5'; $d_border = '#6ee7b7'; }
+              elseif ($dst === 'rejected' || $dst === 'reupload_required') { $d_color = '#ef4444'; $d_icon = 'fa-times-circle'; $d_bg = '#fef2f2'; $d_border = '#fca5a5'; }
+              
+              $d_label = $d['document_type'];
+              if (strlen($d_label) > 30) $d_label = substr($d_label, 0, 27) . '...';
+            ?>
+              <div style="display:flex; align-items:center; gap:8px; padding:6px 12px; background:<?= $d_bg ?>; border:1px solid <?= $d_border ?>; border-radius:8px; font-size:12px; transition:.2s;" class="doc-badge-hover" title="<?= htmlspecialchars($d['document_type']) ?> - Status: <?= ucfirst($dst) ?>">
+                 <i class="fas <?= $d_icon ?>" style="color:<?= $d_color ?>;"></i>
+                 <a href="../../uploads/documents/<?= htmlspecialchars($d['file_path']) ?>" target="_blank" style="color:var(--text-primary); text-decoration:none; font-weight:600;">
+                   <?= htmlspecialchars($d_label) ?>
+                 </a>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        </div>
+        <?php endif; ?>
+        <?php if ($st === 'active' || $st === 'approved'): 
+          $isPerm = ((int)($gp['has_permanent_pass'] ?? 0) > 0 || in_array(strtolower($gp['workman_status'] ?? ''), ['permanent_active', 'permanent_issued'], true));
+          $ptype = $isPerm ? 'perm' : 'temp';
+        ?>
         <div style="margin-top:12px;">
-          <a href="../../api/welfare/download_pass.php?id=<?= $gp['worker_id'] ?>&type=perm&action=print" class="btn btn-sm btn-primary" target="_blank">
-            <i class="fas fa-download"></i> Download Pass PDF
+          <a href="../../api/welfare/download_pass.php?id=<?= $gp['worker_id'] ?>&type=<?= $ptype ?>&action=print" class="btn btn-sm btn-primary" target="_blank">
+            <i class="fas fa-download"></i> Download <?= $isPerm ? 'Permanent' : 'Temporary' ?> Pass
           </a>
         </div>
         <?php endif; ?>
@@ -224,7 +271,7 @@ function renderContent() {
         <div class="rejection-note">
           <i class="fas fa-info-circle"></i>
           <?= htmlspecialchars($gp['rejection_reason'] ?? 'Some documents were rejected. Please re-upload corrected documents.') ?>
-          <a href="gatepass-reupload.php" class="btn btn-sm btn-danger" style="margin-left:8px;">Re-upload Documents</a>
+          <a href="gatepass-6a.php" class="btn btn-sm btn-danger" style="margin-left:8px;">Re-upload Documents</a>
         </div>
         <?php endif; ?>
       </div>
@@ -267,6 +314,7 @@ function renderContent() {
     .pil { display:block;font-size:11px;color:var(--text-muted);margin-bottom:2px; }
     .piv { display:block;font-size:13px;font-weight:600; }
     .rejection-note { margin-top:10px;padding:10px 14px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:8px;font-size:13px;color:#ef4444;display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+    .doc-badge-hover:hover { box-shadow: 0 4px 6px rgba(0,0,0,0.05); transform: translateY(-1px); }
     </style>
     <?php
 }

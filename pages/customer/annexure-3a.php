@@ -174,10 +174,10 @@ function renderContent() {
     $disabled_attr = ($is_locked || $is_approved_limited_edit || $is_approved_view_only) ? 'disabled' : '';
     $limited_edit_readonly_attr = $is_approved_view_only ? 'readonly' : '';
     $limited_edit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
-    $saved_limited_row_readonly_attr = $is_limited_update_mode ? 'readonly' : $limited_edit_readonly_attr;
-    $saved_limited_file_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
-    $saved_limited_action_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
-    $ecp_choice_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
+    $saved_limited_row_readonly_attr = $limited_edit_readonly_attr;
+    $saved_limited_file_disabled_attr = $limited_edit_disabled_attr;
+    $saved_limited_action_disabled_attr = $limited_edit_disabled_attr;
+    $ecp_choice_disabled_attr = $limited_edit_disabled_attr;
     $submit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
     $draft_disabled_attr = ($is_locked || $is_approved_view_only) ? 'disabled' : '';
     $worker_category_source = $existing_data['worker_category'] ?? '';
@@ -505,6 +505,12 @@ function renderContent() {
                 <div>
                     <i class="fas fa-circle-exclamation me-2"></i>
                     Welfare action recorded. Please open history to view reason, rejection date and attachment.
+                    <?php if (!empty($existing_data['remarks'])): ?>
+                        <div class="mt-2 p-2 bg-white rounded border border-warning">
+                            <strong><i class="fas fa-comment-dots text-danger me-1"></i> Reviewer Remarks:</strong> 
+                            <span class="text-danger fw-bold ms-1"><?= htmlspecialchars($existing_data['remarks']) ?></span>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <a href="welfare-actions.php" class="btn btn-sm btn-warning fw-bold">View History</a>
             </div>
@@ -702,8 +708,14 @@ function renderContent() {
                             </div>
                             <div class="span-2" id="epfReasonCard">
                                 <label class="form-label required">3. EPF Non-Registration Reason</label>
-                                <textarea class="form-control" name="epf_non_registration_reason" id="epf_non_registration_reason" rows="3" placeholder="Enter reason for not registered under EPF" <?= $readonly_attr ?>><?= htmlspecialchars($epf_reason) ?></textarea>
-                            </div>
+                                <select class="form-select mb-2" name="epf_non_registration_reason_type" id="epf_non_registration_reason_type" <?= $readonly_attr ?> onchange="document.getElementById('epf_reason_other_container').style.display = this.value === 'Others' ? 'block' : 'none';">
+                                    <option value="">Select Reason</option>
+                                    <option value="Above Coverage" <?= ($epf_reason === 'Above Coverage') ? 'selected' : '' ?>>1. Above Coverage</option>
+                                    <option value="Others" <?= ($epf_reason && $epf_reason !== 'Above Coverage') ? 'selected' : '' ?>>2. Others</option>
+                                </select>
+                                <div id="epf_reason_other_container" style="display: <?= ($epf_reason && $epf_reason !== 'Above Coverage') ? 'block' : 'none' ?>;">
+                                    <textarea class="form-control" name="epf_non_registration_reason" id="epf_non_registration_reason" rows="2" placeholder="Please specify other reason" <?= $readonly_attr ?>><?= ($epf_reason !== 'Above Coverage') ? htmlspecialchars($epf_reason) : '' ?></textarea>
+                                </div></div>
                         </div>
                     </div>
 
@@ -731,8 +743,14 @@ function renderContent() {
                             </div>
                             <div class="span-2" id="esi_reason_container">
                                 <label class="form-label required">Reason</label>
-                                <textarea class="form-control" name="esi_non_registration_reason" id="esi_non_registration_reason" rows="3" placeholder="Enter reason for not registered under ESI" <?= $readonly_attr ?>><?= htmlspecialchars($esi_reason) ?></textarea>
-                            </div>
+                                <select class="form-select mb-2" name="esi_non_registration_reason_type" id="esi_non_registration_reason_type" <?= $readonly_attr ?> onchange="document.getElementById('esi_reason_other_container').style.display = this.value === 'Others' ? 'block' : 'none';">
+                                    <option value="">Select Reason</option>
+                                    <option value="Above Coverage" <?= ($esi_reason === 'Above Coverage') ? 'selected' : '' ?>>1. Above Coverage</option>
+                                    <option value="Others" <?= ($esi_reason && $esi_reason !== 'Above Coverage') ? 'selected' : '' ?>>2. Others</option>
+                                </select>
+                                <div id="esi_reason_other_container" style="display: <?= ($esi_reason && $esi_reason !== 'Above Coverage') ? 'block' : 'none' ?>;">
+                                    <textarea class="form-control" name="esi_non_registration_reason" id="esi_non_registration_reason" rows="2" placeholder="Please specify other reason" <?= $readonly_attr ?>><?= ($esi_reason !== 'Above Coverage') ? htmlspecialchars($esi_reason) : '' ?></textarea>
+                                </div></div>
                             <div class="span-2">
                                 <div class="alert alert-warning py-2 px-3 mb-0 d-none" id="esi-ec-warning">Either ESI or EC Policy is mandatory</div>
                             </div>
@@ -743,7 +761,7 @@ function renderContent() {
                         <div class="registration-section-header">5. Wage Declaration</div>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="wage_declaration" id="wage_declaration" value="I declare to pay minimum wage as per government norms" <?= !empty($existing_data['wage_declaration']) ? 'checked' : '' ?> required <?= $disabled_attr ?>>
-                            <label class="form-check-label fw-semibold" for="wage_declaration">With this I declare to pay minimum wage as per government norms.</label>
+                            <label class="form-check-label fw-semibold" for="wage_declaration">I declare to pay minimum wage as per government norms.</label>
                         </div>
                         <input type="hidden" name="wage_category" value="<?= htmlspecialchars($existing_data['salary_category'] ?? ($existing_data['wage_category'] ?? '')) ?>">
                         <input type="hidden" name="salary_category" value="<?= htmlspecialchars($existing_data['salary_category'] ?? ($existing_data['wage_category'] ?? '')) ?>">
@@ -789,8 +807,8 @@ function renderContent() {
                     </div>
 
                     <div class="registration-card" id="reasonCard">
-                        <div class="registration-section-header">7. EC Policy Non-Coverage Reason</div>
-                        <textarea class="form-control" name="ecp_exemption_reason" id="ecp_exemption_reason" placeholder="Enter reason for not covered under EC Policy" <?= $limited_edit_readonly_attr ?>><?= htmlspecialchars($ecp_reason) ?></textarea>
+                        <div class="registration-section-header">7. Employee Compensation Policy</div>
+                        <textarea class="form-control" name="ecp_exemption_reason" id="ecp_exemption_reason" placeholder="Enter reason for not covered under EC Policy" <?= $readonly_attr ?>><?= htmlspecialchars($ecp_reason) ?></textarea>
                         <input type="hidden" name="epf_esi_exemption_reason" id="epf_esi_exemption_reason" value="<?= htmlspecialchars($existing_data['epf_esi_exemption_reason'] ?? '') ?>">
                     </div>
 
@@ -858,7 +876,7 @@ function renderContent() {
                             </div>
                         </div>
                     </div>
-                    <div class="registration-card"><div class="registration-section-header">12. Name of Contact Person</div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($existing_data['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>></div>
+                    <div class="registration-card"><div class="registration-section-header">12. Name of Contact Person <span class="text-danger">*</span></div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($existing_data['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>></div>
                     <div class="registration-card">
                         <div class="registration-section-header">13. Mobile Number + Alternate Mobile Number</div>
                         <div class="registration-grid">
@@ -906,7 +924,7 @@ function renderContent() {
                                     </div>
                                     <div class="col-md-6 mb-2">
                                         <label class="form-label required">Validity Date</label>
-                                        <input type="date" name="insurance_validity" id="insurance_validity" class="form-control" value="<?= htmlspecialchars($existing_data['insurance_validity'] ?? '') ?>" required>
+                                        <input type="date" name="insurance_validity" id="insurance_validity" class="form-control" value="<?= htmlspecialchars($existing_data['insurance_validity'] ?? '') ?>" max="9999-12-31" required>
                                     </div>
                                     <div class="col-md-6 mb-2">
                                         <label class="form-label required">Workers Covered</label>
@@ -1121,6 +1139,31 @@ function renderContent() {
     const ANNEXURE3A_LIMITED_EDIT = <?= $is_limited_update_mode ? 'true' : 'false' ?>;
 
     const workOrders = <?= json_encode($work_orders ?? []) ?>;
+
+    function getEditableState() {
+        const state = {
+            ecp: [],
+            license: []
+        };
+        document.querySelectorAll('#ecpTableBody .ecp-row').forEach(row => {
+            state.ecp.push({
+                number: row.querySelector('input[name="ecp_number[]"]')?.value || '',
+                valid_from: row.querySelector('input[name="ecp_valid_from[]"]')?.value || '',
+                valid_to: row.querySelector('input[name="ecp_valid_to[]"]')?.value || '',
+                workers: row.querySelector('input[name="ecp_workers[]"]')?.value || ''
+            });
+        });
+        document.querySelectorAll('#licenseTableBody .license-row').forEach(row => {
+            state.license.push({
+                no: row.querySelector('input[name="license_no[]"]')?.value || '',
+                validity: row.querySelector('input[name="license_validity[]"]')?.value || '',
+                issued: row.querySelector('input[name="issued_date[]"]')?.value || '',
+                expiry: row.querySelector('input[name="expiry_date[]"]')?.value || ''
+            });
+        });
+        return JSON.stringify(state);
+    }
+    let initialEditableState = '';
 
     document.addEventListener('DOMContentLoaded', function() {
         const selectAllSO = document.getElementById('selectAllSO');
@@ -1547,8 +1590,20 @@ function renderContent() {
     document.getElementById('annexure3AForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        // Manual Validation for Required Fields (since novalidate is on)
         const form = e.target;
+        const btn = document.getElementById('submitBtn');
+        const isResubmit = btn && (btn.innerHTML.toLowerCase().includes('resubmit') || ANNEXURE3A_LIMITED_EDIT);
+
+        // Client-side modification verification in resubmit mode
+        if (ANNEXURE3A_LIMITED_EDIT && isResubmit) {
+            const currentState = getEditableState();
+            if (currentState === initialEditableState) {
+                await showAnnexure3AFeedback('No changes detected in either "Employee Compensation Policy" or "Labour License Details". Please make modifications before resubmitting.', 'warning', 'No changes detected');
+                return;
+            }
+        }
+
+        // Manual Validation for Required Fields (since novalidate is on)
         const isDateValid = validateAllDates();
         const isWorkerCatValid = ANNEXURE3A_LIMITED_EDIT || validateWorkerCategories();
         toggleLicenceMandatory();
@@ -1568,7 +1623,6 @@ function renderContent() {
             return;
         }
 
-        const btn = document.getElementById('submitBtn');
         const originalHtml = btn.innerHTML;
         
         btn.disabled = true;
@@ -1661,12 +1715,33 @@ function renderContent() {
         updateSlNos('ecpTableBody');
         updateSlNos('licenseTableBody');
         toggleLicenceMandatory();
+        initialEditableState = getEditableState();
     });
     document.querySelectorAll('.worker-count').forEach(input => input.addEventListener('input', toggleLicenceMandatory));
     document.querySelectorAll('.worker-cat-check').forEach(input => input.addEventListener('change', validateWorkerCategories));
     document.querySelectorAll('input[name="epf_registered"]').forEach(input => input.addEventListener('change', toggleEPF));
     document.querySelectorAll('input[name="esi_registered"]').forEach(input => input.addEventListener('change', toggleESI));
     document.querySelectorAll('input[name="ecp_covered"]').forEach(input => input.addEventListener('change', toggleEcpPolicy));
+
+    (function normalizeAnnexure3AScroll() {
+        document.documentElement.style.height = '100vh';
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.height = '100vh';
+        document.body.style.overflow = 'hidden';
+        const wrapper = document.querySelector('.layout-wrapper');
+        const main = document.querySelector('.main-content');
+        if (wrapper) {
+            wrapper.style.height = 'calc(100vh - 72px)';
+            wrapper.style.minHeight = '0';
+            wrapper.style.overflow = 'hidden';
+        }
+        if (main) {
+            main.style.height = 'calc(100vh - 72px)';
+            main.style.overflowY = 'auto';
+            main.style.overflowX = 'hidden';
+            main.style.padding = '24px';
+        }
+    })();
 </script>
 <?php
 }

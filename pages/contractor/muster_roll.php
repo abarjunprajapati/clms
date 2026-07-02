@@ -429,43 +429,37 @@ document.getElementById('uploadForm')?.addEventListener('submit', function(e) {
         return;
     }
 
+    const formEl = document.getElementById('uploadForm');
+    const formData = new FormData(formEl);
+    
     Swal.fire({
-        title: 'Submit Muster Roll?',
-        text: 'Are you sure you want to upload this signed copy for verification?',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, upload'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            const formData = new FormData(this);
-            Swal.fire({
-                title: 'Uploading...',
-                didOpen: () => { Swal.showLoading(); }
-            });
+        title: 'Uploading...',
+        text: 'Please wait while your document is being uploaded.',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
+    });
 
-            fetch('../../api/contractor/upload_muster_roll.php', {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
-                }
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    Swal.fire('Success', data.message || 'Muster Roll uploaded successfully.', 'success')
-                    .then(() => {
-                        window.location.reload();
-                    });
-                } else {
-                    Swal.fire('Error', data.message || 'Failed to upload Muster Roll.', 'error');
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                Swal.fire('Error', 'An unexpected connection error occurred.', 'error');
-            });
+    fetch('../../api/contractor/upload_muster_roll.php', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
         }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire('Success', data.message || 'Muster Roll uploaded successfully.', 'success')
+            .then(() => {
+                window.location.reload();
+            });
+        } else {
+            Swal.fire('Error', data.message || 'Failed to upload Muster Roll.', 'error');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        Swal.fire('Error', 'An unexpected connection error occurred.', 'error');
     });
 });
 </script>

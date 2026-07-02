@@ -160,10 +160,10 @@ function renderContent() {
                   <span class="badge badge-danger"><?= htmlspecialchars($blockMessage) ?></span>
                   <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><?= $attempts ?> attempt(s), <?= (int)$daysSinceFirst ?> day(s)</div>
                 <?php else: ?>
-                <form action="../../api/safety/request_retraining.php" method="POST" style="display:inline">
+                <form action="../../api/safety/request_retraining.php" method="POST" style="display:inline" class="ajax-retrain-form">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="workman_id" value="<?= $w['id'] ?>">
-                    <button type="submit" class="btn btn-sm btn-primary">Allow Retest</button>
+                    <button type="submit" class="btn btn-sm btn-primary retrain-btn">Allow Retest</button>
                 </form>
                 <div style="font-size:11px;color:var(--text-muted);margin-top:4px"><?= $attempts ?> / 3 attempt(s)</div>
                 <?php endif; ?>
@@ -188,6 +188,58 @@ function renderContent() {
       .retraining-stat span{font-size:11px;color:#64748b;font-weight:800;text-transform:uppercase}
       @media(max-width:760px){.retraining-header{flex-direction:column;align-items:stretch}.retraining-stats{grid-template-columns:1fr}}
     </style>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.ajax-retrain-form').forEach(form => {
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const btn = this.querySelector('.retrain-btn');
+                const originalText = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+                
+                try {
+                    const formData = new FormData(this);
+                    const response = await fetch(this.action, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        if (typeof Swal !== 'undefined') {
+                            await Swal.fire('Success', data.message || 'Worker status reset for re-training.', 'success');
+                        } else {
+                            alert(data.message || 'Worker status reset for re-training.');
+                        }
+                        location.reload();
+                    } else {
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire('Error', data.error || 'Failed to reset worker status.', 'error');
+                        } else {
+                            alert(data.error || 'Failed to reset worker status.');
+                        }
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                    }
+                } catch (err) {
+                    console.error(err);
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire('Error', 'Network error. Please try again.', 'error');
+                    } else {
+                        alert('Network error. Please try again.');
+                    }
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            });
+        });
+    });
+    </script>
     <?php
 }
 

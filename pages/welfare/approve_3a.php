@@ -123,7 +123,24 @@ function renderContent() {
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 3000; padding: 20px; overflow-y: auto; }
 .modal-content { width: 100%; border-radius: 16px; border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 30px 80px rgba(0,0,0,0.6); background: rgba(6, 12, 24, 0.98); color: var(--text-primary); max-height: 90vh; display: flex; flex-direction: column; }
 .modal-body { color: var(--text-primary); padding: 20px 28px; overflow-y: auto; }
-#detailsModal, #detailsModal * { color: #ffffff !important; }
+
+/* Details Modal white background and blue headings */
+#detailsModal .modal-content { background: #ffffff !important; color: #1e293b !important; border: 1px solid #cbd5e1 !important; }
+#detailsModal h3 { color: #1e3a8a !important; }
+#detailsModal .modal-header { border-bottom: 1px solid #cbd5e1 !important; background: transparent !important; }
+#detailsModal label { color: #475569 !important; }
+#detailsModal th { color: #1e293b !important; background-color: #f1f5f9 !important; border: 1px solid #cbd5e1 !important; }
+#detailsModal td { color: #334155 !important; border: 1px solid #cbd5e1 !important; }
+#detailsModal .form-section-card { background: #f8fafc !important; border: 1px solid #e2e8f0 !important; }
+#detailsModal .form-section-header { color: #1e3a8a !important; border-bottom: 1px solid #cbd5e1 !important; }
+#detailsModal .value-box { background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important; }
+#detailsModal code { color: #0f172a !important; }
+#detailsModal .doc-card { background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important; }
+#detailsModal .doc-icon { color: #2563eb !important; }
+#detailsModal .doc-type { color: #475569 !important; }
+#detailsModal .doc-name { color: #0f172a !important; }
+#detailsModal .no-docs { color: #475569 !important; border: 1px dashed #cbd5e1 !important; }
+
 .hidden { display: none !important; visibility: hidden !important; }
 .modal-header { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.01); padding: 18px 24px; }
 .btn-close { background: none; border: none; font-size: 26px; color: var(--text-muted); cursor: pointer; transition: color 0.15s ease; }
@@ -399,6 +416,7 @@ async function process3A(id, status) {
         `,
         icon: status === 'approved' ? 'question' : 'warning',
         showCancelButton: true,
+        width: '400px',
         confirmButtonColor: confirmColor,
         confirmButtonText: confirmText,
         cancelButtonText: 'Cancel',

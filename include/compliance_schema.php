@@ -140,7 +140,60 @@ function ensureComplianceSchema($conn) {
         KEY idx_ecr_uan (uan)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+
+    // LWF Rate Master table (set by welfare admin)
+    $conn->query("CREATE TABLE IF NOT EXISTS lwf_rate_master (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        employee_contribution DECIMAL(10,2) NOT NULL DEFAULT 45.00,
+        employer_contribution DECIMAL(10,2) NOT NULL DEFAULT 45.00,
+        effective_from DATE NOT NULL,
+        created_by INT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Insert default rate if empty
+    $conn->query("INSERT IGNORE INTO lwf_rate_master (id, employee_contribution, employer_contribution, effective_from)
+        SELECT 1, 45.00, 45.00, '2020-01-01' WHERE NOT EXISTS (SELECT 1 FROM lwf_rate_master LIMIT 1)");
+
+    // LWF Compliance records table
+    $conn->query("CREATE TABLE IF NOT EXISTS compliance_lwf (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        contractor_id INT NOT NULL,
+        period_half ENUM('first','second') NOT NULL,
+        period_year INT NOT NULL,
+        worker_count INT DEFAULT 0,
+        employee_contribution DECIMAL(10,2) DEFAULT 0.00,
+        employer_contribution DECIMAL(10,2) DEFAULT 0.00,
+        due_amount DECIMAL(12,2) DEFAULT 0.00,
+        paid_amount DECIMAL(12,2) DEFAULT 0.00,
+        payment_proof_path VARCHAR(255) NULL,
+        declaration_accepted TINYINT(1) DEFAULT 0,
+        status ENUM('pending','uploaded','mismatch','complied') DEFAULT 'pending',
+        uploaded_at TIMESTAMP NULL,
+        remarks TEXT NULL,
+        UNIQUE KEY uq_lwf_contractor_period (contractor_id, period_half, period_year),
+        KEY idx_lwf_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS compliance_certificates (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        contractor_id INT NOT NULL,
+        certificate_date DATE NOT NULL,
+        period_from DATE NOT NULL,
+        period_to DATE NOT NULL,
+        total_workmen INT DEFAULT 0,
+        form_data LONGTEXT NOT NULL,
+        status ENUM('submitted','verified','rejected') DEFAULT 'submitted',
+        remarks TEXT NULL,
+        created_by INT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_certificate_contractor (contractor_id),
+        KEY idx_certificate_period (period_from, period_to),
+        KEY idx_certificate_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     ensureMusterRollSchema($conn);
+
 }
 
 function ensureMusterRollSchema($conn) {

@@ -135,13 +135,18 @@ function renderContent() {
 
     <!-- Upload Modal -->
     <div id="uploadModal" class="modal-overlay hidden">
-      <div class="modal-box" style="max-width:420px;">
+      <div class="modal-box" style="max-width:500px;">
         <div class="modal-header">
           <h3 class="modal-title"><i class="fas fa-upload"></i> Upload Document</h3>
           <button class="modal-close" onclick="closeUploadModal()">&times;</button>
         </div>
-        <div style="padding:24px;">
+        <div style="padding:24px; max-height:80vh; overflow-y:auto;">
           <p id="uploadDocLabel" style="font-weight:700;margin-bottom:16px;color:#6366f1;"></p>
+          
+          <div id="claAlert" class="alert alert-warning" style="display:none; font-size:12px; margin-bottom:15px;">
+            <i class="fas fa-info-circle"></i> If you engage 20 or more workmen on any given day, CLRA License is mandatory. The license validity will automatically be set to 1 year from the Issue Date.
+          </div>
+
           <form id="uploadForm" enctype="multipart/form-data">
             <input type="hidden" name="doc_type" id="docTypeInput">
             <div class="form-group">
@@ -151,8 +156,58 @@ function renderContent() {
             </div>
             <div class="form-group">
               <label class="form-label">Remarks</label>
-              <input type="text" class="form-control" name="remarks" placeholder="e.g. Policy no., Expiry date...">
+              <input type="text" class="form-control" name="remarks" placeholder="e.g. Policy no., extra details...">
             </div>
+
+            <!-- Specific fields for Workmen Compensation -->
+            <div id="wcFields" style="display:none; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:15px;">
+                <h5 style="margin-top:0; color:#334155; font-size:13px; margin-bottom:10px;">Policy Details (Required)</h5>
+                <div style="display:flex; gap:10px;">
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label required">Valid From</label>
+                        <input type="date" class="form-control" name="wc_valid_from" id="wc_valid_from">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label required">Valid To</label>
+                        <input type="date" class="form-control" name="wc_valid_to" id="wc_valid_to">
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label required">No. of Workers</label>
+                        <input type="number" class="form-control" name="wc_workers" id="wc_workers" min="1">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label required">Rate of Wages (Rs)</label>
+                        <input type="number" class="form-control" name="wc_wages" id="wc_wages" step="0.01" min="0">
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label required">Does daily wage exceed ESIC coverage limit?</label>
+                    <select name="wc_esic_override" class="form-control">
+                        <option value="No">No</option>
+                        <option value="Yes">Yes</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Specific fields for CLA License -->
+            <div id="claFields" style="display:none; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:15px;">
+                <h5 style="margin-top:0; color:#334155; font-size:13px; margin-bottom:10px;">CLRA License Details</h5>
+                <div class="form-group">
+                    <label class="form-label required">License Number</label>
+                    <input type="text" class="form-control" name="cla_license_no" id="cla_license_no">
+                </div>
+                <div class="form-group">
+                    <label class="form-label required">Date of Issue</label>
+                    <input type="date" class="form-control" name="cla_issue_date" id="cla_issue_date">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Expiry Date</label>
+                    <input type="text" class="form-control" id="cla_expiry_display" disabled placeholder="Automatically calculated (1 Year)">
+                </div>
+            </div>
+
             <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px;" id="uploadBtn">
               <i class="fas fa-upload"></i> Upload Document
             </button>
@@ -194,8 +249,47 @@ function renderContent() {
     function openUpload(key, label) {
       document.getElementById('uploadDocLabel').textContent = label;
       document.getElementById('docTypeInput').value = key;
+      document.getElementById('uploadForm').reset();
+      
+      const wcFields = document.getElementById('wcFields');
+      const claFields = document.getElementById('claFields');
+      const claAlert = document.getElementById('claAlert');
+      
+      wcFields.style.display = 'none';
+      claFields.style.display = 'none';
+      claAlert.style.display = 'none';
+      
+      // Make inputs unrequired by default
+      document.querySelectorAll('#wcFields input').forEach(i => i.required = false);
+      document.querySelectorAll('#claFields input').forEach(i => i.required = false);
+
+      if (key === 'workmen_compensation' || key === 'insurance_policy') {
+          wcFields.style.display = 'block';
+          document.getElementById('wc_valid_from').required = true;
+          document.getElementById('wc_valid_to').required = true;
+          document.getElementById('wc_workers').required = true;
+          document.getElementById('wc_wages').required = true;
+      } else if (key === 'cla_license') {
+          claFields.style.display = 'block';
+          claAlert.style.display = 'block';
+          document.getElementById('cla_license_no').required = true;
+          document.getElementById('cla_issue_date').required = true;
+      }
+
       document.getElementById('uploadModal').classList.remove('hidden');
     }
+
+    document.getElementById('cla_issue_date')?.addEventListener('change', function(e) {
+        if(this.value) {
+            let d = new Date(this.value);
+            d.setFullYear(d.getFullYear() + 1);
+            d.setDate(d.getDate() - 1); // Expiry is 1 day before exactly 1 year
+            document.getElementById('cla_expiry_display').value = d.toISOString().split('T')[0];
+        } else {
+            document.getElementById('cla_expiry_display').value = '';
+        }
+    });
+
     function closeUploadModal() { document.getElementById('uploadModal').classList.add('hidden'); }
 
     function showToast(msg, type='success') {

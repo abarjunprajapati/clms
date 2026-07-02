@@ -1,5 +1,6 @@
 <?php
 // api/contractor/upload_muster_roll.php
+error_reporting(0);
 session_start();
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/compliance_schema.php';
@@ -54,7 +55,9 @@ if ($file['size'] > 5 * 1024 * 1024) {
 
 $upload_dir = __DIR__ . '/../../uploads/muster_roll/';
 if (!is_dir($upload_dir)) {
-    mkdir($upload_dir, 0777, true);
+    if (!@mkdir($upload_dir, 0777, true)) {
+        respondJSON(false, 'Server configuration error: Cannot create upload directory.');
+    }
 }
 
 // Generate secure filename
@@ -62,7 +65,7 @@ $filename = 'muster_roll_' . $contractor_id . '_' . str_replace('-', '_', $month
 $relative_path = 'uploads/muster_roll/' . $filename;
 $target_path = $upload_dir . $filename;
 
-if (!move_uploaded_file($file['tmp_name'], $target_path)) {
+if (!@move_uploaded_file($file['tmp_name'], $target_path)) {
     respondJSON(false, 'Failed to save uploaded file on server.');
 }
 

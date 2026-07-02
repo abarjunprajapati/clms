@@ -27,10 +27,10 @@ try {
     } elseif ($worker_type === 'supervisor') {
         $workmen_count = db_scalar($conn, "SELECT COUNT(*) FROM workmen WHERE contractor_id = ? AND worker_type = 'workmen' AND status != 'inactive'", 'i', [$contractor_id]);
         $supervisor_count = db_scalar($conn, "SELECT COUNT(*) FROM workmen WHERE contractor_id = ? AND worker_type = 'supervisor' AND status != 'inactive'", 'i', [$contractor_id]);
-        $allowed = ceil($workmen_count / 50);
+        $allowed = ceil($workmen_count / 10);
         if ($allowed == 0) $allowed = 1; // At least 1 supervisor if there are any workers
-        if ($supervisor_count >= $allowed && $workmen_count > 0) {
-             throw new Exception("Supervisor limit reached (1 per 50 workmen). Current: $supervisor_count, Allowed: $allowed based on $workmen_count workmen.");
+        if ($supervisor_count >= $allowed) {
+             throw new Exception("Supervisor limit reached (1 per 10 workmen). Current: $supervisor_count, Allowed: $allowed based on $workmen_count workmen.");
         }
     }
 

@@ -16,7 +16,7 @@ if (empty($vendor_code)) {
 $pos = db_fetch_all($conn,
     "SELECT po_number, po_type, purchasing_group, header_text, currency,
             total_value, document_date, tender_type, tender_type_text,
-            msme_type, msme_type_text, release_status, contract_number,
+            msme_type, msme_type_text, contract_number,
             company_code, purchasing_organization, document_type
      FROM sap_po_master
      WHERE TRIM(vendor_code) = TRIM(?)

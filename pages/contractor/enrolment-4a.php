@@ -318,7 +318,7 @@ function enrolment_get_customer_portal_contractor($conn) {
 }
 
 function renderContent() {
-    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages, $activeAgeRange, $trainingLanguages;
+    global $conn, $user_id, $vendor_code, $educationFlow, $role, $requestedType, $selectedType, $prefillAadhaar, $minimumCertifiedWage, $activeCertifiedWages, $activeAgeRange, $trainingLanguages, $enrolmentTypeMap;
     $nationalityOptions = clms_get_nationality_options($conn);
     $religionOptions = clms_get_religion_options($conn);
     $stateDistrictMap = clms_get_state_district_map($conn);
@@ -357,6 +357,33 @@ function renderContent() {
         return;
     }
 
+    $entryEnrollmentLocked = false;
+    $entryEnrollmentLockMessage = '';
+    if ($role === 'contractor') {
+        $registrationStatus = strtolower((string)($contractor['status'] ?? ''));
+        $annexureStatus = '';
+        if ($c_id && enrolment_table_exists($conn, 'annexure2a')) {
+            $annexureRow = enrolment_fetch_one($conn, "SELECT workflow_status FROM annexure2a WHERE contractor_id = " . (int)$c_id . " ORDER BY id DESC LIMIT 1");
+            $annexureStatus = strtolower((string)($annexureRow['workflow_status'] ?? ''));
+        }
+        $lockedStatuses = ['pending', 'submitted', 'resubmitted', 'under_review', 'under_verification', 'correction_required', 'hold', 'rejected', 'block', 'blocked'];
+        if ($registrationStatus !== 'approved' || in_array($annexureStatus, $lockedStatuses, true)) {
+            $entryEnrollmentLocked = true;
+            $entryEnrollmentLockMessage = 'Entry Pass Enrollment will open after Welfare approves the latest Contractor Registration submission.';
+        }
+    } elseif ($role === 'customer') {
+        $custCode = $_SESSION['customer_code'] ?? '';
+        $annexure3aStatus = '';
+        if ($custCode && enrolment_table_exists($conn, 'contractor_annexure3a')) {
+            $annexureRow = enrolment_fetch_one($conn, "SELECT status FROM contractor_annexure3a WHERE customer_code = '" . mysqli_real_escape_string($conn, $custCode) . "' ORDER BY id DESC LIMIT 1");
+            $annexure3aStatus = strtolower((string)($annexureRow['status'] ?? ''));
+        }
+        $lockedStatuses = ['pending', 'submitted', 'resubmitted', 'under_review', 'under_verification', 'correction_required', 'hold', 'rejected', 'block', 'blocked'];
+        if (in_array($annexure3aStatus, $lockedStatuses, true)) {
+            $entryEnrollmentLocked = true;
+            $entryEnrollmentLockMessage = 'Entry Pass Enrollment will open after Welfare approves the latest Customer Registration (Annexure 3A) submission.';
+        }
+    }
     $project_name = '';
     $department_name = $contractor['work_awarding_department'] ?? '';
     $vendorCodeForSap = $contractor['vendor_code'] ?? ($_SESSION['contractor_id'] ?? '');
@@ -550,9 +577,51 @@ function renderContent() {
         }
         $roleTypeExpr = "COALESCE(" . implode(', ', $roleTypeFallbacks) . ") AS role_type";
         $orderExpr = enrolment_column_exists($conn, 'workmen', 'created_at') ? 'created_at DESC' : 'id DESC';
+        $latestTrainingRequestIdSelect = "(
+                    SELECT tr.id
+                    FROM training_requests tr
+                    WHERE tr.workman_id = workmen.id
+                    ORDER BY tr.id DESC
+                    LIMIT 1
+                ) AS latest_training_request_id";
+        $latestTrainingResultSelect = "COALESCE((
+                    SELECT tsw.result
+                    FROM training_session_workers tsw
+                    WHERE tsw.workman_id = workmen.id
+                      AND LOWER(COALESCE(tsw.result, 'pending')) NOT IN ('', 'pending')
+                    ORDER BY tsw.id DESC
+                    LIMIT 1
+                ), (
+                    SELECT trr.result
+                    FROM training_results trr
+                    WHERE trr.workman_id = workmen.id
+                      AND LOWER(COALESCE(trr.result, '')) <> ''
+                    ORDER BY trr.id DESC
+                    LIMIT 1
+                )) AS latest_training_result";
+        $latestTrainingResultRequestIdSelect = "COALESCE((
+                    SELECT tsw.training_request_id
+                    FROM training_session_workers tsw
+                    WHERE tsw.workman_id = workmen.id
+                      AND LOWER(COALESCE(tsw.result, 'pending')) NOT IN ('', 'pending')
+                    ORDER BY tsw.id DESC
+                    LIMIT 1
+                ), (
+                    SELECT trr.training_request_id
+                    FROM training_results trr
+                    WHERE trr.workman_id = workmen.id
+                      AND LOWER(COALESCE(trr.result, '')) <> ''
+                    ORDER BY trr.id DESC
+                    LIMIT 1
+                )) AS latest_training_result_request_id";
+        $trainingAttempts30Select = clms_training_attempts_30_sql('workmen.id') . ' AS training_attempts_30';
         if ($requestedType === 'retraining') {
             $typeWhere = "workmen.role_type IN ('Workman', 'WORKMAN') AND (LOWER(COALESCE(workmen.training_status, '')) IN ('fail', 'failed', 'training_failed', 'absent') OR EXISTS (
-                SELECT 1 FROM training_requests tr_fail WHERE tr_fail.workman_id = workmen.id AND LOWER(COALESCE(tr_fail.status, '')) IN ('fail', 'failed', 'absent')
+                SELECT 1 FROM training_requests tr_fail WHERE tr_fail.workman_id = workmen.id AND LOWER(COALESCE(tr_fail.status, '')) IN ('fail', 'failed', 'training_failed', 'absent')
+            ) OR EXISTS (
+                SELECT 1 FROM training_session_workers tsw_fail WHERE tsw_fail.workman_id = workmen.id AND LOWER(COALESCE(tsw_fail.result, '')) IN ('fail', 'failed')
+            ) OR EXISTS (
+                SELECT 1 FROM training_results tr_res_fail WHERE tr_res_fail.workman_id = workmen.id AND LOWER(COALESCE(tr_res_fail.result, '')) IN ('fail', 'failed')
             ))";
         } else {
             $typeWhere = enrolment_worker_type_condition($conn, 'workmen', $requestedType);
@@ -636,6 +705,9 @@ function renderContent() {
                     ORDER BY tr.id DESC
                     LIMIT 1
                 ) AS latest_training_request_status,
+                $latestTrainingRequestIdSelect,
+                $latestTrainingResultSelect,
+                $latestTrainingResultRequestIdSelect,
                 (
                     SELECT tr.batch_number
                     FROM training_requests tr
@@ -650,13 +722,7 @@ function renderContent() {
                     ORDER BY tr.id DESC
                     LIMIT 1
                 ) AS latest_training_date,
-                (
-                    SELECT COUNT(*)
-                    FROM training_requests tr
-                    WHERE tr.workman_id = workmen.id
-                      AND LOWER(COALESCE(tr.status, 'pending')) IN ('failed','fail','absent','passed')
-                      AND tr.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                ) AS training_attempts_30,
+                $trainingAttempts30Select,
                 " . enrolment_expr($conn, 'workmen', 'status', 'gate_pass_status') . ",
                 " . enrolment_expr($conn, 'workmen', 'worker_status', 'worker_status', "'active'") . ",
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
@@ -748,6 +814,9 @@ function renderContent() {
                     ORDER BY tr.id DESC
                     LIMIT 1
                 ) AS latest_training_request_status,
+                $latestTrainingRequestIdSelect,
+                $latestTrainingResultSelect,
+                $latestTrainingResultRequestIdSelect,
                 (
                     SELECT tr.batch_number
                     FROM training_requests tr
@@ -762,13 +831,7 @@ function renderContent() {
                     ORDER BY tr.id DESC
                     LIMIT 1
                 ) AS latest_training_date,
-                (
-                    SELECT COUNT(*)
-                    FROM training_requests tr
-                    WHERE tr.workman_id = workmen.id
-                      AND LOWER(COALESCE(tr.status, 'pending')) IN ('failed','fail','absent','passed')
-                      AND tr.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                ) AS training_attempts_30,
+                $trainingAttempts30Select,
                 " . enrolment_expr($conn, 'workmen', 'status', 'gate_pass_status') . ",
                 " . enrolment_expr($conn, 'workmen', 'worker_status', 'worker_status') . ",
                 " . enrolment_expr($conn, 'workmen', 'temp_id', 'temp_id') . ",
@@ -936,7 +999,7 @@ function renderContent() {
       outline: none;
     }
     #enrollForm .form-control[readonly] {
-      background-color: #f8fafc !important;
+      background-color: #ffffff !important;
       color: #334155 !important;
     }
     </style>
@@ -946,13 +1009,22 @@ function renderContent() {
         <h2 class="page-title"><i class="fas fa-users" style="color:#6366f1;margin-right:10px;"></i> <?= htmlspecialchars($selectedType['label']) ?></h2>
         <!-- <p class="page-subtitle">Add workers with full Annexure 4A details and document uploads.</p> -->
       </div>
-      <button class="btn btn-primary" id="btnOpenModal"><i class="fas fa-plus"></i> New <?= htmlspecialchars($selectedType['pass']) ?></button>
+      <button class="btn btn-primary" id="btnOpenModal" style="display:none;"><i class="fas fa-plus"></i> New <?= htmlspecialchars($selectedType['pass']) ?></button>
     </div>
 
+    <?php if ($entryEnrollmentLocked): ?>
+      <div class="alert alert-warning" style="margin:0 0 16px 0;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div><i class="fas fa-lock"></i> <?= htmlspecialchars($entryEnrollmentLockMessage) ?></div>
+        <a class="btn btn-sm btn-primary" href="annexure-2a.php">Open Contractor Registration</a>
+      </div>
+    <?php endif; ?>
+
     <div class="card shadow-sm mb-4" style="border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; background: #ffffff;">
-      <div class="card-header bg-light py-3 border-bottom d-flex align-items-center gap-2">
-        <i class="fas fa-chart-line text-primary"></i>
-        <h5 class="mb-0 text-dark fw-bold" style="font-size: 14px;">Workmen Enrolment Dashboard</h5>
+      <div class="card-header py-3 border-bottom">
+        <div class="card-title text-white m-0 d-flex align-items-center gap-2">
+          <i class="fas fa-chart-line"></i>
+          <h5 class="mb-0 fw-bold text-white" style="font-size: 14px;"><?= htmlspecialchars($selectedType['label']) ?> Dashboard</h5>
+        </div>
       </div>
       <div class="card-body p-3">
         <div class="row g-3">
@@ -1051,7 +1123,18 @@ function renderContent() {
           </thead>
           <tbody>
             <?php foreach ($workers as $w):
+              $latestReqId = (int)($w['latest_training_request_id'] ?? 0);
+              $latestResultReqId = (int)($w['latest_training_result_request_id'] ?? 0);
+              $latestTrainingResult = strtolower((string)($w['latest_training_result'] ?? ''));
               $bookingStatus = strtolower((string)($w['latest_training_request_status'] ?: ($w['safety_status'] ?? 'pending')));
+              $newerRequestAfterResult = $latestResultReqId > 0 && $latestReqId > 0 && $latestResultReqId !== $latestReqId;
+              if ($latestTrainingResult !== '' && !$newerRequestAfterResult) {
+                  if (in_array($latestTrainingResult, ['pass', 'passed'], true)) {
+                      $bookingStatus = 'passed';
+                  } elseif (in_array($latestTrainingResult, ['fail', 'failed'], true)) {
+                      $bookingStatus = 'failed';
+                  }
+              }
               $safetyEnrollmentStatus = strtolower((string)($w['safety_enrollment_status'] ?? 'pending'));
               if (strtolower((string)($w['latest_training_request_status'] ?? '')) === 'pending_safety') {
                   $safetyEnrollmentStatus = 'pending';
@@ -1147,13 +1230,11 @@ function renderContent() {
                     <div style="margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px;">
                       <a class="btn btn-sm btn-outline-primary" style="padding: 2px 6px; font-size: 11px;" href="<?= htmlspecialchars($bookUrl) ?>"><i class="fas fa-calendar-check"></i> <?= $bookingClass === 'fail' ? 'Book Retest' : 'Book Safety' ?></a>
                       <?php if ($bookingClass === 'fail' && $attemptsLeft > 0): ?>
-                      <button class="btn btn-sm" style="padding:2px 6px; font-size:11px; background:#fef3c7; color:#92400e; border:1px solid #fcd34d;" onclick="openReEnrollModal(<?= htmlspecialchars(json_encode([
-                          'id'            => (int)$w['id'],
-                          'name'          => $w['name'],
-                          'work_order_no' => $w['work_order_no'] ?? '',
-                          'work_order_source' => $w['work_order_source'] ?? '',
-                          'attempts_left' => $attemptsLeft
-                      ])) ?>)">
+                      <?php
+                        $reEnrollPayload = $w;
+                        $reEnrollPayload['attempts_left'] = $attemptsLeft;
+                      ?>
+                      <button class="btn btn-sm" style="padding:2px 6px; font-size:11px; background:#fef3c7; color:#92400e; border:1px solid #fcd34d;" onclick="openReEnrollModal(<?= htmlspecialchars(json_encode($reEnrollPayload), ENT_QUOTES) ?>)">
                         <i class="fas fa-redo"></i> Re-enroll
                       </button>
                       <?php endif; ?>
@@ -1170,12 +1251,16 @@ function renderContent() {
                     if ($bookingClass === 'pass') {
                         $safetyEnrollmentStatus = 'approved';
                     }
-                    $safetyEnrollmentBadge = $safetyEnrollmentStatus === 'approved'
-                        ? 'text-success'
-                        : ($safetyEnrollmentStatus === 'rejected' ? 'text-danger' : 'text-warning');
-                    $safetyEnrollmentLabel = $safetyEnrollmentStatus === 'approved'
-                        ? 'Approved'
-                        : ($safetyEnrollmentStatus === 'rejected' ? 'Rejected' : 'Pending');
+                    $safetyEnrollmentBadge = $bookingClass === 'fail'
+                        ? 'text-danger'
+                        : ($safetyEnrollmentStatus === 'approved'
+                            ? 'text-success'
+                            : ($safetyEnrollmentStatus === 'rejected' ? 'text-danger' : 'text-warning'));
+                    $safetyEnrollmentLabel = $bookingClass === 'fail'
+                        ? 'Failed'
+                        : ($safetyEnrollmentStatus === 'approved'
+                            ? 'Approved'
+                            : ($safetyEnrollmentStatus === 'rejected' ? 'Rejected' : 'Pending'));
                   ?>
                   <strong class="<?= $safetyEnrollmentBadge ?>"><?= htmlspecialchars($safetyEnrollmentLabel) ?></strong>
                   <?php if ($safetyEnrollmentStatus === 'rejected' && !empty($w['safety_enrollment_remarks'])): ?>
@@ -1210,8 +1295,12 @@ function renderContent() {
               <td>
                 <div style="display:flex;gap:5px;flex-wrap:wrap;">
                   <button class="btn btn-sm btn-outline" title="View Profile" onclick="viewWorker(<?= htmlspecialchars(json_encode($w)) ?>)"><i class="fas fa-eye"></i></button>
-                  <?php if ($workerIsLocked): ?>
-                  <button class="btn btn-sm btn-outline" title="Enrollment submitted — non-editable until reviewed" style="opacity:.55;cursor:not-allowed;" onclick="showLockedMsg(<?= htmlspecialchars(json_encode(['name'=>$w['name'],'status'=>$latestReqStatus]), ENT_QUOTES) ?>)">
+                  <?php if ($entryEnrollmentLocked): ?>
+                  <button class="btn btn-sm btn-outline" title="Entry Pass Enrollment opens after Welfare approval" style="opacity:.55;cursor:not-allowed;" onclick="showEntryEnrollmentLockedMsg()">
+                    <i class="fas fa-lock"></i>
+                  </button>
+                  <?php elseif ($workerIsLocked): ?>
+                  <button class="btn btn-sm btn-outline" title="Enrollment submitted - non-editable until reviewed" style="opacity:.55;cursor:not-allowed;" onclick="showLockedMsg(<?= htmlspecialchars(json_encode(['name'=>$w['name'],'status'=>$bookingStatus]), ENT_QUOTES) ?>)">
                     <i class="fas fa-lock"></i>
                   </button>
                   <?php else: ?>
@@ -1244,10 +1333,10 @@ function renderContent() {
     </div> <!-- end listSection -->
 
     <!-- Inline Form Section -->
-    <div id="formSection" style="margin-bottom:20px;">
+    <div id="formSection" style="margin-bottom:20px; <?= $entryEnrollmentLocked ? 'display:none;' : 'display:block;' ?>">
       <div class="card">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-          <h3 class="card-title" id="enrollFormTitle">Workmen Enrollment</h3>
+          <h3 class="card-title" id="enrollFormTitle"><?= htmlspecialchars($selectedType['label']) ?></h3>
         </div>
         <script>
           document.addEventListener("DOMContentLoaded", function() {
@@ -1257,7 +1346,7 @@ function renderContent() {
               listSec.parentNode.insertBefore(formSec, listSec);
             }
           });
-          <?php if ($autoEditWorker): ?>
+          <?php if ($autoEditWorker && !$entryEnrollmentLocked): ?>
           document.addEventListener("DOMContentLoaded", function() {
             const worker = <?= json_encode($autoEditWorker) ?>;
             editWorker(worker);
@@ -1280,6 +1369,7 @@ function renderContent() {
           <input type="hidden" name="work_order_source" id="workOrderSource" value="">
           <input type="hidden" name="contractor_id" value="<?= (int)$c_id ?>">
           <input type="hidden" name="enrolment_type" value="<?= htmlspecialchars($requestedType) ?>">
+          <?php if (!$entryEnrollmentLocked): ?>
           <div class="square-tabs">
             <button type="button" class="square-tab active" data-tab="basic">1. Basic Info</button>
             <button type="button" class="square-tab" data-tab="personal">2. Personal / Medical</button>
@@ -1289,6 +1379,7 @@ function renderContent() {
             <button type="button" class="square-tab" data-tab="payment">6. Safety Fee Payment</button>
             <button type="button" class="square-tab" data-tab="training">7. Book Appointment for Safety Training</button>
           </div>
+          <?php endif; ?>
 
           <!-- Tab 1: Basic -->
           <div class="modal-tab-content" id="tab-basic">
@@ -1323,14 +1414,7 @@ function renderContent() {
               </div>
               <div class="form-group">
                 <label class="form-label required">Project No / WBS No</label>
-                <select class="form-control" name="project_name" id="projectWbsSelect" required>
-                  <option value="">Select project / WBS</option>
-                  <?php foreach ($workOptions as $wo): ?>
-                    <option value="<?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>" data-work-order="<?= htmlspecialchars($wo['work_order_no']) ?>">
-                      <?= !empty($wo['source']) ? '[' . htmlspecialchars($wo['source']) . '] ' : '' ?><?= htmlspecialchars($wo['project_no'] ?? $wo['work_order_no']) ?>
-                    </option>
-                  <?php endforeach; ?>
-                </select>
+                <input type="text" class="form-control" name="project_name" id="projectWbsSelect" required readonly placeholder="Auto-populated based on Work Order selection">
               </div>
               <div class="form-group">
                 <label class="form-label required">Date of Registration</label>
@@ -1362,7 +1446,7 @@ function renderContent() {
               <div class="form-group">
                 <label class="form-label required">Gender</label>
                 <select class="form-control" name="gender" required>
-                  <option>Male</option><option>Female</option><option>Other</option>
+                  <option>Male</option><option>Female</option><option>Transgender</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1373,7 +1457,7 @@ function renderContent() {
               <div class="form-group">
                 <label class="form-label required">Marital Status</label>
                 <select class="form-control" name="marital_status" required>
-                  <option>Single</option><option>Married</option><option>Widowed</option>
+                  <option>Single</option><option>Married</option><option>Widow</option><option>Widower</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1411,9 +1495,8 @@ function renderContent() {
               <div class="form-group">
                 <label class="form-label required">Person with Disability</label>
                 <select class="form-control" name="pwd_status" required>
-                  <option value="">Select</option>
+                  <option value="NO" selected>No</option>
                   <option value="YES">Yes</option>
-                  <option value="NO">No</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1425,13 +1508,10 @@ function renderContent() {
                 <input type="text" class="form-control" name="driving_licence_no">
               </div>
               <div class="form-group">
-                <label class="form-label">Email</label>
-                <input type="email" class="form-control" name="email">
+                <label class="form-label required">Email</label>
+                <input type="email" class="form-control" name="email" required>
               </div>
-              <div class="form-group">
-                <label class="form-label">UAN No</label>
-                <input type="text" class="form-control" name="uan_number">
-              </div>
+
             </div>
           </div>
 
@@ -1483,7 +1563,31 @@ function renderContent() {
             <div class="form-grid-3">
               <div class="form-group">
                 <label class="form-label required">Department</label>
-                <input type="text" class="form-control" name="department" value="<?= htmlspecialchars($department_name) ?>" required>
+                <select class="form-control" name="department" id="departmentSelect" required>
+                  <option value="">-- Select Department --</option>
+                  <?php
+                    // Fetch all active departments from master_departments table
+                    $masterDepts = [];
+                    $deptResult = mysqli_query($conn, "SELECT dept_name AS name FROM master_departments WHERE LOWER(COALESCE(status,'active')) = 'active' ORDER BY dept_name ASC");
+                    if ($deptResult) {
+                        while ($dr = mysqli_fetch_assoc($deptResult)) {
+                            $masterDepts[] = $dr['name'];
+                        }
+                    }
+                    // Fallback: if master_departments is empty, use work order departments
+                    if (empty($masterDepts)) {
+                        foreach ($workOptions as $wo) {
+                            $dept = trim($wo['department'] ?? '');
+                            if ($dept !== '' && !in_array($dept, $masterDepts)) $masterDepts[] = $dept;
+                        }
+                        if ($department_name !== '' && !in_array($department_name, $masterDepts)) $masterDepts[] = $department_name;
+                        sort($masterDepts);
+                    }
+                    foreach ($masterDepts as $dept):
+                  ?>
+                  <option value="<?= htmlspecialchars($dept) ?>"><?= htmlspecialchars($dept) ?></option>
+                  <?php endforeach; ?>
+                </select>
               </div>
               <div class="form-group">
                 <label class="form-label">Years of Experience</label>
@@ -1520,7 +1624,7 @@ function renderContent() {
               </div>
               <div class="form-group conditional-field hidden" id="epfNumberWrap">
                 <label class="form-label required">UAN Number</label>
-                <input type="text" class="form-control" name="pf_no" id="epfNumberInput">
+                <input type="text" class="form-control" name="pf_no" id="epfNumberInput" maxlength="12" inputmode="numeric" pattern="[0-9]{12}" title="UAN must be exactly 12 digits">
               </div>
               <div class="form-group">
                 <label class="form-label required">ESI Registered</label>
@@ -1532,7 +1636,7 @@ function renderContent() {
               </div>
               <div class="form-group conditional-field hidden" id="esiNumberWrap">
                 <label class="form-label required">ESI Number</label>
-                <input type="text" class="form-control" name="esi_no" id="esiNumberInput">
+                <input type="text" class="form-control" name="esi_no" id="esiNumberInput" maxlength="10" inputmode="numeric" pattern="[0-9]{10}" title="ESI number must be exactly 10 digits">
               </div>
               <div class="form-group">
                 <label class="form-label required">Certified Wage Rate</label>
@@ -1891,12 +1995,14 @@ function renderContent() {
         const tabOrder = ['basic', 'personal', 'address', 'work', 'docs', 'payment', 'training'];
         const scheduledTrainingSessions = <?= json_encode(db_fetch_all($conn, "SELECT id, batch_number, training_date, session_name, language_name, capacity FROM training_class_batches WHERE training_date >= CURDATE() AND LOWER(COALESCE(status, 'open')) IN ('open','scheduled','active') ORDER BY training_date ASC, session_name ASC, id ASC"), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
         
-        const defaultDepartment = <?= json_encode($department_name) ?>;
+        const defaultDepartment = "";
         const workOptions = <?= json_encode($workOptions, JSON_UNESCAPED_SLASHES) ?>;
         const requestedPassType = <?= json_encode($selectedType['pass']) ?>;
         const requestedPassLabel = <?= json_encode($selectedType['label']) ?>;
         const prefillAadhaar = <?= json_encode($prefillAadhaar) ?>;
         const currentContractorId = <?= $c_id ? (int)$c_id : 0 ?>;
+        const entryEnrollmentLocked = <?= $entryEnrollmentLocked ? 'true' : 'false' ?>;
+        const entryEnrollmentLockMessage = <?= json_encode($entryEnrollmentLockMessage) ?>;
         
         // Enforce min registration date as today client-side
         const regDateInput = document.querySelector('input[name="registration_date"]');
@@ -2192,12 +2298,19 @@ function renderContent() {
           const checkboxes = document.querySelectorAll('.work-order-cb:checked');
           const values = Array.from(checkboxes).map(cb => cb.value);
           const hiddenInput = document.getElementById('workOrderSelect');
+
+          // Allow PWO and PO to be selected together — no source-type locking
+          document.querySelectorAll('.work-order-cb').forEach(cb => {
+              cb.disabled = false;
+              cb.parentElement.style.opacity = '1';
+          });
+
           if (hiddenInput) {
             hiddenInput.value = values.join(',');
             hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
           }
           if (values.length > 0) {
-            syncWorkOrderFields(values[0]);
+            syncWorkOrderFields(values.join(','));
           } else {
             syncWorkOrderFields('');
           }
@@ -2218,6 +2331,10 @@ function renderContent() {
         lastNameInput?.addEventListener('input', updateFullName);
 
         document.getElementById('btnOpenModal').onclick = () => {
+          if (entryEnrollmentLocked) {
+            showEntryEnrollmentLockedMsg();
+            return;
+          }
           form.reset();
           resetInlineSafetyPaymentState();
           document.getElementById('workerEditId').value = '';
@@ -2249,6 +2366,8 @@ function renderContent() {
             }
           });
           formSection.scrollIntoView({ behavior: 'smooth' });
+          formSection.style.display = '';
+          if (listSection) listSection.style.display = 'none';
           activateTab('basic');
           updateNationalityLocationMode();
           toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
@@ -2267,6 +2386,8 @@ function renderContent() {
           resetWorkFlow();
           updateNationalityLocationMode();
           refreshWorkflowPaymentState(false);
+          if (listSection) listSection.style.display = '';
+          formSection.style.display = 'none';
         }
         
         function refreshWorkflowTabs() {
@@ -2314,12 +2435,22 @@ function renderContent() {
           const submitBtn = document.getElementById('btnSubmit');
           document.getElementById('btnPrevTab').style.visibility = index <= 0 ? 'hidden' : 'visible';
           const isLastTab = index === visibleTabs.length - 1;
+          const isTrainingTab = tabId === 'training';
           const isPaymentTab = tabId === 'payment';
-          let showSubmit = isLastTab;
+          let showSubmit = isLastTab || isEdit;
+          // Only suppress Submit on the payment tab for pay_later/PWO flows — never on the training (last) tab
+          if (isPaymentTab && selectedSafetyFeeOption() === 'pay_later') {
+            showSubmit = false;
+          }
           let showNext = !isLastTab;
           if (isPaymentTab && isPwo && !canBookPwoTrainingInline() && !isPwoPayLater()) {
             showNext = false;
             showSubmit = false;
+          }
+          // Training tab is always the last step — always show Submit
+          if (isTrainingTab) {
+            showSubmit = true;
+            showNext = false;
           }
           nextBtn.style.display = showNext ? 'inline-flex' : 'none';
           const draftBtn = document.getElementById('btnSaveDraft');
@@ -2356,19 +2487,56 @@ function renderContent() {
         };
 
         function syncWorkOrderFields(workOrderNo) {
-          const option = workOptions.find(item => String(item.work_order_no) === String(workOrderNo));
+          const wos = String(workOrderNo).split(',').map(s => s.trim()).filter(Boolean);
           const projectSelect = form.querySelector('[name="project_name"]');
           const deptField = form.querySelector('[name="department"]');
           const sourceInput = document.getElementById('workOrderSource');
-          if (projectSelect && option) projectSelect.value = option.project_no || option.work_order_no || '';
-          if (sourceInput) {
-            const inferred = String(option?.source || '').toUpperCase()
-              || (String(workOrderNo || '').toUpperCase().indexOf('PWO') === 0 ? 'PWO' : '');
-            sourceInput.value = inferred;
+          
+          if (wos.length > 0) {
+            const projectNames = [];
+            let hasPwo = false;
+            let primarySource = '';
+            let primaryDept = '';
+            wos.forEach(wo => {
+              const option = workOptions.find(item => String(item.work_order_no) === String(wo));
+              if (option) {
+                projectNames.push(option.project_no || option.work_order_no || '');
+                const src = String(option.source || '').toUpperCase();
+                if (src === 'PWO') hasPwo = true;
+                if (!primarySource) primarySource = option.source;
+                if (!primaryDept) primaryDept = option.department;
+              } else {
+                // Infer from WO number if not found in options
+                projectNames.push(wo);
+                if (String(wo).toUpperCase().indexOf('PWO') >= 0) hasPwo = true;
+              }
+            });
+            if (projectSelect) projectSelect.value = projectNames.join(', ');
+            if (sourceInput) {
+              // If any selected WO is PWO, treat the whole selection as PWO so payment tab appears
+              const inferred = hasPwo ? 'PWO'
+                : (String(primarySource || '').toUpperCase()
+                   || (String(wos[0] || '').toUpperCase().indexOf('PWO') === 0 ? 'PWO' : ''));
+              sourceInput.value = inferred;
+            }
+            if (deptField && primaryDept) {
+              // For select element, set value; for input, set value directly
+              deptField.value = primaryDept;
+              // If the option doesn't exist in the select, add it dynamically
+              if (deptField.tagName === 'SELECT' && primaryDept && deptField.value !== primaryDept) {
+                const newOpt = document.createElement('option');
+                newOpt.value = primaryDept;
+                newOpt.textContent = primaryDept;
+                deptField.appendChild(newOpt);
+                deptField.value = primaryDept;
+              }
+            }
+          } else {
+            if (projectSelect) projectSelect.value = '';
+            if (sourceInput) sourceInput.value = '';
+            if (deptField) deptField.value = '';
           }
-          if (deptField && option && option.department) {
-            deptField.value = option.department;
-          }
+          
           refreshWorkflowTabs();
           refreshWorkflowPaymentState();
           const activeTab = document.querySelector('.square-tab.active')?.dataset.tab || '';
@@ -2380,14 +2548,6 @@ function renderContent() {
         }
 
         form.querySelector('[name="work_order_no"]')?.addEventListener('change', (e) => syncWorkOrderFields(e.target.value));
-        form.querySelector('[name="project_name"]')?.addEventListener('change', (e) => {
-          const selected = e.target.selectedOptions[0];
-          const workOrderNo = selected?.dataset.workOrder || '';
-          if (workOrderNo) {
-            form.querySelector('[name="work_order_no"]').value = workOrderNo;
-            syncWorkOrderFields(workOrderNo);
-          }
-        });
 
         document.getElementById('btnCopyPermanentAddress')?.addEventListener('click', () => {
           const permanent = form.querySelector('[name="permanent_address"]');
@@ -2482,8 +2642,92 @@ function renderContent() {
             if (!show) input.value = '';
           }
         }
-        form.querySelector('[name="epf_registered_worker"]')?.addEventListener('change', () => toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput'));
-        form.querySelector('[name="esi_registered_worker"]')?.addEventListener('change', () => toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput'));
+        const epfSelect = form.querySelector('[name="epf_registered_worker"]');
+        if (epfSelect) {
+            epfSelect.addEventListener('change', function(e) {
+                if (this.value === 'NO') {
+                    const epfThis = this;
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            title: 'EPF Declaration',
+                            html: `<div style="text-align: left; padding: 8px 0;">
+                                     <label style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
+                                       <input type="checkbox" id="epfConsentCheck" style="margin-top:3px; width:18px; height:18px; flex-shrink:0;">
+                                       <span style="font-size:14px; line-height:1.6;">It is confirmed that the necessary consent has been obtained from the worker, and that the worker or his/her family shall not raise any claim against Cochin Shipyard Limited for any benefit, as the worker is outside the applicable coverage limit of EPF.</span>
+                                     </label>
+                                   </div>`,
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonText: 'Confirm',
+                            cancelButtonText: 'Cancel',
+                            preConfirm: () => {
+                                const checked = document.getElementById('epfConsentCheck').checked;
+                                if (!checked) {
+                                    Swal.showValidationMessage('Please tick the confirmation box to proceed.');
+                                }
+                                return checked;
+                            }
+                        }).then((result) => {
+                            if (!result.isConfirmed) {
+                                epfThis.value = '';
+                            }
+                            toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
+                        });
+                    } else {
+                        const consent = confirm("It is confirmed that the necessary consent has been obtained from the worker, and that the worker or his/her family shall not raise any claim against Cochin Shipyard Limited for any benefit, as the worker is outside the applicable coverage limit of EPF.");
+                        if (!consent) {
+                            this.value = '';
+                        }
+                        toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
+                    }
+                } else {
+                    toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
+                }
+            });
+        }
+        const esiSelect = form.querySelector('[name="esi_registered_worker"]');
+        if (esiSelect) {
+            esiSelect.addEventListener('change', function(e) {
+                if (this.value === 'NO') {
+                    const esiThis = this;
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            title: 'ESI Declaration',
+                            html: `<div style="text-align: left; padding: 8px 0;">
+                                     <label style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
+                                       <input type="checkbox" id="esiConsentCheck" style="margin-top:3px; width:18px; height:18px; flex-shrink:0;">
+                                       <span style="font-size:14px; line-height:1.6;">It is confirmed that the necessary consent has been obtained from the worker, and that the worker or his/her family shall not raise any claim against Cochin Shipyard Limited for any benefit, as the worker is outside the applicable coverage limit of ESI.</span>
+                                     </label>
+                                   </div>`,
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonText: 'Confirm',
+                            cancelButtonText: 'Cancel',
+                            preConfirm: () => {
+                                const checked = document.getElementById('esiConsentCheck').checked;
+                                if (!checked) {
+                                    Swal.showValidationMessage('Please tick the confirmation box to proceed.');
+                                }
+                                return checked;
+                            }
+                        }).then((result) => {
+                            if (!result.isConfirmed) {
+                                esiThis.value = '';
+                            }
+                            toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
+                        });
+                    } else {
+                        const consent = confirm("It is confirmed that the necessary consent has been obtained from the worker, and that the worker or his/her family shall not raise any claim against Cochin Shipyard Limited for any benefit, as the worker is outside the applicable coverage limit of ESI.");
+                        if (!consent) {
+                            this.value = '';
+                        }
+                        toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
+                    }
+                } else {
+                    toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
+                }
+            });
+        }
 
         // Aadhaar Auto-Fill Logic
         document.getElementById('aadhaarInput').addEventListener('blur', async function() {
@@ -2787,7 +3031,7 @@ function renderContent() {
             }
             updateNationalityLocationMode();
             executingOfficerNameInput?.setAttribute('readonly', 'readonly');
-            if (executingOfficerNameInput) executingOfficerNameInput.style.backgroundColor = '#f1f5f9';
+            if (executingOfficerNameInput) executingOfficerNameInput.style.backgroundColor = '#ffffff';
             const photoInput = form.querySelector('[name="photo"]');
             if(photoInput) photoInput.setAttribute('required', 'true');
             document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => {
@@ -2854,7 +3098,20 @@ function renderContent() {
           });
         }
 
+        function showEntryEnrollmentLockedMsg() {
+          Swal.fire({
+            icon: 'info',
+            title: 'Entry Pass Enrollment Locked',
+            text: entryEnrollmentLockMessage || 'Entry Pass Enrollment will open after Welfare approval.',
+            confirmButtonColor: '#1e3a8a'
+          });
+        }
+
         function editWorker(worker) {
+          if (entryEnrollmentLocked) {
+            showEntryEnrollmentLockedMsg();
+            return;
+          }
           form.reset();
           resetInlineSafetyPaymentState();
           document.getElementById('workerEditId').value = worker.id || '';
@@ -2933,18 +3190,24 @@ function renderContent() {
 
           const projSelect = document.getElementById('projectWbsSelect');
           if (projSelect && values.project_name) {
-            let hasOption = false;
-            for (let i = 0; i < projSelect.options.length; i++) {
-              if (String(projSelect.options[i].value).trim() === String(values.project_name).trim()) {
-                hasOption = true;
-                break;
+            if (projSelect.tagName === 'SELECT') {
+              let hasOption = false;
+              for (let i = 0; i < projSelect.options.length; i++) {
+                if (String(projSelect.options[i].value).trim() === String(values.project_name).trim()) {
+                  hasOption = true;
+                  break;
+                }
               }
-            }
-            if (!hasOption) {
-              const opt = document.createElement('option');
-              opt.value = values.project_name;
-              opt.textContent = values.project_name;
-              projSelect.appendChild(opt);
+              if (!hasOption) {
+                const opt = document.createElement('option');
+                opt.value = values.project_name;
+                opt.textContent = values.project_name;
+                projSelect.appendChild(opt);
+              }
+            } else {
+              projSelect.value = values.project_name;
+              projSelect.dispatchEvent(new Event('input', { bubbles: true }));
+              projSelect.dispatchEvent(new Event('change', { bubbles: true }));
             }
           }
 
@@ -2966,7 +3229,7 @@ function renderContent() {
             setFieldValue(name, value);
           });
           executingOfficerNameInput?.setAttribute('readonly', 'readonly');
-          if (executingOfficerNameInput) executingOfficerNameInput.style.backgroundColor = '#f1f5f9';
+          if (executingOfficerNameInput) executingOfficerNameInput.style.backgroundColor = '#ffffff';
           setStateDistrictValues(values.state || '', values.district || '');
           toggleConditionalRegistration('epf_registered_worker', 'epfNumberWrap', 'epfNumberInput');
           toggleConditionalRegistration('esi_registered_worker', 'esiNumberWrap', 'esiNumberInput');
@@ -3058,6 +3321,8 @@ function renderContent() {
             setFieldValue('safety_fee_payment_option', worker.safety_fee_payment_option);
           }
           refreshWorkflowPaymentState(false);
+          if (listSection) listSection.style.display = 'none';
+          formSection.style.display = '';
           formSection.scrollIntoView({ behavior: 'smooth' });
           activateTab(rejectedByEO ? 'docs' : 'basic');
         }
@@ -3318,6 +3583,13 @@ function renderContent() {
               submitBtn.style.display = 'none';
               submitBtn.innerText = isPwoPayLater() ? 'Complete Enrollment' : 'Pay Now';
             }
+          } else if (activeTab === 'training') {
+            // Always show Submit on the training (last) tab
+            if (submitBtn) {
+              submitBtn.style.display = 'inline-flex';
+              submitBtn.innerText = 'Submit';
+            }
+            if (nextBtn) nextBtn.style.display = 'none';
           }
           const trainingApprovalInput = form.querySelector('[name="training_approval_doc"]');
           if (trainingApprovalInput) {
@@ -4166,12 +4438,16 @@ function renderContent() {
           verifyExecutingOfficerCode(false);
         });
 
-        if (prefillAadhaar) {
+        if (prefillAadhaar && !entryEnrollmentLocked) {
           document.getElementById('btnOpenModal')?.click();
         }
 
         form.onsubmit = async (e) => {
           e.preventDefault();
+          if (entryEnrollmentLocked) {
+            showEntryEnrollmentLockedMsg();
+            return;
+          }
           submitEnrollment('submit');
         };
 

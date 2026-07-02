@@ -4,23 +4,43 @@ session_start();
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/compliance_schema.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'contractor') {
+if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['contractor', 'welfare_user', 'welfare_admin', 'welfare', 'admin', 'super_admin'])) {
     http_response_code(403);
-    die("Access denied. Contractor authentication required.");
+    die("Access denied.");
 }
 
 ensureComplianceSchema($conn);
 
-$userId = (int)($_SESSION['user_id'] ?? 0);
-$contractor = db_single($conn, "SELECT id, contractor_name, vendor_code FROM contractors WHERE user_id = ? LIMIT 1", 'i', [$userId]);
-if (!$contractor) {
-    http_response_code(400);
-    die("Contractor record not found.");
+if ($_SESSION['role'] === 'contractor') {
+    $userId = (int)($_SESSION['user_id'] ?? 0);
+    $contractor = db_single($conn, "SELECT id, contractor_name, vendor_code FROM contractors WHERE user_id = ? LIMIT 1", 'i', [$userId]);
+    if (!$contractor) {
+        http_response_code(400);
+        die("Contractor record not found.");
+    }
+    $contractorId = (int)$contractor['id'];
+} else {
+    $contractorId = isset($_GET['contractor_id']) ? (int)$_GET['contractor_id'] : 0;
+    if (!$contractorId) {
+        http_response_code(400);
+        die("Contractor ID is required.");
+    }
+    $contractor = db_single($conn, "SELECT id, contractor_name, vendor_code FROM contractors WHERE id = ? LIMIT 1", 'i', [$contractorId]);
+    if (!$contractor) {
+        http_response_code(400);
+        die("Contractor record not found.");
+    }
 }
-$contractorId = (int)$contractor['id'];
 
 $monthYear = trim($_GET['month_year'] ?? date('Y-m'));
 list($monthName, $year, $monthYear) = complianceMonthParts($monthYear);
+
+// Check if muster roll is approved (verified)
+$mrStatus = db_single($conn, "SELECT status FROM muster_rolls WHERE contractor_id = ? AND month_year = ? LIMIT 1", 'is', [$contractorId, $monthYear]);
+if (!$mrStatus || $mrStatus['status'] !== 'verified') {
+    http_response_code(400);
+    die("Error: Muster Roll for this wage month ($monthYear) is not approved. Please upload it and get it verified by the Welfare officer first.");
+}
 
 $start = $monthYear . '-01';
 $end = date('Y-m-t', strtotime($start));

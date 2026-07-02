@@ -1,9 +1,5 @@
 <?php
-require_once 'include/session.php';
-if (!isset($_SESSION['test_counter'])) {
-    $_SESSION['test_counter'] = 0;
-}
-$_SESSION['test_counter']++;
-echo "Session ID: " . session_id() . "\n";
-echo "Counter: " . $_SESSION['test_counter'] . "\n";
-?>
+require 'include/session.php';
+echo "Logged in User ID: " . ($_SESSION['user_id'] ?? 'NULL') . "\n";
+echo "Role: " . ($_SESSION['role'] ?? 'NULL') . "\n";
+echo "Code: " . ($_SESSION['contractor_id'] ?? $_SESSION['vendor_code'] ?? 'NULL') . "\n";

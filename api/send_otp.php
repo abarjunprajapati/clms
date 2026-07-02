@@ -15,7 +15,7 @@ if (empty($contractor_code)) {
 }
 
 // Fetch mobile from DB
-$stmt = $conn->prepare("SELECT mobile FROM contractors WHERE vendor_code = ?");
+$stmt = $conn->prepare("SELECT mobile, is_blocked, block_reason FROM contractors WHERE vendor_code = ?");
 $stmt->bind_param("s", $contractor_code);
 $stmt->execute();
 $res = $stmt->get_result();
@@ -23,6 +23,12 @@ $user = $res->fetch_assoc();
 
 if (!$user) {
     echo json_encode(['success' => false, 'error' => 'Contractor not found']);
+    exit;
+}
+
+if (!empty($user['is_blocked'])) {
+    $reason = !empty($user['block_reason']) ? $user['block_reason'] : 'Administrative action';
+    echo json_encode(['success' => false, 'error' => 'Access Denied: Your account has been blocked (' . htmlspecialchars($reason) . '). Please contact Welfare Admin.']);
     exit;
 }
 

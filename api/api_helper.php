@@ -19,3 +19,17 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS
     http_response_code(200);
     exit;
 }
+
+if (!function_exists('sendJson')) {
+    function sendJson($status, $message) {
+        if (!headers_sent()) {
+            http_response_code($status);
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        echo json_encode([
+            'success' => ($status >= 200 && $status < 300),
+            'message' => $message
+        ]);
+        exit;
+    }
+}

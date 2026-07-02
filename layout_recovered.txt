@@ -1,0 +1,79 @@
+Created At: 2026-07-02T10:42:35Z
+Completed At: 2026-07-02T10:42:36Z
+File Path: `file:///c:/xampp/htdocs/CLMS1/include/layout.php`
+Total Lines: 905
+Total Bytes: 77205
+Showing lines 530 to 600
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+530:             echo '<a href="'.$wb.'lwf_compliance_checking.php" class="sidebar-item"><i class="fas fa-clipboard-check"></i> LWF Compliance Checking</a>';
+531:             echo '<a href="'.$wb.'monthly_compliance_approvals.php" class="sidebar-item"><i class="fas fa-certificate text-success"></i> Monthly Compliance Approvals</a>';
+532:             echo '<a href="'.$wb.'esic_wage_limit.php" class="sidebar-item"><i class="fas fa-cog"></i> ESIC Wage Limit</a>';
+533:             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Monitor</div>';
+534:             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Verification</a>';
+535:             echo '<a href="'.$wb.'certified_wages.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Certified Wage Rate</a>';
+536:             echo '<a href="'.$wb.'gatepass_monitor.php" class="sidebar-item"><i class="fas fa-id-card"></i> Gate Pass Monitoring</a>';
+537:             echo '<a href="'.$wb.'attendance_monitor.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance Monitor</a>';
+538:             echo '<a href="'.$wb.'verification_history.php" class="sidebar-item"><i class="fas fa-history"></i> Contractor History</a>';
+539:             echo '<a href="'.$wb.'reports.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Reports</a>';
+540:             echo '<a href="'.$wb.'sap_logs.php" class="sidebar-item"><i class="fas fa-sync"></i> SAP Integration</a>';
+541:             break;
+542: 
+543:         case 'contractor':
+544:             $user_id = $_SESSION['user_id'] ?? 0;
+545:             $contractor = db_single($conn, "SELECT status, vendor_code FROM contractors WHERE user_id = ?", 'i', [$user_id]);
+546:             $sap_code = $contractor['vendor_code'] ?? ($_SESSION['contractor_id'] ?? $_SESSION['vendor_code'] ?? '');
+547:             $onboardingComplete = clms_onboarding_is_complete($conn, 'contractor', $sap_code, $user_id);
+548: 
+549:             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Contractor Lifecycle</div>';
+550:             echo '<a href="annexure-2a.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> CLMS Enrolment Request</a>';
+551:             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Enrolment for Entry Pass</div>';
+552:             echo '<a href="enrolment-4a.php?type=contractor" class="sidebar-item"><i class="fas fa-user-check"></i> Contractor</a>';
+553:             echo '<a href="enrolment-4a.php?type=representative" class="sidebar-item"><i class="fas fa-user-tie"></i> Representative</a>';
+554:             echo '<a href="enrolment-4a.php?type=supervisor" class="sidebar-item"><i class="fas fa-user-shield"></i> Supervisor</a>';
+555:             echo '<a href="enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Workmen</a>';
+556:             
+557:             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Overview & History</div>';
+558:             echo '<a href="welfare-actions.php" class="sidebar-item"><i class="fas fa-clock-rotate-left"></i> Welfare Action History</a>';
+559:             
+560:             if ($onboardingComplete) {
+561:                 // echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
+562:                 echo '<a href="profile.php" class="sidebar-item"><i class="fas fa-id-card"></i> Basic Details</a>';
+563:                 
+564:                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">SAFETY</div>';
+565:                 echo '<a href="training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training Request</a>';
+566:                 echo '<a href="payment.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Pending Fee Payment</a>';
+567:                 echo '<a href="book_safety_training.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Book Safety Training</a>';
+568:                 
+569:                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Management</div>';
+570:                 echo '<a href="gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Gate Pass</a>';
+571:                 echo '<a href="gatepass-reupload.php" class="sidebar-item"><i class="fas fa-file-circle-exclamation"></i> Re-upload Gate Pass Docs</a>';
+572:                 echo '<a href="pass_status.php" class="sidebar-item"><i class="fas fa-id-card"></i> ACC Card</a>';
+573:                 echo '<a href="../worker/block_unblock.php" class="sidebar-item"><i class="fas fa-user-slash"></i> Worker Blocking</a>';
+574:                 
+575:                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
+576:                 echo '<a href="muster_roll.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll</a>';
+577:                 echo '<a href="esi_contribution.php" class="sidebar-item"><i class="fas fa-hand-holding-dollar"></i> ESI Contribution</a>';
+578:                 echo '<a href="esi_ecr_pf_upload.php" class="sidebar-item"><i class="fas fa-file-upload"></i> ESI ECR & PF Contribution Upload</a>';
+579:                 echo '<a href="esi_compliance_check.php" class="sidebar-item"><i class="fas fa-shield-check"></i> ESI Compliance Status</a>';
+580:                 echo '<a href="epf_compliance.php" class="sidebar-item"><i class="fas fa-file-invoice-dollar"></i> EPF Compliance</a>';
+581:                 echo '<a href="lwf_compliance.php" class="sidebar-item"><i class="fas fa-balance-scale"></i> LWF Compliance</a>';
+582:                 echo '<a href="monthly_compliance_certificate.php" class="sidebar-item"><i class="fas fa-certificate text-success"></i> Monthly Compliance Cert</a>';
+583:                 echo '<a href="lwf_rate_view.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> LWF Rate & Status</a>';
+584:                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Operations & Compliance</div>';
+585:                 echo '<a href="attendance.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance</a>';
+586:                 echo '<a href="noc_management.php" class="sidebar-item"><i class="fas fa-exchange-alt text-warning"></i> NOC Management</a>';
+587:                 echo '<a href="compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';
+588:                 echo '<a href="documents.php" class="sidebar-item"><i class="fas fa-folder-open"></i> Documents</a>';
+589:                 echo '<a href="reports.php" class="sidebar-item"><i class="fas fa-chart-bar"></i> Reports</a>';
+590:             } else {
+591:                 echo '<div class="sidebar-item text-muted" style="font-size:12px; padding:10px 15px; background:rgba(0,0,0,0.03); margin-top:10px; border-radius:8px;">';
+592:                 echo '<i class="fas fa-lock me-2"></i> Once Contractor Registration is approved, the corresponding dashboard and system modules will be unlocked and accessible.';
+593:                 echo '</div>';
+594:             }
+595:             break;
+596: 
+597:         case 'front_line_user':
+598:         case 'frontline':
+599:             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Execution Desk</div>';
+600:             echo '<a href="../frontline/dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

@@ -305,6 +305,7 @@ function renderContent() {
                  THEN 1 ELSE 0
                END AS payment_pending,
                tr.id AS active_request_id, tr.status AS request_status, tr.batch_number, tr.scheduled_date,
+               tr.scheduled_session_id AS worker_batch_id,
                tr.scheduled_shift, tr.contractor_confirmed,
                COALESCE(attempts.attempt_count, 0) AS attempt_count
         FROM workmen w
@@ -465,7 +466,7 @@ function renderContent() {
 
         <h3 class="booking-title"><i class="fas fa-calendar-check"></i> Book Safety Training</h3>
 
-        <div class="booking-top-grid">
+        <div class="booking-top-grid" style="grid-template-columns: 200px;">
           <div>
             <label class="form-label">Lang</label>
             <select id="languageSelect" name="language" class="form-control" required>
@@ -475,109 +476,127 @@ function renderContent() {
               <?php endforeach; ?>
             </select>
           </div>
-          <div>
-            <label class="form-label">Date</label>
-            <select id="trainingDateSelect" class="form-control" required>
-              <option value="">Select</option>
-            </select>
-          </div>
-          <div>
-            <label class="form-label">Session</label>
-            <input type="text" id="sessionDisplay" class="form-control" readonly>
-          </div>
-          <div>
-            <label class="form-label">Seat Availability</label>
-            <div class="seat-chip" id="seatAvailability">0</div>
-          </div>
-          <div>
-            <label class="form-label">Batch No</label>
-            <input type="text" id="batchNumberDisplay" class="form-control" readonly>
-          </div>
         </div>
 
-        <div class="selected-box">
-          <h3>Workmen Select For Training</h3>
-          <div class="table-responsive">
-            <table class="selected-table">
-              <thead><tr><th>Sl No</th><th>Aadhaar No</th><th>Name</th></tr></thead>
-              <tbody id="selectedWorkerRows">
-                <tr><td colspan="3" style="text-align:center;color:#64748b;">No workmen selected.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="selected-actions">
-            <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit</button>
-          </div>
+        <div id="noBatchWarningBox" style="display:none; background:#fffbeb; border:1px solid #fbbf24; padding:16px; border-radius:8px; margin-top:14px; color:#92400e;">
+           <h4 style="margin-top:0; margin-bottom:8px; font-size:15px; font-weight:800;"><i class="fas fa-exclamation-triangle"></i> No Safety Training Batch Available</h4>
+           <p style="margin:0; font-size:13px; line-height:1.5;">Your workman is eligible for safety training, but no batch has been scheduled yet.<br>Seat booking will be enabled automatically after the Safety Department creates a training batch.</p>
         </div>
 
-        <div class="search-panel" style="margin-top:14px;">
-          <div class="search-grid">
+        <div id="bookingSection">
+          <div id="batchSelectionGrid" class="booking-top-grid" style="grid-template-columns: 1fr 160px 180px 180px; margin-top:14px;">
             <div>
-              <label class="form-label">Name</label>
-              <input type="text" id="workerNameSearch" class="form-control" placeholder="Search name">
+              <label class="form-label">Date</label>
+              <select id="trainingDateSelect" class="form-control" required>
+                <option value="">Select</option>
+              </select>
             </div>
             <div>
-              <label class="form-label">Aadhaar No</label>
-              <input type="text" id="workerAadhaarSearch" class="form-control" placeholder="Search Aadhaar">
+              <label class="form-label">Session</label>
+              <input type="text" id="sessionDisplay" class="form-control" readonly>
             </div>
             <div>
-              <label class="form-label">Workmen / Temp ID</label>
-              <input type="text" id="workerTempSearch" class="form-control" placeholder="Search entitlement no">
+              <label class="form-label">Seat Availability</label>
+              <div class="seat-chip" id="seatAvailability">0</div>
+            </div>
+            <div>
+              <label class="form-label">Batch No</label>
+              <input type="text" id="batchNumberDisplay" class="form-control" readonly>
             </div>
           </div>
-        </div>
 
-        <div class="safety-book-card" style="margin-top:14px;padding:0;">
-          <div class="table-responsive">
-            <table class="worker-picker-table" id="workerTable">
-              <thead>
-                <tr>
-                  <th>Sl No</th>
-                  <th>Aadhaar No</th>
-                  <th>Name</th>
-                  <th>Entitlement No</th>
-                  <th>Option To Select</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php if (!$workers): ?>
-                  <tr><td colspan="5" style="text-align:center;color:#64748b;">No worker is pending for safety training booking.</td></tr>
-                <?php endif; ?>
-                <?php foreach ($workers as $idx => $worker):
-                  $checked = $preselectWorkerId && (int)$worker['id'] === $preselectWorkerId;
-                  $safeLanguage = $worker['safety_language'] ?: '';
-                  $entitlement = $worker['temp_id'] ?: ('W-' . $worker['id']);
-                  $paymentPending = (int)($worker['payment_pending'] ?? 0) === 1;
-                ?>
-                  <tr data-worker-row
-                      data-payment-pending="<?= $paymentPending ? '1' : '0' ?>"
-                      data-language="<?= htmlspecialchars(strtolower($safeLanguage), ENT_QUOTES, 'UTF-8') ?>"
-                      data-name="<?= htmlspecialchars(strtolower($worker['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                      data-aadhaar="<?= htmlspecialchars(strtolower($worker['aadhaar'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                      data-temp="<?= htmlspecialchars(strtolower($entitlement), ENT_QUOTES, 'UTF-8') ?>">
-                    <td><?= $idx + 1 ?></td>
-                    <td><code><?= htmlspecialchars($worker['aadhaar'] ?? '') ?></code></td>
-                    <td><?= htmlspecialchars($worker['name'] ?? '') ?></td>
-                    <td><code><?= htmlspecialchars($entitlement) ?></code></td>
-                    <td>
-                      <input type="checkbox"
-                             class="worker-check"
-                             name="worker_ids[]"
-                             value="<?= (int)$worker['id'] ?>"
-                             data-worker-name="<?= htmlspecialchars($worker['name'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
-                             data-worker-aadhaar="<?= htmlspecialchars($worker['aadhaar'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
-                             <?= $checked ? 'checked' : '' ?>>
-                      <?php if ($paymentPending): ?>
-                        <span class="worker-payment-lock" style="margin-left: 8px; color: #b45309;"><i class="fas fa-coins"></i> Fee Pending</span>
-                      <?php endif; ?>
-                    </td>
+          <div id="selectedWorkersBox" class="selected-box">
+            <h3>Workmen Select For Training</h3>
+            <div class="table-responsive">
+              <table class="selected-table">
+                <thead><tr><th>Sl No</th><th>Aadhaar No</th><th>Name</th></tr></thead>
+                <tbody id="selectedWorkerRows">
+                  <tr><td colspan="3" style="text-align:center;color:#64748b;">No workmen selected.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="selected-actions">
+              <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit</button>
+            </div>
+          </div>
+
+          <div class="search-panel" style="margin-top:14px;">
+            <div class="search-grid">
+              <div>
+                <label class="form-label">Name</label>
+                <input type="text" id="workerNameSearch" class="form-control" placeholder="Search name">
+              </div>
+              <div>
+                <label class="form-label">Aadhaar No</label>
+                <input type="text" id="workerAadhaarSearch" class="form-control" placeholder="Search Aadhaar">
+              </div>
+              <div>
+                <label class="form-label">Workmen / Temp ID</label>
+                <input type="text" id="workerTempSearch" class="form-control" placeholder="Search entitlement no">
+              </div>
+            </div>
+          </div>
+
+          <div class="safety-book-card" style="margin-top:14px;padding:0;">
+            <div class="table-responsive">
+              <table class="worker-picker-table" id="workerTable">
+                <thead>
+                  <tr>
+                    <th>Sl No</th>
+                    <th>Aadhaar No</th>
+                    <th>Name</th>
+                    <th>Entitlement No</th>
+                    <th>Option To Select</th>
                   </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-          </div>
-          <div class="selection-note">
-            Note: Checkboxes auto tick by default as per seat availability on selected date/session and selected language. You can change selection if needed.
+                </thead>
+                <tbody>
+                  <?php if (!$workers): ?>
+                    <tr><td colspan="5" style="text-align:center;color:#64748b;">No worker is pending for safety training booking.</td></tr>
+                  <?php endif; ?>
+                  <?php foreach ($workers as $idx => $worker):
+                    $checked = $preselectWorkerId && (int)$worker['id'] === $preselectWorkerId;
+                    $safeLanguage = $worker['safety_language'] ?: '';
+                    $entitlement = $worker['temp_id'] ?: ('W-' . $worker['id']);
+                    $paymentPending = (int)($worker['payment_pending'] ?? 0) === 1;
+                    $workerBatchId     = (int)($worker['worker_batch_id'] ?? 0);
+                    $workerBatchNumber = htmlspecialchars($worker['batch_number'] ?? '', ENT_QUOTES, 'UTF-8');
+                  ?>
+                    <tr data-worker-row
+                        data-payment-pending="<?= $paymentPending ? '1' : '0' ?>"
+                        data-language="<?= htmlspecialchars(strtolower($safeLanguage), ENT_QUOTES, 'UTF-8') ?>"
+                        data-name="<?= htmlspecialchars(strtolower($worker['name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                        data-aadhaar="<?= htmlspecialchars(strtolower($worker['aadhaar'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                        data-temp="<?= htmlspecialchars(strtolower($entitlement), ENT_QUOTES, 'UTF-8') ?>"
+                        data-batch-id="<?= $workerBatchId ?>"
+                        data-batch-number="<?= $workerBatchNumber ?>">
+                      <td><?= $idx + 1 ?></td>
+                      <td><code><?= htmlspecialchars($worker['aadhaar'] ?? '') ?></code></td>
+                      <td><?= htmlspecialchars($worker['name'] ?? '') ?></td>
+                      <td><code><?= htmlspecialchars($entitlement) ?></code></td>
+                      <td>
+                        <input type="checkbox"
+                               class="worker-check"
+                               name="worker_ids[]"
+                               value="<?= (int)$worker['id'] ?>"
+                               data-worker-name="<?= htmlspecialchars($worker['name'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                               data-worker-aadhaar="<?= htmlspecialchars($worker['aadhaar'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+                               <?= $checked ? 'checked' : '' ?>
+                               <?= $workerBatchId > 0 ? 'disabled' : '' ?>>
+                        <?php if ($workerBatchId > 0): ?>
+                          <span class="badge bg-success" style="font-size: 10px; margin-left: 5px;">Booked: <?= $workerBatchNumber ?></span>
+                        <?php endif; ?>
+                        <?php if ($paymentPending): ?>
+                          <span class="worker-payment-lock" style="margin-left: 8px; color: #b45309;"><i class="fas fa-coins"></i> Fee Pending</span>
+                        <?php endif; ?>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+            </div>
+            <div class="selection-note">
+              Note: Checkboxes auto tick by default as per seat availability on selected date/session and selected language. You can change selection if needed.
+            </div>
           </div>
         </div>
       </form>
@@ -630,14 +649,29 @@ function renderContent() {
       function populateDates() {
         let rows = matchingBatches();
         const hasScheduledRows = rows.length > 0;
+        
+        const warningBox = document.getElementById('noBatchWarningBox');
+        const batchSelectionGrid = document.getElementById('batchSelectionGrid');
+        const selectedWorkersBox = document.getElementById('selectedWorkersBox');
+
         if (!hasScheduledRows) {
-          rows = fallbackTrainingDates();
+          if (warningBox) warningBox.style.display = 'block';
+          if (batchSelectionGrid) batchSelectionGrid.style.display = 'none';
+          if (selectedWorkersBox) selectedWorkersBox.style.display = 'none';
+          
+          trainingDateSelect.innerHTML = '<option value="">Select</option>';
+          trainingDateSelect.value = '';
+          applySelectedBatch(false);
+          return;
+        } else {
+          if (warningBox) warningBox.style.display = 'none';
+          if (batchSelectionGrid) batchSelectionGrid.style.display = '';
+          if (selectedWorkersBox) selectedWorkersBox.style.display = 'block';
         }
+
         trainingDateSelect.innerHTML = '<option value="">Select</option>' + rows.map(batch => {
-          const label = batch.manual
-            ? `${batch.training_date} - preferred booking (Safety will schedule)`
-            : `${batch.training_date || ''}${batch.session_name ? ' - ' + batch.session_name : ''}`;
-          return `<option value="${batch.id}" data-manual="${batch.manual ? '1' : '0'}" data-date="${batch.training_date}" data-session="${batch.session_name || 'FN'}">${escapeHtml(label)}</option>`;
+          const label = `${batch.training_date || ''}${batch.session_name ? ' - ' + batch.session_name : ''}`;
+          return `<option value="${batch.id}" data-manual="0" data-date="${batch.training_date}" data-session="${batch.session_name || 'FN'}">${escapeHtml(label)}</option>`;
         }).join('');
         if (rows.length) {
           trainingDateSelect.value = String(rows[0].id);
@@ -652,30 +686,18 @@ function renderContent() {
 
       function applySelectedBatch(autoTick) {
         const selectedOption = trainingDateSelect.selectedOptions[0];
-        const isManual = selectedOption?.dataset.manual === '1';
+        
+        const batch = selectedBatch();
+        batchSelect.value = batch ? batch.id : '';
+        document.getElementById('manualDate').value = '';
+        document.getElementById('manualSession').value = '';
 
-        if (isManual) {
-          batchSelect.removeAttribute('required');
-          batchSelect.value = '';
-          document.getElementById('manualDate').value = selectedOption.dataset.date;
-          document.getElementById('manualSession').value = selectedOption.dataset.session;
+        seatAvailability.textContent = batch ? remainingSeats(batch) : '0';
+        sessionDisplay.value = batch?.session_name || '';
+        batchNumberDisplay.value = batch?.batch_number || '';
 
-          seatAvailability.textContent = 'Unlimited';
-          sessionDisplay.value = selectedOption.dataset.session;
-          batchNumberDisplay.value = 'Preferred Date';
-        } else {
-          const batch = selectedBatch();
-          batchSelect.value = batch ? batch.id : '';
-          document.getElementById('manualDate').value = '';
-          document.getElementById('manualSession').value = '';
-
-          seatAvailability.textContent = batch ? remainingSeats(batch) : '0';
-          sessionDisplay.value = batch?.session_name || '';
-          batchNumberDisplay.value = batch?.batch_number || '';
-
-          if (batch && batch.language_name && languageSelect.value !== batch.language_name) {
-            languageSelect.value = batch.language_name;
-          }
+        if (batch && batch.language_name && languageSelect.value !== batch.language_name) {
+          languageSelect.value = batch.language_name;
         }
 
         filterWorkers();
@@ -696,7 +718,7 @@ function renderContent() {
           row.style.display = visible ? '' : 'none';
           if (!visible && row.dataset.language && row.dataset.language !== language) {
             const checkbox = row.querySelector('.worker-check');
-            if (checkbox) checkbox.checked = false;
+            if (checkbox && !checkbox.disabled) checkbox.checked = false;
           }
         });
       }
@@ -711,13 +733,13 @@ function renderContent() {
           .filter(row => !row.dataset.language || row.dataset.language === language);
         rows.forEach(row => {
           const checkbox = row.querySelector('.worker-check');
-          if (checkbox) checkbox.checked = false;
+          if (checkbox && !checkbox.disabled) checkbox.checked = false;
         });
         if (!isManual && (!batch || !limit)) return;
         let selected = 0;
         if (preselectWorkerId) {
           const preselected = document.querySelector(`.worker-check[value="${preselectWorkerId}"]`);
-          if (preselected) {
+          if (preselected && !preselected.disabled) {
             const rowLang = preselected.closest('[data-worker-row]')?.dataset.language;
             if (!rowLang || rowLang === language) {
               preselected.checked = true;
@@ -728,7 +750,7 @@ function renderContent() {
         rows.forEach(row => {
           if (selected >= limit) return;
           const checkbox = row.querySelector('.worker-check');
-          if (!checkbox || checkbox.checked) return;
+          if (!checkbox || checkbox.checked || checkbox.disabled) return;
           checkbox.checked = true;
           selected++;
         });
@@ -761,15 +783,20 @@ function renderContent() {
         filterWorkers();
         refreshSelectedWorkers();
       }));
+
+      // The batch filter logic has been removed because booked workers are now disabled.
+
       document.addEventListener('change', event => {
         if (!event.target.classList.contains('worker-check')) return;
         userTouchedSelection = true;
+        const selectedOption = trainingDateSelect.selectedOptions[0];
+        const isManual = selectedOption?.dataset.manual === '1';
         const batch = selectedBatch();
-        const limit = remainingSeats(batch);
+        const limit = isManual ? 99999 : remainingSeats(batch);
         const selected = document.querySelectorAll('.worker-check:checked').length;
-        if (limit && selected > limit) {
+        if (limit !== null && !isNaN(limit) && selected > limit) {
+          alert(`You can only select up to ${limit} workers for this batch.`);
           event.target.checked = false;
-          alert('Maximum seat limit exceeded. Seat availability is ' + limit + '.');
         }
         refreshSelectedWorkers();
       });

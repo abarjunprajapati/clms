@@ -65,9 +65,10 @@ function renderContent() {
                cb.language_name,
                $workerStatsSelect
         FROM training_schedule ts
-        LEFT JOIN training_class_batches cb ON cb.batch_number = ts.batch_number
+        INNER JOIN training_class_batches cb ON cb.batch_number = ts.batch_number
         $workerStatsJoin
         WHERE LOWER(COALESCE($statusExpr, 'open')) IN ('open', 'scheduled')
+          AND LOWER(COALESCE(cb.status, '')) IN ('open', 'scheduled', 'active')
         ORDER BY $dateExpr ASC, $timeExpr ASC
     ") : [];
 ?>
@@ -89,6 +90,7 @@ function renderContent() {
     <table class="data-table">
       <thead>
         <tr>
+          <th>SNo</th>
           <th>Batch No</th>
           <th>Language</th>
           <th>Date & Time</th>
@@ -100,11 +102,12 @@ function renderContent() {
         </tr>
       </thead>
       <tbody>
-        <?php foreach ($upcomingSessions as $session):
+        <?php $sno = 1; foreach ($upcomingSessions as $session):
           $assigned = (int)($session['assigned_count'] ?? 0);
           $done = (int)($session['result_done_count'] ?? 0);
         ?>
         <tr>
+          <td><?= $sno++ ?></td>
           <td><strong><?= htmlspecialchars($session['batch_number'] ?? '-') ?></strong></td>
           <td><?= htmlspecialchars($session['language_name'] ?? '-') ?></td>
           <td>
@@ -122,7 +125,7 @@ function renderContent() {
         </tr>
         <?php endforeach; ?>
         <?php if (empty($upcomingSessions)): ?>
-        <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">No open sessions.</td></tr>
+        <tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted)">No open sessions.</td></tr>
         <?php endif; ?>
       </tbody>
     </table>

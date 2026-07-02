@@ -92,7 +92,7 @@ function renderContent() {
     $regularCapacity = (int)$capacityInfo['regular'];
 ?>
 <style>
-  .selected-row { border-left: 4px solid #2563eb !important; background: #eff6ff !important; }
+  .selected-row { border-left: 4px solid #2563eb !important; background: #ffffff !important; }
   .ts-selected-panel { background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%); color: #fff; padding: 16px 20px; border-radius: 12px; margin-bottom: 18px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15); display: flex; flex-direction: column; gap: 12px; }
   .ts-selected-panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 10px; }
   .ts-selected-panel-title { font-size: 15px; font-weight: 800; display: inline-flex; align-items: center; gap: 8px; }
@@ -106,7 +106,7 @@ function renderContent() {
 
   /* ── Batch Info Unified Section ── */
   .ts-batch-unified{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.04);overflow:hidden;margin-top:10px}
-  .ts-selector-inner{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#f8fafc}
+  .ts-selector-inner{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#fff}
   .ts-selector-inner label{font-size:12px;font-weight:800;color:#475569;display:flex;flex-direction:column;gap:5px;flex:1;min-width:280px}
   .ts-selector-inner select.form-control{height:40px;border:1px solid #cbd5e1;border-radius:8px;padding:0 12px;background:#fff;font-size:13px;font-weight:600;color:#1e293b;transition:.2s}
   .ts-selector-inner select.form-control:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1);outline:none}
@@ -116,7 +116,7 @@ function renderContent() {
   .ts-summary-card{padding:14px 16px;border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;transition:.2s;background:#fff}
   .ts-summary-card:nth-child(4n){border-right:none}
   .ts-summary-card:nth-child(n+5){border-bottom:none}
-  .ts-summary-card:hover{background:#f8fafc}
+  .ts-summary-card:hover{background:#fff}
   .ts-summary-card .ts-label{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
   .ts-summary-card .ts-value{font-size:15px;font-weight:800;color:#0f172a;line-height:1.2}
   .ts-summary-card.ts-slots{background:linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)}
@@ -125,7 +125,7 @@ function renderContent() {
 
   /* ── Workers Card ── */
   .ts-workers-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-  .ts-card-header{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#f8fafc;flex-wrap:wrap}
+  .ts-card-header{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#fff;flex-wrap:wrap}
   .ts-card-header-left{display:flex;flex-direction:column;gap:4px}
   .ts-card-title{font-size:16px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:8px}
   .ts-card-title i{color:#2563eb;font-size:15px}
@@ -140,12 +140,12 @@ function renderContent() {
   /* ── Table ── */
   .ts-table-wrap{overflow-x:auto}
   .ts-table{width:100%;border-collapse:collapse}
-  .ts-table thead{background:#f1f5f9}
+  .ts-table thead{background:#fff}
   .ts-table th{padding:11px 12px;font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.3px;text-align:left;border-bottom:2px solid #e2e8f0;white-space:nowrap}
   .ts-table th.col-center,.ts-table td.col-center{text-align:center}
-  .ts-table td{padding:10px 12px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+  .ts-table td{padding:10px 12px;font-size:13px;color:#1e293b;border-bottom:1px solid #e2e8f0;vertical-align:middle}
   .ts-table tbody tr{transition:.15s}
-  .ts-table tbody tr:hover{background:#f8fafc}
+  .ts-table tbody tr:hover{background:#fff}
   .ts-table .waiting-row{background:#fffbeb}
   .ts-table .waiting-row:hover{background:#fef9c3}
   .ts-table .seat-disabled-row{opacity:.55;background:#f8fafc}
@@ -223,21 +223,6 @@ function renderContent() {
 
 <?php if ($batch): ?>
 
-<!-- Workmen Selected For Training Panel -->
-<div class="ts-selected-panel" id="selectedWorkersPanel" style="display:none">
-  <div class="ts-selected-panel-header">
-    <div class="ts-selected-panel-title">
-      <i class="fas fa-user-check"></i>
-      Workmen Selected For Training
-      <span class="ts-selected-panel-count" id="selectedPanelCount">0</span>
-    </div>
-    <div style="font-size:12px;opacity:.85">Capacity: <?= (int)$capacity ?> slots | <span id="slotsRemaining"><?= (int)$capacity ?></span> remaining</div>
-  </div>
-  <div class="ts-selected-chips" id="selectedChipsContainer">
-    <!-- chips injected by JS -->
-  </div>
-</div>
-
 <!-- Workers Table -->
 <form method="post" id="scheduleForm">
   <input type="hidden" name="batch_id" value="<?= (int)$batch['id'] ?>">
@@ -274,39 +259,63 @@ function renderContent() {
           </tr>
         </thead>
         <tbody>
-          <?php foreach ($workers as $idx => $worker):
+          <?php 
+          // Pre-calculate already occupied slots
+          $occupiedSlots = 0;
+          foreach ($workers as $w) {
+              $isForced = $forceRequestId > 0 && (int)$w['training_request_id'] === $forceRequestId;
+              $isTicked = ((int)$w['ticked'] === 1);
+              $isDraftTicked = (isset($isDraft) && $isDraft && isset($selectedInDraft) && in_array((int)$w['training_request_id'], $selectedInDraft, true));
+              if ($isTicked || $isForced || $isDraftTicked) {
+                  $occupiedSlots++;
+              }
+          }
+
+          foreach ($workers as $idx => $worker):
             $isForcedRequest = $forceRequestId > 0 && (int)$worker['training_request_id'] === $forceRequestId;
+            $isTicked = ((int)$worker['ticked'] === 1);
+            $isDraftTicked = (isset($isDraft) && $isDraft && isset($selectedInDraft) && in_array((int)$worker['training_request_id'], $selectedInDraft, true));
+            
             $autoChecked = false;
-            if ($alreadyScheduled) {
-                $autoChecked = ((int)$worker['ticked'] === 1) || $isForcedRequest;
-            } else {
-                $autoChecked = ($idx < $capacity) || $isForcedRequest;
-            }
-            if ($isDraft && in_array((int)$worker['training_request_id'], $selectedInDraft, true)) {
+            if ($isTicked || $isForcedRequest || $isDraftTicked) {
                 $autoChecked = true;
+            } else if ($occupiedSlots < $capacity) {
+                $autoChecked = true;
+                $occupiedSlots++;
             }
+            
             $tokenPreview = '';
             if ($worker['token_number']) {
                 $tokenPreview = $worker['token_number'];
             } elseif ($autoChecked) {
                 $tokenPreview = (string)rand(100000, 999999);
             }
+            $isLocked = (int)($worker['locked_for_schedule'] ?? 0) === 1;
             $isBlocked = (int)$worker['attempt_no'] > 3;
             $seatLabel = ($autoChecked && $idx >= $regularCapacity) ? 'Emergency' : ($autoChecked ? 'Selected' : 'Waiting');
-            $seatBadge = $seatLabel === 'Emergency' ? 'badge-warning' : ($autoChecked ? 'badge-info' : 'badge-gray');
+            if ($isLocked) $seatLabel = 'Finalized';
+            $seatBadge = $isLocked ? 'badge-info' : ($seatLabel === 'Emergency' ? 'badge-warning' : ($autoChecked ? 'badge-info' : 'badge-gray'));
           ?>
           <tr class="<?= $idx >= $capacity && !$autoChecked ? 'waiting-row' : '' ?>">
             <td class="col-center">
-              <input
-                type="checkbox"
-                class="worker-check"
-                name="selected_requests[]"
-                value="<?= (int)$worker['training_request_id'] ?>"
-                data-token-target="token_<?= (int)$worker['training_request_id'] ?>"
-                <?= $isBlocked ? 'data-max-attempt="1"' : '' ?>
-                <?= $autoChecked && !$isBlocked ? 'checked' : '' ?>
-                <?= $isBlocked ? 'disabled' : '' ?>
-              >
+              <?php if ($isLocked): ?>
+                <input type="hidden" name="selected_requests[]" value="<?= (int)$worker['training_request_id'] ?>">
+                <input type="checkbox" class="worker-check"
+                       data-token-target="token_<?= (int)$worker['training_request_id'] ?>"
+                       data-locked="1"
+                       checked disabled>
+              <?php else: ?>
+                <input
+                  type="checkbox"
+                  class="worker-check"
+                  name="selected_requests[]"
+                  value="<?= (int)$worker['training_request_id'] ?>"
+                  data-token-target="token_<?= (int)$worker['training_request_id'] ?>"
+                  <?= $isBlocked ? 'data-max-attempt="1"' : '' ?>
+                  <?= $autoChecked && !$isBlocked ? 'checked' : '' ?>
+                  <?= $isBlocked ? 'disabled' : '' ?>
+                >
+              <?php endif; ?>
             </td>
             <td class="col-center"><?= $idx + 1 ?></td>
             <td><?= !empty($worker['enrolment_date']) ? date('d M Y', strtotime($worker['enrolment_date'])) : (!empty($worker['requested_date']) ? date('d M Y', strtotime($worker['requested_date'])) : date('d M Y', strtotime($worker['request_created_at']))) ?></td>
@@ -339,70 +348,33 @@ function renderContent() {
   const scheduleCapacity = <?= (int)$capacity ?>;
   const regularCapacity = <?= (int)$regularCapacity ?>;
 
-  // Build a worker info map from table data for chip labels
-  const workerInfoMap = {};
-  document.querySelectorAll('#scheduleTable tbody tr').forEach(row => {
-    const cb = row.querySelector('.worker-check');
-    if (!cb) return;
-    const cells = row.querySelectorAll('td');
-    // cells: [0]=checkbox, [1]=sno, [2]=enroldt, [3]=aadhaar, [4]=name, [5]=code, [6]=cname, [7]=lang, [8]=token, [9]=attempt, [10]=status
-    workerInfoMap[cb.value] = {
-      name: cells[4]?.querySelector('.worker-name')?.textContent?.trim() || cells[4]?.textContent?.trim() || 'Worker',
-      aadhaar: cells[3]?.textContent?.trim() || '',
-      requestId: cb.value
-    };
-  });
+  function isLockedSelection(input) {
+    return input?.dataset?.locked === '1';
+  }
+
+  function editableWorkerChecks() {
+    return Array.from(document.querySelectorAll('.worker-check')).filter(input => input.type === 'checkbox' && !input.disabled && !isLockedSelection(input));
+  }
 
   function refreshSelectedPanel() {
-    const allChecks = Array.from(document.querySelectorAll('.worker-check'));
-    const checked = allChecks.filter(i => i.checked);
-    const panel = document.getElementById('selectedWorkersPanel');
-    const chipsContainer = document.getElementById('selectedChipsContainer');
-    const panelCount = document.getElementById('selectedPanelCount');
-    const slotsRemaining = document.getElementById('slotsRemaining');
-
-    if (panel) panel.style.display = checked.length > 0 ? '' : 'none';
-    if (panelCount) panelCount.textContent = checked.length;
-    if (slotsRemaining) slotsRemaining.textContent = Math.max(0, scheduleCapacity - checked.length);
-
-    if (chipsContainer) {
-      chipsContainer.innerHTML = '';
-      checked.forEach((input, idx) => {
-        const info = workerInfoMap[input.value] || {};
-        const target = document.getElementById(input.dataset.tokenTarget);
-        const tokenNum = (target && target.textContent.trim() !== '') ? target.textContent : String(Math.floor(100000 + Math.random() * 900000));
-        const chip = document.createElement('div');
-        chip.className = 'ts-chip';
-        chip.innerHTML = `
-          <span class="ts-chip-token">${tokenNum}</span>
-          <span>${(info.name || 'Worker').substring(0,22)}</span>
-          <span class="ts-chip-remove" title="Remove" data-req="${input.value}">&times;</span>`;
-        chipsContainer.appendChild(chip);
-      });
-      // Attach remove listeners
-      chipsContainer.querySelectorAll('.ts-chip-remove').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const cb = document.querySelector(`.worker-check[value="${btn.dataset.req}"]`);
-          if (cb && !cb.disabled) { cb.checked = false; refreshSelection(); }
-        });
-      });
-    }
-
-    // Move selected rows visually to top by reordering tbody
     const tbody = document.querySelector('#scheduleTable tbody');
     if (tbody) {
       const rows = Array.from(tbody.querySelectorAll('tr'));
-      const selectedRows = rows.filter(r => r.querySelector('.worker-check')?.checked);
-      const otherRows   = rows.filter(r => !r.querySelector('.worker-check')?.checked);
-      selectedRows.forEach(r => { r.classList.add('selected-row'); tbody.prepend(r); });
-      otherRows.forEach(r => { r.classList.remove('selected-row'); tbody.appendChild(r); });
+      rows.forEach(r => {
+        const cb = r.querySelector('.worker-check');
+        if (cb && cb.checked) {
+          r.classList.add('selected-row');
+        } else {
+          r.classList.remove('selected-row');
+        }
+      });
     }
   }
 
   function refreshSelection() {
-    const checks = Array.from(document.querySelectorAll('.worker-check:not([disabled])'));
+    const checks = editableWorkerChecks();
     const allChecks = Array.from(document.querySelectorAll('.worker-check'));
-    const checked = allChecks.filter(i => i.checked);
+    const checked = allChecks.filter(i => isLockedSelection(i) || !!i.checked);
     const el = document.getElementById('selectedCount');
     if (el) el.textContent = checked.length;
     const isFull = checked.length >= scheduleCapacity;
@@ -417,13 +389,19 @@ function renderContent() {
     allChecks.forEach(input => {
       const row = input.closest('tr');
       const state = row ? row.querySelector('.row-state') : null;
-      if (row) row.classList.toggle('seat-disabled-row', isFull && !input.checked && !input.dataset.maxAttempt);
+      const selected = isLockedSelection(input) || !!input.checked;
+      if (row) row.classList.toggle('seat-disabled-row', isFull && !selected && !input.dataset.maxAttempt);
       if (state) {
-        state.textContent = input.checked ? 'Selected' : 'Waiting';
-        state.className = 'badge row-state ' + (input.checked ? 'badge-info' : 'badge-gray');
+        if (isLockedSelection(input)) {
+          state.textContent = 'Finalized';
+          state.className = 'badge row-state badge-info';
+        } else {
+          state.textContent = selected ? 'Selected' : 'Waiting';
+          state.className = 'badge row-state ' + (selected ? 'badge-info' : 'badge-gray');
+        }
       }
       const target = document.getElementById(input.dataset.tokenTarget);
-      if (target && !input.checked) target.textContent = '';
+      if (target && !selected) target.textContent = '';
     });
     checked.forEach((input, idx) => {
       const target = document.getElementById(input.dataset.tokenTarget);
@@ -431,6 +409,7 @@ function renderContent() {
           target.textContent = String(Math.floor(100000 + Math.random() * 900000));
       }
       const state = input.closest('tr')?.querySelector('.row-state');
+      if (isLockedSelection(input)) return;
       if (state && idx >= regularCapacity) {
         state.textContent = 'Emergency';
         state.className = 'badge row-state badge-warning';
@@ -441,9 +420,10 @@ function renderContent() {
 
   // Tick All handler
   document.getElementById('tickAllCheck')?.addEventListener('change', function() {
-    const checks = Array.from(document.querySelectorAll('.worker-check:not([disabled])'));
+    const checks = editableWorkerChecks();
+    const allChecks = Array.from(document.querySelectorAll('.worker-check'));
     if (this.checked) {
-      let count = 0;
+      let count = allChecks.filter(isLockedSelection).length;
       checks.forEach(input => {
         if (count < scheduleCapacity) {
           input.checked = true;
@@ -460,7 +440,8 @@ function renderContent() {
 
   document.addEventListener('change', event => {
     if (!event.target.classList.contains('worker-check')) return;
-    const selected = document.querySelectorAll('.worker-check:checked').length;
+    const allChecks = Array.from(document.querySelectorAll('.worker-check'));
+    const selected = allChecks.filter(i => isLockedSelection(i) || !!i.checked).length;
     if (selected > scheduleCapacity) {
       event.target.checked = false;
       Swal.fire({ icon: 'warning', title: 'Maximum Slot Exceeded', text: `Only ${scheduleCapacity} workers can be selected for this batch.`, confirmButtonColor: '#f59e0b' });
@@ -469,7 +450,8 @@ function renderContent() {
   });
 
   document.getElementById('scheduleForm')?.addEventListener('submit', event => {
-    const selected = document.querySelectorAll('.worker-check:checked').length;
+    const allChecks = Array.from(document.querySelectorAll('.worker-check'));
+    const selected = allChecks.filter(i => isLockedSelection(i) || !!i.checked).length;
     if (selected > scheduleCapacity) {
       event.preventDefault();
       Swal.fire({ icon: 'warning', title: 'Maximum Slot Exceeded', text: `Only ${scheduleCapacity} workers can be selected for this batch.`, confirmButtonColor: '#f59e0b' });

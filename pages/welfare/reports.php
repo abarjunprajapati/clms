@@ -268,6 +268,7 @@ function renderContent() {
         <table class="data-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>Contractor Name</th>
               <th>Total Active</th>
               <th>Permanent (ACC)</th>
@@ -277,13 +278,14 @@ function renderContent() {
             </tr>
           </thead>
           <tbody>
-            <?php foreach($contractorStats as $cs):
+            <?php $sno = 1; foreach($contractorStats as $cs):
                 if ((int)$cs['total'] === 0) {
                     continue;
                 }
                 $util = $cs['total'] > 0 ? round(($cs['permanent'] / $cs['total']) * 100, 1) : 0;
             ?>
             <tr>
+              <td><?= $sno++ ?></td>
               <td><strong><?= htmlspecialchars($cs['contractor_name']) ?></strong></td>
               <td><?= (int)$cs['total'] ?></td>
               <td><span class="text-success"><?= (int)$cs['permanent'] ?></span></td>
@@ -300,7 +302,7 @@ function renderContent() {
             </tr>
             <?php endforeach; ?>
             <?php if(empty($contractorStats) || $total_passes === 0): ?>
-            <tr><td colspan="6" class="text-center" style="padding:40px;">No active passes found.</td></tr>
+            <tr><td colspan="7" class="text-center" style="padding:40px;">No active passes found.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>
@@ -315,6 +317,7 @@ function renderContent() {
         <table class="data-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>Workman</th>
               <th>Contractor</th>
               <th>Pass No</th>
@@ -324,13 +327,14 @@ function renderContent() {
             </tr>
           </thead>
           <tbody>
-            <?php foreach(array_slice($passes, 0, 25) as $pass):
+            <?php $sno2 = 1; foreach(array_slice($passes, 0, 25) as $pass):
               $isExpired = welfareReportsIsExpired($pass['valid_to'] ?? null);
               $isExpiring = welfareReportsIsExpiringSoon($pass['valid_to'] ?? null);
               $statusClass = $isExpired ? 'danger' : ($isExpiring ? 'warning' : 'success');
               $statusText = $isExpired ? 'Expired' : ($isExpiring ? 'Expiring Soon' : 'Active');
             ?>
             <tr>
+              <td><?= $sno2++ ?></td>
               <td><strong><?= htmlspecialchars($pass['name'] ?? 'Unknown') ?></strong></td>
               <td><?= htmlspecialchars($pass['contractor_name'] ?? 'N/A') ?></td>
               <td><code><?= htmlspecialchars($pass['pass_no'] ?: 'N/A') ?></code></td>
@@ -340,7 +344,7 @@ function renderContent() {
             </tr>
             <?php endforeach; ?>
             <?php if(empty($passes)): ?>
-            <tr><td colspan="6" class="text-center" style="padding:40px;">No issued passes found.</td></tr>
+            <tr><td colspan="7" class="text-center" style="padding:40px;">No issued passes found.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>

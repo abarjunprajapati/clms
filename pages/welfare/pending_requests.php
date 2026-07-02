@@ -69,24 +69,26 @@ function renderContent() {
         <table class="data-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>Workman Name</th>
               <th>Contractor</th>
               <th>Training Status</th>
-              <th>Welfare Status</th>
+              <th>Document Verification Status</th>
               <th>Request Date</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            <?php foreach($pending as $p): ?>
+            <?php $sno = 1; foreach($pending as $p): ?>
             <tr>
+              <td><?= $sno++ ?></td>
               <td>
                 <div style="font-weight:600"><?= htmlspecialchars($p['name'] ?? 'Unknown') ?></div>
                 <div style="font-size:11px;opacity:0.6">ID: <?= htmlspecialchars($p['id'] ?? 'N/A') ?> | Type: <?= ucfirst($p['worker_type'] ?? 'Workmen') ?></div>
               </td>
               <td><?= htmlspecialchars($p['contractor_name'] ?? 'N/A') ?></td>
               <td><span class="badge badge-success"><i class="fas fa-check-circle"></i> Passed</span></td>
-              <td><span class="badge badge-info"><i class="fas fa-user-check"></i> Welfare Verified</span></td>
+              <td><span class="badge badge-info"><i class="fas fa-user-check"></i> Documents verified by pass user</span></td>
               <td><?= date('d M Y', strtotime($p['request_date'])) ?></td>
               <td>
                 <a href="issue_temp_pass.php?id=<?= $p['id'] ?>" class="btn btn-primary btn-sm">
@@ -97,7 +99,7 @@ function renderContent() {
             <?php endforeach; ?>
             <?php if(empty($pending)): ?>
             <tr>
-              <td colspan="6" style="text-align:center;padding:40px;color:var(--gray-500)">
+              <td colspan="7" style="text-align:center;padding:40px;color:var(--gray-500)">
                 <i class="fas fa-inbox" style="font-size:48px;opacity:0.3"></i><br>
                 No pending pass requests found.
               </td>

@@ -41,4 +41,9 @@ foreach ($input['permissions'] as $perm) {
 }
 
 logAdminActivity($conn, 'permissions_updated', 'role_permissions', null, null, ['count' => $saved], 'warning');
-jsonSuccess("$saved permission entries saved");
+
+// Clear permission cache so changes take effect immediately on next request
+require_once __DIR__ . '/../../include/auth_middleware.php';
+clear_permission_cache();
+
+jsonSuccess("$saved permission entries saved successfully.");

@@ -1,70 +1,83 @@
 <?php
-ob_start();
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
-
-function contractorBlockJson($success, $message, $data = null, $code = 200) {
-    if (ob_get_length()) {
-        ob_clean();
-    }
-    http_response_code($code);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['success' => $success, 'message' => $message, 'data' => $data]);
-    exit;
-}
-
-function contractorBlockLog($message) {
-    @file_put_contents(__DIR__ . '/../../logs/api_errors.log', '[BLOCK_CONTRACTOR] ' . date('c') . ' - ' . $message . "\n", FILE_APPEND);
-}
-
-register_shutdown_function(function () {
-    $error = error_get_last();
-    if (!$error || !in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
-        return;
-    }
-    contractorBlockLog($error['message'] . ' in ' . $error['file'] . ':' . $error['line']);
-    if (!headers_sent()) {
-        contractorBlockJson(false, 'Contractor action failed on the server. Please check api_errors.log.', null, 500);
-    }
-});
-
-require_once __DIR__ . '/../../include/auth.php';
 require_once __DIR__ . '/../../include/config.php';
-require_once __DIR__ . '/../../include/ContractorBlockingService.php';
+require_once __DIR__ . '/../api_helper.php';
+require_once __DIR__ . '/../../include/session.php';
 
-checkAuth(['welfare_admin', 'welfare_user', 'super_admin']);
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    contractorBlockJson(false, 'Invalid request method.', null, 405);
+// Only Welfare Users (or admins)
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], ['welfare_user', 'admin', 'super_admin'])) {
+    sendJson(403, 'Unauthorized access.');
 }
 
-$data = json_decode(file_get_contents('php://input'), true);
-if (!is_array($data)) {
-    $data = [];
+$data = getJsonInput();
+$action = $data['action'] ?? ''; // 'block' or 'unblock'
+$contractor_id = (int)($data['contractor_id'] ?? 0);
+$reason = trim((string)($data['reason'] ?? ''));
+
+if (!$contractor_id) {
+    sendJson(400, 'Invalid contractor ID.');
 }
 
-$contractorId = (int)($data['contractor_id'] ?? 0);
-$action = strtolower(trim((string)($data['action'] ?? 'block')));
-$reason = trim((string)($data['reason'] ?? 'Admin Manual Block'));
-$remarks = trim((string)($data['remarks'] ?? ''));
-$userId = (int)($_SESSION['user_id'] ?? 0);
-
-if ($contractorId <= 0) {
-    contractorBlockJson(false, 'Contractor ID required.', null, 400);
-}
-if (!in_array($action, ['block', 'unblock'], true)) {
-    contractorBlockJson(false, 'Invalid action.', null, 400);
+if ($action === 'block' && empty($reason)) {
+    sendJson(400, 'Reason is required for blocking.');
 }
 
 try {
-    if ($action === 'block') {
-        $result = ContractorBlockingService::blockContractor($conn, $contractorId, $reason, $remarks, $userId);
-    } else {
-        $result = ContractorBlockingService::unblockContractor($conn, $contractorId, $userId);
-    }
-} catch (Throwable $e) {
-    contractorBlockLog($e->getMessage());
-    contractorBlockJson(false, 'Contractor action failed: ' . $e->getMessage(), null, 500);
-}
+    $conn->begin_transaction();
 
-contractorBlockJson((bool)($result['success'] ?? false), $result['message'] ?? 'Action completed.', $result);
+    if ($action === 'block') {
+        // Block the contractor
+        $stmt = $conn->prepare("UPDATE users SET block_status = 'blocked_welfare', block_reason = ? WHERE id = ? AND role = 'contractor'");
+        $stmt->bind_param("si", $reason, $contractor_id);
+        $stmt->execute();
+        
+        if ($stmt->affected_rows === 0) {
+            throw new Exception("Contractor not found or already blocked/not a contractor.");
+        }
+
+        // Block all workmen associated with this contractor
+        $workmen_reason = "Contractor Blocked: " . $reason;
+        $welfare_id = $_SESSION['user_id'];
+        $block_time = date('Y-m-d H:i:s');
+        
+        $w_stmt = $conn->prepare("UPDATE workmen SET block_status = 'blocked_contractor', block_reason = ?, blocked_by = ?, blocked_at = ? WHERE contractor_id = ? AND block_status = 'none'");
+        $w_stmt->bind_param("sisi", $workmen_reason, $welfare_id, $block_time, $contractor_id);
+        $w_stmt->execute();
+
+        // Simulate SAP and Attendance System integration
+        $sap_log = $conn->prepare("INSERT INTO system_error_logs (error_type, error_message, file_name) VALUES ('SAP_INTEGRATION', ?, 'block_contractor.php')");
+        $msg = "SAP & Attendance Blocked for Contractor ID $contractor_id and their Workmen due to: $reason";
+        $sap_log->bind_param("s", $msg);
+        $sap_log->execute();
+        
+        $message = "Contractor and associated workmen blocked successfully.";
+        
+    } elseif ($action === 'unblock') {
+        // Unblock contractor
+        $stmt = $conn->prepare("UPDATE users SET block_status = 'none', block_reason = NULL WHERE id = ?");
+        $stmt->bind_param("i", $contractor_id);
+        $stmt->execute();
+        
+        // Unblock their workmen that were blocked because of the contractor block
+        // (Assuming we only unblock those who have 'blocked_contractor')
+        $w_stmt = $conn->prepare("UPDATE workmen SET block_status = 'none', block_reason = NULL, blocked_by = NULL, blocked_at = NULL WHERE contractor_id = ? AND block_status = 'blocked_contractor'");
+        $w_stmt->bind_param("i", $contractor_id);
+        $w_stmt->execute();
+        
+        // Simulate SAP integration
+        $sap_log = $conn->prepare("INSERT INTO system_error_logs (error_type, error_message, file_name) VALUES ('SAP_INTEGRATION', ?, 'block_contractor.php')");
+        $msg = "SAP & Attendance Unblocked for Contractor ID $contractor_id";
+        $sap_log->bind_param("s", $msg);
+        $sap_log->execute();
+        
+        $message = "Contractor and associated workmen unblocked successfully.";
+    } else {
+        throw new Exception("Invalid action.");
+    }
+
+    $conn->commit();
+    sendJson(200, $message);
+
+} catch (Exception $e) {
+    $conn->rollback();
+    sendJson(500, 'Error: ' . $e->getMessage());
+}

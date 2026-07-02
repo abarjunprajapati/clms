@@ -20,12 +20,16 @@ function requireAdmin() {
         exit;
     }
     
-    $role = $_SESSION['role'];
+    $role = $_SESSION['role'] ?? 'NOT_SET';
+    
+    // DEBUG: Log the role
+    file_put_contents(__DIR__.'/debug.log', date('Y-m-d H:i:s')." | SessionID: ".session_id()." | Role: $role | Allowed: super_admin, admin\n", FILE_APPEND);
+    
     $allowed = ['super_admin', 'admin'];
     if (!in_array($role, $allowed)) {
         header('Content-Type: application/json');
         http_response_code(403);
-        echo json_encode(['success' => false, 'message' => 'Insufficient privileges. Super Admin access required.']);
+        echo json_encode(['success' => false, 'message' => "Insufficient privileges. Super Admin access required. (Your role: '$role')"]);
         exit;
     }
     

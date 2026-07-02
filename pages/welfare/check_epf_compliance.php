@@ -32,7 +32,7 @@ function renderContent() {
     }
 
     $sql = "
-        SELECT con.id AS contractor_id, con.vendor_code, con.contractor_name, con.company_name,
+        SELECT con.id AS contractor_id, con.vendor_code, con.contractor_name, con.vendor_name AS company_name,
                c.id AS compliance_id, c.validation_status, c.validation_errors, c.status AS compliance_status,
                c.wage_total, c.worker_count, c.pf_amount
         FROM contractors con
@@ -84,7 +84,7 @@ function renderContent() {
         
         // Fetch compliance records for the checked vendors
         $compQuery = db_fetch_all($conn, "
-            SELECT c.*, con.vendor_code, con.contractor_name, con.company_name
+            SELECT c.*, con.vendor_code, con.contractor_name, con.vendor_name AS company_name
             FROM compliance c
             JOIN contractors con ON c.contractor_id = con.id
             WHERE con.id IN ($idsImploded) AND c.type = 'epf' AND c.month_year = ?
@@ -346,44 +346,29 @@ function renderContent() {
             <table class="data-table" style="width:100%;">
                 <thead>
                     <tr>
-                        <th>ACC No</th>
-                        <th>PF No</th>
-                        <th>Worker Name</th>
-                        <th>Company Name</th>
+                        <th>ACC NO</th>
+                        <th>Name of Worker</th>
                         <th>Vendor Code</th>
-                        <th>Mustroll Wage</th>
-                        <th>ECR EPF Wage</th>
-                        <th>Difference</th>
-                        <th>Mismatch Rating</th>
+                        <th>Vendor name</th>
+                        <th>Musterroll wage (Total days x Rate)</th>
+                        <th>ECR EPF wage</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($comparisonResults)): ?>
-                        <tr><td colspan="10" style="text-align:center; padding:20px; color:#64748b;">No mismatch details to display.</td></tr>
+                        <tr><td colspan="7" style="text-align:center; padding:20px; color:#64748b;">No mismatch details to display.</td></tr>
                     <?php else: ?>
                         <?php foreach ($comparisonResults as $r): 
-                            $ratingBadge = 'badge-success';
-                            if ($r['rating'] === 'Underpaid') $ratingBadge = 'badge-danger';
-                            elseif ($r['rating'] === 'Excluded') $ratingBadge = 'badge-danger';
-                            elseif ($r['rating'] === 'NA') $ratingBadge = 'badge-gray';
-
                             $statusBadge = $r['status'] === 'Complied' ? 'badge-success' : ($r['status'] === 'Not Complied' ? 'badge-danger' : 'badge-gray');
                         ?>
                         <tr>
                             <td><code><?= htmlspecialchars($r['acc_no']) ?></code></td>
-                            <td><code><?= htmlspecialchars($r['pf_no']) ?></code></td>
                             <td><strong><?= htmlspecialchars($r['worker_name']) ?></strong></td>
-                            <td><?= htmlspecialchars($r['company_name']) ?></td>
                             <td><code><?= htmlspecialchars($r['vendor_code']) ?></code></td>
+                            <td><?= htmlspecialchars($r['company_name']) ?></td>
                             <td>₹<?= number_format($r['mr_wage'], 2) ?></td>
                             <td>₹<?= number_format($r['ecr_wage'], 2) ?></td>
-                            <td style="color: <?= $r['diff'] > 0 ? '#ef4444' : '#10b981' ?>;">
-                                ₹<?= number_format($r['diff'], 2) ?>
-                            </td>
-                            <td>
-                                <span class="badge <?= $ratingBadge ?>"><?= strtoupper($r['rating']) ?></span>
-                            </td>
                             <td>
                                 <span class="badge <?= $statusBadge ?>"><?= strtoupper($r['status']) ?></span>
                             </td>

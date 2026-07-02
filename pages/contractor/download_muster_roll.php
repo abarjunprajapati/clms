@@ -1,7 +1,7 @@
 <?php
 // pages/contractor/download_muster_roll.php
 require_once '../../include/auth.php';
-checkAuth(['contractor', 'welfare_user', 'welfare', 'super_admin', 'admin']);
+checkAuth(['contractor', 'welfare_user', 'welfare_admin', 'welfare', 'super_admin', 'admin']);
 include '../../include/config.php';
 
 $role = $_SESSION['role'];
@@ -9,7 +9,7 @@ $user_id = $_SESSION['user_id'];
 
 // Get contractor ID from GET (for welfare/admin) or from session (for contractor)
 $contractor_id = 0;
-if (($role === 'welfare_user' || $role === 'welfare' || $role === 'super_admin' || $role === 'admin') && isset($_GET['contractor_id'])) {
+if (($role === 'welfare_user' || $role === 'welfare_admin' || $role === 'welfare' || $role === 'super_admin' || $role === 'admin') && isset($_GET['contractor_id'])) {
     $contractor_id = intval($_GET['contractor_id']);
 } else {
     // Logged in as contractor

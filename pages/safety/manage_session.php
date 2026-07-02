@@ -3,6 +3,8 @@ require_once __DIR__ . '/../../include/auth.php';
 checkAuth(['safety_user', 'super_admin']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
+require_once __DIR__ . '/../../include/safety_training_control.php';
+clms_safety_ensure_control_schema($conn);
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Safety Officer';
@@ -29,12 +31,12 @@ if (!empty($session['batch_number'])) {
              JOIN training_requests tr ON tr.id = tbw.training_request_id
              WHERE tbw.batch_id = ?
                AND tbw.ticked = 1
-               AND tr.status IN ('scheduled', 'contractor_confirmed')
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM training_session_workers tsw
-                   WHERE tsw.training_request_id = tbw.training_request_id
-               )",
+               AND LOWER(COALESCE(tr.status, '')) IN ('scheduled', 'contractor_confirmed', 'passed', 'failed', 'training_passed', 'training_failed')
+             ON DUPLICATE KEY UPDATE
+               session_id = VALUES(session_id),
+               workman_id = VALUES(workman_id),
+               attendance_status = COALESCE(NULLIF(training_session_workers.attendance_status, ''), VALUES(attendance_status)),
+               result = COALESCE(NULLIF(training_session_workers.result, ''), VALUES(result))",
             'ii',
             [(int)$session_id, (int)$batch['id']]
         );
@@ -57,7 +59,7 @@ function renderContent() {
     $validityDays = (int)safetySessionSetting($conn, 'training_validity_days', 365);
     
     // Fetch assigned workers
-    $workers = db_fetch_all($conn, "
+    $rawWorkers = db_fetch_all($conn, "
         SELECT sw.*, tr.status AS request_status, COALESCE(tr.contractor_confirmed, 0) AS contractor_confirmed,
                w.name, w.temp_id as worker_code, c.contractor_name, w.trade
         FROM training_session_workers sw
@@ -65,8 +67,16 @@ function renderContent() {
         JOIN workmen w ON sw.workman_id = w.id
         JOIN contractors c ON w.contractor_id = c.id
         WHERE sw.session_id = ?
-          AND tr.status IN ('scheduled', 'contractor_confirmed')
+
     ", 'i', [$session_id]);
+
+    $uniqueWorkers = [];
+    foreach ($rawWorkers as $w) {
+        if (!isset($uniqueWorkers[$w['workman_id']])) {
+            $uniqueWorkers[$w['workman_id']] = $w;
+        }
+    }
+    $workers = array_values($uniqueWorkers);
 
 $is_locked = in_array(strtolower((string)($session['session_status'] ?? 'open')), ['completed', 'cancelled'], true);
     ?>
@@ -103,71 +113,12 @@ $is_locked = in_array(strtolower((string)($session['session_status'] ?? 'open'))
     <!-- TABS NAVIGATION -->
     <div class="tabs-container">
       <div class="tabs-header">
-        <div class="tab-item active" onclick="showTab(event, 'control')"><i class="fas fa-calendar-alt"></i> Schedule Control</div>
-        <div class="tab-item" onclick="showTab(event, 'workers')"><i class="fas fa-users"></i> Assigned Workers</div>
+        <div class="tab-item active" onclick="showTab(event, 'workers')"><i class="fas fa-users"></i> Assigned Workers</div>
         <div class="tab-item" onclick="showTab(event, 'attendance')"><i class="fas fa-clipboard-user"></i> Attendance</div>
         <div class="tab-item" onclick="showTab(event, 'results')"><i class="fas fa-poll-h"></i> Upload Results</div>
         <div class="tab-item" onclick="showTab(event, 'summary')"><i class="fas fa-info-circle"></i> Summary</div>
       </div>
-
-      <div class="tab-content active" id="tab-control">
-        <div class="card-body">
-            <div class="alert alert-info">
-                Use this control desk to postpone, advance, cancel or update this training session. Contractors will receive schedule update notifications where notification support is available.
-            </div>
-            <form action="../../api/safety/update_session.php" method="POST" class="schedule-control-form">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(get_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
-                <input type="hidden" name="session_id" value="<?= (int)$session_id ?>">
-                <input type="hidden" name="schedule_action" value="update">
-                <div class="control-grid">
-                    <div class="form-group">
-                        <label class="form-label">Training Date</label>
-                        <input type="date" name="session_date" class="form-control" value="<?= htmlspecialchars($session['session_date'] ?? '') ?>" <?= $is_locked ? 'disabled' : '' ?> required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Training Time</label>
-                        <input type="time" name="session_time" class="form-control" value="<?= !empty($session['session_time']) ? htmlspecialchars(substr($session['session_time'], 0, 5)) : '' ?>" <?= $is_locked ? 'disabled' : '' ?> required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Venue</label>
-                        <input type="text" name="location" class="form-control" value="<?= htmlspecialchars($session['location'] ?? '') ?>" <?= $is_locked ? 'disabled' : '' ?> required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Capacity</label>
-                        <input type="number" min="1" name="capacity" class="form-control" value="<?= (int)($session['capacity'] ?? 30) ?>" <?= $is_locked ? 'disabled' : '' ?>>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Batch Number</label>
-                        <input type="text" name="batch_number" class="form-control" value="<?= htmlspecialchars($session['batch_number'] ?? '') ?>" <?= $is_locked ? 'disabled' : '' ?>>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Instructor</label>
-                        <input type="text" name="trainer_name" class="form-control" value="<?= htmlspecialchars($session['trainer_name'] ?? '') ?>" <?= $is_locked ? 'disabled' : '' ?>>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Training Type</label>
-                        <select name="training_type" class="form-control" <?= $is_locked ? 'disabled' : '' ?>>
-                            <?php foreach (['induction' => 'Safety Induction', 'refresher' => 'Refresher Training', 'special' => 'Specialized Safety Training'] as $value => $label): ?>
-                                <option value="<?= $value ?>" <?= strtolower((string)($session['training_type'] ?? 'induction')) === $value ? 'selected' : '' ?>><?= $label ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Reason / Intimation Text</label>
-                        <input type="text" name="change_reason" class="form-control" value="Training schedule updated by Safety." <?= $is_locked ? 'disabled' : '' ?>>
-                    </div>
-                </div>
-                <?php if (!$is_locked): ?>
-                <div class="control-actions">
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Schedule Update</button>
-                    <button type="button" class="btn btn-outline btn-cancel-session"><i class="fas fa-ban"></i> Cancel Session</button>
-                </div>
-                <?php endif; ?>
-            </form>
-        </div>
-      </div>
-
-      <div class="tab-content" id="tab-workers">
+      <div class="tab-content active" id="tab-workers">
         <div class="card-body">
             <table class="data-table">
                 <thead>
@@ -189,9 +140,7 @@ $is_locked = in_array(strtolower((string)($session['session_status'] ?? 'open'))
                         <td><?= htmlspecialchars($w['contractor_name']) ?></td>
                         <td><?= htmlspecialchars($w['trade']) ?></td>
                         <td>
-                            <?php if(($w['request_status'] ?? '') === 'scheduled' && (int)($w['contractor_confirmed'] ?? 0) === 0): ?>
-                                <span class="badge badge-info">Awaiting Contractor</span>
-                            <?php elseif($w['attendance_status'] == 'present'): ?>
+                            <?php if($w['attendance_status'] == 'present'): ?>
                                 <span class="badge badge-success">Present</span>
                             <?php elseif($w['attendance_status'] == 'absent'): ?>
                                 <span class="badge badge-danger">Absent</span>

@@ -22,7 +22,7 @@ try {
         'pending' => "a.workflow_status = 'submitted'",
         'approved' => "a.workflow_status = 'under_review'", 
         'rejected' => "a.workflow_status = 'rejected'",
-        'resubmitted' => "a.workflow_status = 'submitted' AND a.updated_at > DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        'resubmitted' => "a.workflow_status = 'resubmitted'"
     ];
 
     $where_status = $status_conditions[$tab];
@@ -49,7 +49,7 @@ try {
         'pending' => db_count($conn, "SELECT COUNT(*) c FROM annexure2a WHERE workflow_status = 'submitted'"),
         'approved' => db_count($conn, "SELECT COUNT(*) c FROM annexure2a WHERE workflow_status = 'under_review'"),
         'rejected' => db_count($conn, "SELECT COUNT(*) c FROM annexure2a WHERE workflow_status = 'rejected'"),
-        'resubmitted' => db_count($conn, "SELECT COUNT(*) c FROM annexure2a WHERE workflow_status = 'submitted' AND updated_at > DATE_SUB(NOW(), INTERVAL 7 DAY)")
+        'resubmitted' => db_count($conn, "SELECT COUNT(*) c FROM annexure2a WHERE workflow_status = 'resubmitted'")
     ];
 
     sendResponse(true, $applications, "Welfare applications loaded for tab: $tab", ['counts' => $counts]);

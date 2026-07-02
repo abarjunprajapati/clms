@@ -1,0 +1,1016 @@
+array (
+  '__dash_link__' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\' . $dash_link . \'\'',
+    'icon' => 'fa-tachometer-alt',
+    'label' => 'Dashboard',
+  ),
+  'adm_abdash_abdashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'dashboard.php\'',
+    'icon' => 'fa-tachometer-alt',
+    'label' => 'Dashboard',
+  ),
+  'adm_abusers' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'users.php\'',
+    'icon' => 'fa-users-cog',
+    'label' => 'User Management',
+  ),
+  'adm_abroles' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'roles.php\'',
+    'icon' => 'fa-user-shield',
+    'label' => 'Role Control',
+  ),
+  'adm_abpermissions' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'permissions.php\'',
+    'icon' => 'fa-key',
+    'label' => 'Permissions',
+  ),
+  'adm_abworkflow_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'workflow_monitor.php\'',
+    'icon' => 'fa-eye',
+    'label' => 'Workflow Monitoring',
+  ),
+  'adm_abworkflow_control' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'workflow_control.php\'',
+    'icon' => 'fa-gamepad',
+    'label' => 'Workflow Control',
+  ),
+  'adm_abdocuments_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'documents_monitor.php\'',
+    'icon' => 'fa-file-invoice',
+    'label' => 'Document Flow',
+  ),
+  'adm_abtraining_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'training_monitor.php\'',
+    'icon' => 'fa-graduation-cap',
+    'label' => 'Training Flow',
+  ),
+  'adm_abgatepass_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'gatepass_monitor.php\'',
+    'icon' => 'fa-id-card',
+    'label' => 'Gate Pass Flow',
+  ),
+  'adm_absap_sync_logs' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'sap_sync_logs.php\'',
+    'icon' => 'fa-sync',
+    'label' => 'SAP Sync Logs',
+  ),
+  'adm_abworker_management' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'worker_management.php\'',
+    'icon' => 'fa-user-clock',
+    'label' => 'Worker Lifecycle',
+  ),
+  'adm_abcontractor_control' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'contractor_control.php\'',
+    'icon' => 'fa-building-circle-exclamation',
+    'label' => 'Contractor Control',
+  ),
+  'adm_abexecution_management' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'execution_management.php\'',
+    'icon' => 'fa-link',
+    'label' => 'Execution Mapping',
+  ),
+  'adm_abcomp_abcompliance_dashboard_dash_abcomp_abcompliance_dashboard_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'compliance_dashboard.php\'',
+    'icon' => 'fa-shield-check',
+    'label' => 'Compliance Dashboard',
+  ),
+  'adm_abatt_abattendance_dashboard_dash_abatt_abattendance_dashboard_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'attendance_dashboard.php\'',
+    'icon' => 'fa-calendar-check',
+    'label' => 'Attendance Dashboard',
+  ),
+  'adm_abbiometric_dash_abbiometric_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'biometric_dashboard.php\'',
+    'icon' => 'fa-fingerprint',
+    'label' => 'Biometric Governance',
+  ),
+  'adm_abpass_limits' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'pass_limits.php\'',
+    'icon' => 'fa-sliders-h',
+    'label' => 'Pass Category Limit',
+  ),
+  'certified_wages' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/welfare/certified_wages.php\'',
+    'icon' => 'fa-indian-rupee-sign',
+    'label' => 'Certified Wage Rate',
+  ),
+  'labour_license_threshold' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/welfare/labour_license_threshold.php\'',
+    'icon' => 'fa-scale-balanced',
+    'label' => 'Labour License Threshold',
+  ),
+  'temporary_pass_validity' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/welfare/temporary_pass_validity.php\'',
+    'icon' => 'fa-calendar-day',
+    'label' => 'Temporary Pass Validity',
+  ),
+  'age_range_mapping' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/welfare/age_range_mapping.php\'',
+    'icon' => 'fa-user-clock',
+    'label' => 'Age Range Mapping',
+  ),
+  'gate_pass_document_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/welfare/gate_pass_document_master.php\'',
+    'icon' => 'fa-file-shield',
+    'label' => 'Gate Pass Document Master',
+  ),
+  'payment_gateway' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/welfare/payment_gateway.php\'',
+    'icon' => 'fa-credit-card',
+    'label' => 'Payment Gateway / QR',
+  ),
+  'adm_abmaster_data' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'master_data.php\'',
+    'icon' => 'fa-database',
+    'label' => 'Master Data',
+  ),
+  'muster_roll_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/welfare/muster_roll_monitor.php\'',
+    'icon' => 'fa-file-invoice',
+    'label' => 'Muster Roll Verification',
+  ),
+  'check_esi_comp_check_esi_compliance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/welfare/check_esi_compliance.php\'',
+    'icon' => 'fa-shield-check',
+    'label' => 'Check ESI Compliance',
+  ),
+  'check_epf_comp_check_epf_compliance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/welfare/check_epf_compliance.php\'',
+    'icon' => 'fa-shield-check',
+    'label' => 'Check EPF Compliance',
+  ),
+  'dash_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/amc/dashboard.php\'',
+    'icon' => 'fa-handshake',
+    'label' => 'AMC & SLA',
+  ),
+  'invoices' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/payments/invoices.php\'',
+    'icon' => 'fa-file-invoice-dollar',
+    'label' => 'Payment Governance',
+  ),
+  'request' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.BASE_URL.\'pages/temporary/request.php\'',
+    'icon' => 'fa-user-clock',
+    'label' => 'Temp Workforce Pass',
+  ),
+  'adm_abpolicy_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'policy_monitor.php\'',
+    'icon' => 'fa-microchip',
+    'label' => 'Policy Engine',
+  ),
+  'adm_abnotifications_logs' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'notifications_logs.php\'',
+    'icon' => 'fa-bell-slash',
+    'label' => 'Notifications Logs',
+  ),
+  'adm_abalerts_dash_abalerts_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'alerts_dashboard.php\'',
+    'icon' => 'fa-exclamation-triangle',
+    'label' => 'Alerts Dashboard',
+  ),
+  'adm_absystem_health' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'system_health.php\'',
+    'icon' => 'fa-heartbeat',
+    'label' => 'System Health',
+  ),
+  'adm_abaudit_logs' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'audit_logs.php\'',
+    'icon' => 'fa-history',
+    'label' => 'Audit Logs',
+  ),
+  'adm_abrep_abreports' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'reports.php\'',
+    'icon' => 'fa-file-medical-alt',
+    'label' => 'Reports',
+  ),
+  'adm_abdata_export' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'data_export.php\'',
+    'icon' => 'fa-download',
+    'label' => 'Data Export',
+  ),
+  'adm_absettings' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'settings.php\'',
+    'icon' => 'fa-cog',
+    'label' => 'Settings',
+  ),
+  'welf_admin_dash_admin_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'admin_dashboard.php\'',
+    'icon' => 'fa-tachometer-alt',
+    'label' => 'Admin Home',
+  ),
+  'adm_abcreate_user' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$ab.\'create_user.php\'',
+    'icon' => 'fa-user-plus',
+    'label' => 'Create User',
+  ),
+  'welf_pass_limits' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'pass_limits.php\'',
+    'icon' => 'fa-sliders-h',
+    'label' => 'Pass Category Limit',
+  ),
+  'welf_certified_wages' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'certified_wages.php\'',
+    'icon' => 'fa-indian-rupee-sign',
+    'label' => 'Certified Wage Rate',
+  ),
+  'welf_labour_license_threshold' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'labour_license_threshold.php\'',
+    'icon' => 'fa-scale-balanced',
+    'label' => 'Labour License Threshold',
+  ),
+  'welf_temporary_pass_validity' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'temporary_pass_validity.php\'',
+    'icon' => 'fa-calendar-day',
+    'label' => 'Temporary Pass Validity',
+  ),
+  'welf_education_correction' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'education_correction.php\'',
+    'icon' => 'fa-graduation-cap',
+    'label' => 'Education Job Profile',
+  ),
+  'welf_nationality_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'nationality_master.php\'',
+    'icon' => 'fa-globe',
+    'label' => 'Nationality Masters',
+  ),
+  'welf_age_range_mapping' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'age_range_mapping.php\'',
+    'icon' => 'fa-user-clock',
+    'label' => 'Age Range Mapping',
+  ),
+  'welf_gate_pass_document_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'gate_pass_document_master.php\'',
+    'icon' => 'fa-file-shield',
+    'label' => 'Gate Pass Document Master',
+  ),
+  'welf_training_type_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'training_type_master.php\'',
+    'icon' => 'fa-graduation-cap',
+    'label' => 'Training Type Master',
+  ),
+  'welf_training_venue_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'training_venue_master.php\'',
+    'icon' => 'fa-location-dot',
+    'label' => 'Training Venue Master',
+  ),
+  'welf_payment_gateway' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'payment_gateway.php\'',
+    'icon' => 'fa-credit-card',
+    'label' => 'Payment Gateway / QR',
+  ),
+  'welf_temp_pass_control' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'temp_pass_control.php\'',
+    'icon' => 'fa-clock',
+    'label' => 'Temp Pass Control',
+  ),
+  'welf_entity_directory' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'entity_directory.php\'',
+    'icon' => 'fa-address-book',
+    'label' => 'Contractor / Customer Data',
+  ),
+  'welf_approve_3a' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'approve_3a.php\'',
+    'icon' => 'fa-file-contract',
+    'label' => 'Contractor Info Verification',
+  ),
+  'welf_enrollment_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'enrollment_monitor.php\'',
+    'icon' => 'fa-users-viewfinder',
+    'label' => 'Worker Monitor',
+  ),
+  'welf_training_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'training_monitor.php\'',
+    'icon' => 'fa-graduation-cap',
+    'label' => 'Training Monitor',
+  ),
+  'welf_gatepass_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'gatepass_monitor.php\'',
+    'icon' => 'fa-id-card-clip',
+    'label' => 'Gate Pass Monitor',
+  ),
+  'welf_acc_tracking' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'acc_tracking.php\'',
+    'icon' => 'fa-fingerprint',
+    'label' => 'ACC Monitor',
+  ),
+  'welf_productivity_dash_productivity_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'productivity_dashboard.php\'',
+    'icon' => 'fa-chart-line',
+    'label' => 'Productivity Dashboard',
+  ),
+  'welf_muster_roll_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'muster_roll_monitor.php\'',
+    'icon' => 'fa-file-invoice',
+    'label' => 'Muster Roll Verification',
+  ),
+  'welf_esi_contribution_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'esi_contribution_monitor.php\'',
+    'icon' => 'fa-hand-holding-dollar',
+    'label' => 'ESI Contribution Monitor',
+  ),
+  'welf_check_esi_comp_check_esi_compliance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'check_esi_compliance.php\'',
+    'icon' => 'fa-shield-check',
+    'label' => 'Check ESI Compliance',
+  ),
+  'welf_check_epf_comp_check_epf_compliance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'check_epf_compliance.php\'',
+    'icon' => 'fa-shield-check',
+    'label' => 'Check EPF Compliance',
+  ),
+  'welf_lwf_comp_lwf_compliance_checking_checking' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'lwf_compliance_checking.php\'',
+    'icon' => 'fa-clipboard-check',
+    'label' => 'LWF Compliance Checking',
+  ),
+  'welf_lwf_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'lwf_master.php\'',
+    'icon' => 'fa-sliders-h',
+    'label' => 'LWF Rate Master',
+  ),
+  'welf_comp_compliance_monitor_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'compliance_monitor.php\'',
+    'icon' => 'fa-shield-check',
+    'label' => 'Compliance Monitor',
+  ),
+  'welf_blocking_control' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'blocking_control.php\'',
+    'icon' => 'fa-building-circle-exclamation',
+    'label' => 'Contractor Control',
+  ),
+  'welf_worker_block' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'worker_block.php\'',
+    'icon' => 'fa-user-slash',
+    'label' => 'Worker Blocking',
+  ),
+  'welf_noc_approvals' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'noc_approvals.php\'',
+    'icon' => 'fa-exchange-alt',
+    'label' => 'NOC Approvals',
+  ),
+  'welf_verification_history' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'verification_history.php\'',
+    'icon' => 'fa-history',
+    'label' => 'Contractor History',
+  ),
+  'welf_rep_reports' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'reports.php\'',
+    'icon' => 'fa-file-invoice',
+    'label' => 'Reports',
+  ),
+  'welf_sap_logs' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'sap_logs.php\'',
+    'icon' => 'fa-sync',
+    'label' => 'SAP Integration',
+  ),
+  'welf_approve_contractors' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'approve_contractors.php\'',
+    'icon' => 'fa-building-circle-check',
+    'label' => 'Pending Customer Approval',
+  ),
+  'welf_verify_documents' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'verify_documents.php\'',
+    'icon' => 'fa-file-shield',
+    'label' => 'Document Verification',
+  ),
+  'welf_issue_temp_pass' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'issue_temp_pass.php\'',
+    'icon' => 'fa-clock',
+    'label' => 'Temporary Pass Issue',
+  ),
+  'welf_acc_generation' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'acc_generation.php\'',
+    'icon' => 'fa-fingerprint',
+    'label' => 'Permanent ACC Approval',
+  ),
+  'welf_acc_return_queue' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'acc_return_queue.php\'',
+    'icon' => 'fa-undo',
+    'label' => 'Relieving Management',
+  ),
+  'welf_monthly_comp_monthly_compliance_approvals_approvals' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'monthly_compliance_approvals.php\'',
+    'icon' => 'fa-certificate',
+    'label' => 'Monthly Compliance Approvals',
+  ),
+  'welf_esic_wage_limit' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'esic_wage_limit.php\'',
+    'icon' => 'fa-cog',
+    'label' => 'ESIC Wage Limit',
+  ),
+  'welf_att_attendance_monitor_monitor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/welfare/\'.$wb.\'attendance_monitor.php\'',
+    'icon' => 'fa-calendar-check',
+    'label' => 'Attendance Monitor',
+  ),
+  'annexure2a' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/annexure-2a.php\'',
+    'icon' => 'fa-file-invoice',
+    'label' => 'CLMS Enrolment Request',
+  ),
+  'enrolment4atypecontractor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/enrolment-4a.php?type=contractor\'',
+    'icon' => 'fa-user-check',
+    'label' => 'Contractor',
+  ),
+  'enrolment4atyperepresentative' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/enrolment-4a.php?type=representative\'',
+    'icon' => 'fa-user-tie',
+    'label' => 'Representative',
+  ),
+  'enrolment4atypesupervisor' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/enrolment-4a.php?type=supervisor\'',
+    'icon' => 'fa-user-shield',
+    'label' => 'Supervisor',
+  ),
+  'enrolment4atypeworkmen' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/enrolment-4a.php?type=workmen\'',
+    'icon' => 'fa-users',
+    'label' => 'Workmen',
+  ),
+  'welfareactions' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/welfare-actions.php\'',
+    'icon' => 'fa-clock-rotate-left',
+    'label' => 'Welfare Action History',
+  ),
+  'profile' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/profile.php\'',
+    'icon' => 'fa-id-card',
+    'label' => 'Basic Details',
+  ),
+  'training_request' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/training_request.php\'',
+    'icon' => 'fa-graduation-cap',
+    'label' => 'Safety Training Request',
+  ),
+  'payment' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/payment.php\'',
+    'icon' => 'fa-credit-card',
+    'label' => 'Pending Fee Payment',
+  ),
+  'book_safety_training' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/book_safety_training.php\'',
+    'icon' => 'fa-calendar-check',
+    'label' => 'Book Safety Training',
+  ),
+  'gatepass6a' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/gatepass-6a.php\'',
+    'icon' => 'fa-id-badge',
+    'label' => 'Gate Pass',
+  ),
+  'gatepassreupload' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/gatepass-reupload.php\'',
+    'icon' => 'fa-file-circle-exclamation',
+    'label' => 'Re-upload Gate Pass Docs',
+  ),
+  'pass_status' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/pass_status.php\'',
+    'icon' => 'fa-id-card',
+    'label' => 'ACC Card',
+  ),
+  'work_block_unblock' => 
+  array (
+    'link' => 'BASE_URL . \'pages/worker/block_unblock.php\'',
+    'icon' => 'fa-user-slash',
+    'label' => 'Worker Blocking',
+  ),
+  'muster_roll' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/muster_roll.php\'',
+    'icon' => 'fa-file-invoice',
+    'label' => 'Muster Roll',
+  ),
+  'esi_contribution' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/esi_contribution.php\'',
+    'icon' => 'fa-hand-holding-dollar',
+    'label' => 'ESI Contribution',
+  ),
+  'esi_ecr_pf_upload' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/esi_ecr_pf_upload.php\'',
+    'icon' => 'fa-file-upload',
+    'label' => 'ESI ECR & PF Contribution Upload',
+  ),
+  'esi_comp_esi_compliance_check_check' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/esi_compliance_check.php\'',
+    'icon' => 'fa-shield-check',
+    'label' => 'ESI Compliance Status',
+  ),
+  'epf_comp_epf_compliance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/epf_compliance.php\'',
+    'icon' => 'fa-file-invoice-dollar',
+    'label' => 'EPF Compliance',
+  ),
+  'lwf_comp_lwf_compliance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/lwf_compliance.php\'',
+    'icon' => 'fa-balance-scale',
+    'label' => 'LWF Compliance',
+  ),
+  'monthly_comp_monthly_compliance_certificate_certificate' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/monthly_compliance_certificate.php\'',
+    'icon' => 'fa-certificate',
+    'label' => 'Monthly Compliance Cert',
+  ),
+  'lwf_rate_view' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/lwf_rate_view.php\'',
+    'icon' => 'fa-indian-rupee-sign',
+    'label' => 'LWF Rate & Status',
+  ),
+  'att_attendance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/attendance.php\'',
+    'icon' => 'fa-calendar-check',
+    'label' => 'Attendance',
+  ),
+  'noc_management' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/noc_management.php\'',
+    'icon' => 'fa-exchange-alt',
+    'label' => 'NOC Management',
+  ),
+  'comp_compliance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/compliance.php\'',
+    'icon' => 'fa-shield-check',
+    'label' => 'Compliance Monitor',
+  ),
+  'documents' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/documents.php\'',
+    'icon' => 'fa-folder-open',
+    'label' => 'Documents',
+  ),
+  'rep_reports' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/reports.php\'',
+    'icon' => 'fa-chart-bar',
+    'label' => 'Reports',
+  ),
+  'fl_dash_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/frontline/dashboard.php\'',
+    'icon' => 'fa-tachometer-alt',
+    'label' => 'Dashboard',
+  ),
+  'fl_entry_validation' => 
+  array (
+    'link' => 'BASE_URL . \'pages/frontline/entry_validation.php\'',
+    'icon' => 'fa-sign-in-alt',
+    'label' => 'Gate Entry Validation',
+  ),
+  'fl_exit_validation' => 
+  array (
+    'link' => 'BASE_URL . \'pages/frontline/exit_validation.php\'',
+    'icon' => 'fa-sign-out-alt',
+    'label' => 'Gate Exit Validation',
+  ),
+  'fl_active_pass' => 
+  array (
+    'link' => 'BASE_URL . \'pages/frontline/active_pass.php\'',
+    'icon' => 'fa-id-badge',
+    'label' => 'Active Pass List',
+  ),
+  'fl_blocked_workers' => 
+  array (
+    'link' => 'BASE_URL . \'pages/frontline/blocked_workers.php\'',
+    'icon' => 'fa-user-slash',
+    'label' => 'Blocked Workers',
+  ),
+  'fl_expired_pass' => 
+  array (
+    'link' => 'BASE_URL . \'pages/frontline/expired_pass.php\'',
+    'icon' => 'fa-exclamation-triangle',
+    'label' => 'Expired Pass Alerts',
+  ),
+  'fl_logs' => 
+  array (
+    'link' => 'BASE_URL . \'pages/frontline/logs.php\'',
+    'icon' => 'fa-history',
+    'label' => 'Entry/Exit Logs',
+  ),
+  'fl_manual_override' => 
+  array (
+    'link' => 'BASE_URL . \'pages/frontline/manual_override.php\'',
+    'icon' => 'fa-unlock-alt',
+    'label' => 'Manual Override',
+  ),
+  'fl_rep_reports' => 
+  array (
+    'link' => 'BASE_URL . \'pages/frontline/reports.php\'',
+    'icon' => 'fa-chart-line',
+    'label' => 'Reports',
+  ),
+  'pass_issuer_dash_pass_issuer_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/pass_issuer_dashboard.php\'',
+    'icon' => 'fa-tachometer-alt',
+    'label' => 'Dashboard',
+  ),
+  'verify_documents' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/verify_documents.php\'',
+    'icon' => 'fa-file-shield',
+    'label' => 'Verify Documents',
+  ),
+  'pending_requests' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/pending_requests.php\'',
+    'icon' => 'fa-list-ul',
+    'label' => 'Pending Pass Requests',
+  ),
+  'issue_temp_pass' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/issue_temp_pass.php\'',
+    'icon' => 'fa-id-badge',
+    'label' => 'Temporary Pass Issue',
+  ),
+  'acc_generation' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/acc_generation.php\'',
+    'icon' => 'fa-microchip',
+    'label' => 'ACC Number Generation',
+  ),
+  'issue_acc_pass' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/issue_acc_pass.php\'',
+    'icon' => 'fa-id-card-clip',
+    'label' => 'Permanent Pass (ACC)',
+  ),
+  'reupload_cases' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/reupload_cases.php\'',
+    'icon' => 'fa-upload',
+    'label' => 'Rejected / Re-upload',
+  ),
+  'pass_validity' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/pass_validity.php\'',
+    'icon' => 'fa-calendar-check',
+    'label' => 'Pass Validity Management',
+  ),
+  'cust_annexure3a' => 
+  array (
+    'link' => 'BASE_URL . \'pages/customer/\'.$cb.\'annexure-3a.php\'',
+    'icon' => 'fa-file-contract',
+    'label' => 'Contractor Info',
+  ),
+  'cust_welfareactions' => 
+  array (
+    'link' => 'BASE_URL . \'pages/customer/\'.$cb.\'welfare-actions.php\'',
+    'icon' => 'fa-clock-rotate-left',
+    'label' => 'Welfare Action History',
+  ),
+  'cust_dash_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/customer/\'.$cb.\'dashboard.php\'',
+    'icon' => 'fa-tachometer-alt',
+    'label' => 'Dashboard',
+  ),
+  'cust_profile' => 
+  array (
+    'link' => 'BASE_URL . \'pages/customer/\'.$cb.\'profile.php\'',
+    'icon' => 'fa-id-card',
+    'label' => 'Basic Details',
+  ),
+  'cont_enrolment4atypeworkmen' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'enrolment-4a.php?type=workmen\'',
+    'icon' => 'fa-users',
+    'label' => 'Enrolment for Entry Pass',
+  ),
+  'cont_enrolment4atyperetraining' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'enrolment-4a.php?type=retraining\'',
+    'icon' => 'fa-arrows-rotate',
+    'label' => 'Re-Training Workmen',
+  ),
+  'cont_training_request' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'training_request.php\'',
+    'icon' => 'fa-graduation-cap',
+    'label' => 'Safety Training',
+  ),
+  'cont_book_safety_training' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'book_safety_training.php\'',
+    'icon' => 'fa-calendar-check',
+    'label' => 'Book Safety Training',
+  ),
+  'cont_payment' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'payment.php\'',
+    'icon' => 'fa-credit-card',
+    'label' => 'Payment',
+  ),
+  'cont_gatepass6a' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'gatepass-6a.php\'',
+    'icon' => 'fa-id-badge',
+    'label' => 'Gate Pass',
+  ),
+  'cont_gatepassreupload' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'gatepass-reupload.php\'',
+    'icon' => 'fa-file-circle-exclamation',
+    'label' => 'Re-upload Gate Pass Docs',
+  ),
+  'cont_pass_status' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'pass_status.php\'',
+    'icon' => 'fa-fingerprint',
+    'label' => 'ACC Card',
+  ),
+  'cont_att_attendance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'attendance.php\'',
+    'icon' => 'fa-calendar-check',
+    'label' => 'Attendance',
+  ),
+  'cont_comp_compliance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'compliance.php\'',
+    'icon' => 'fa-shield-check',
+    'label' => 'Compliance Monitor',
+  ),
+  'cont_documents' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'documents.php\'',
+    'icon' => 'fa-folder-open',
+    'label' => 'Documents',
+  ),
+  'cont_rep_reports' => 
+  array (
+    'link' => 'BASE_URL . \'pages/contractor/\'.$cp.\'reports.php\'',
+    'icon' => 'fa-chart-bar',
+    'label' => 'Reports',
+  ),
+  'enrollment_approval' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/enrollment_approval.php\'',
+    'icon' => 'fa-user-check',
+    'label' => 'Enrollment Approval Inbox',
+  ),
+  'training_class_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/training_class_master.php\'',
+    'icon' => 'fa-calendar-plus',
+    'label' => 'Training Batch Creation',
+  ),
+  'training_requests' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/training_requests.php\'',
+    'icon' => 'fa-envelope-open-text',
+    'label' => 'Training Requests',
+  ),
+  'training_schedule' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/training_schedule.php\'',
+    'icon' => 'fa-calendar-alt',
+    'label' => 'Training Schedule',
+  ),
+  'upcoming_sessions' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/upcoming_sessions.php\'',
+    'icon' => 'fa-clock',
+    'label' => 'Upcoming Sessions',
+  ),
+  'conduct_results' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/conduct_results.php\'',
+    'icon' => 'fa-users-cog',
+    'label' => 'Conduct & Results',
+  ),
+  'training_status' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/training_status.php\'',
+    'icon' => 'fa-user-check',
+    'label' => 'Training Status',
+  ),
+  'training_location_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/training_location_master.php\'',
+    'icon' => 'fa-location-dot',
+    'label' => 'Location Master',
+  ),
+  'instructor_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/instructor_master.php\'',
+    'icon' => 'fa-person-chalkboard',
+    'label' => 'Instructor Master',
+  ),
+  'safety_training_type_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/safety_training_type_master.php\'',
+    'icon' => 'fa-list-check',
+    'label' => 'Training Type Master',
+  ),
+  'training_fee_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/training_fee_master.php\'',
+    'icon' => 'fa-indian-rupee-sign',
+    'label' => 'Training Fee Master',
+  ),
+  'training_language_master' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/training_language_master.php\'',
+    'icon' => 'fa-language',
+    'label' => 'Language Master',
+  ),
+  'pending_training' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/pending_training.php\'',
+    'icon' => 'fa-hourglass-half',
+    'label' => 'Pending Workers',
+  ),
+  'retraining' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/retraining.php\'',
+    'icon' => 'fa-redo',
+    'label' => 'Re-Training Eligibility',
+  ),
+  'retraining_requests' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/retraining_requests.php\'',
+    'icon' => 'fa-tasks',
+    'label' => 'Re-Training Inbox',
+  ),
+  'training_batch_report' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/training_batch_report.php\'',
+    'icon' => 'fa-file-lines',
+    'label' => 'Batch Reports',
+  ),
+  'exec_dash_dashboard' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'dashboard.php\'',
+    'icon' => 'fa-tachometer-alt',
+    'label' => 'Command Center',
+  ),
+  'exec_training_att_training_attendance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'training_attendance.php\'',
+    'icon' => 'fa-file-signature',
+    'label' => 'Workmen Enrollment Approval',
+  ),
+  'exec_contractors' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'contractors.php\'',
+    'icon' => 'fa-building',
+    'label' => 'Assigned Contractors',
+  ),
+  'exec_work_orders' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'work_orders.php\'',
+    'icon' => 'fa-handshake',
+    'label' => 'Work Order Tracking',
+  ),
+  'exec_deployments' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'deployments.php\'',
+    'icon' => 'fa-users-viewfinder',
+    'label' => 'Deployment Monitoring',
+  ),
+  'exec_att_attendance' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'attendance.php\'',
+    'icon' => 'fa-calendar-check',
+    'label' => 'Attendance Monitoring',
+  ),
+  'exec_att_attendance_exceptions_exceptions' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'attendance_exceptions.php\'',
+    'icon' => 'fa-triangle-exclamation',
+    'label' => 'System Exceptions',
+  ),
+  'exec_observations' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'observations.php\'',
+    'icon' => 'fa-edit',
+    'label' => 'Field Observations',
+  ),
+  'exec_escalations' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'escalations.php\'',
+    'icon' => 'fa-bullhorn',
+    'label' => 'Escalation Management',
+  ),
+  'exec_productivity' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'productivity.php\'',
+    'icon' => 'fa-chart-line',
+    'label' => 'Productivity Center',
+  ),
+  'exec_rep_reports' => 
+  array (
+    'link' => 'BASE_URL . \'pages/execution/\'.$eb.\'reports.php\'',
+    'icon' => 'fa-file-invoice',
+    'label' => 'Reports & Exports',
+  ),
+  'm_link_' => 
+  array (
+    'link' => 'BASE_URL . \'pages/admin/\'.$m[\'link\'].\'\'',
+    'icon' => '\'.$m[\'icon\'].\'',
+    'label' => '\'.$m[\'label\'].\'',
+  ),
+)

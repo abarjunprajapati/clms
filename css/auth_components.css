@@ -97,7 +97,7 @@
 
 /* Placeholder visibility handler for floating labels */
 .form-control::placeholder {
-  color: transparent;
+  color: #9ca3af;
   transition: color 0.2s ease;
 }
 

@@ -95,10 +95,8 @@ function renderContent() {
               <td>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button class="btn btn-sm btn-outline" onclick="viewDetails(<?= htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8') ?>)"><i class="fas fa-eye"></i> View</button>
-                  <?php if ($role === 'welfare_admin' || $role === 'super_admin'): ?>
                   <button class="btn btn-sm btn-primary" onclick="openActionModal(<?= $c['cid'] ?>, 'approved')"><i class="fas fa-check"></i> Approve</button>
                   <button class="btn btn-sm btn-danger" onclick="openActionModal(<?= $c['cid'] ?>, 'rejected')"><i class="fas fa-times"></i> Reject</button>
-                  <?php endif; ?>
                 </div>
               </td>
             </tr>
@@ -474,7 +472,7 @@ function renderContent() {
           <div class="form-grid">
             <div class="form-field span-3"><label>Wage Declaration by Contractor</label><div class="value-box">${v(r.wage_declaration || 'I declare to pay minimum wage as per government norms')}</div></div>
             <div class="form-field"><label>Employee Compensation Policy</label><div class="value-box">${badge(r.ecp_covered || (ecpRows.length || r.ecp_number ? 'YES' : 'NO'))}</div></div>
-            <div class="form-field span-2"><label>7. EC Policy Non-Coverage Reason</label><div class="value-box">${v(reasonPart(r.epf_esi_exemption_reason, 'EC Policy Reason'))}</div></div>
+            <div class="form-field span-2"><label>7. Employee Compensation Policy</label><div class="value-box">${v(reasonPart(r.epf_esi_exemption_reason, 'EC Policy Reason'))}</div></div>
           </div>
           <div style="margin-top:14px;">${renderTable(['S.No', 'EC Policy Number', 'Valid From', 'Valid To', 'Workers Under EC Policy'], ecpRows.length ? ecpRows : (r.ecp_number ? [{ecp_number:r.ecp_number, ecp_valid_from:r.ecp_valid_from, ecp_valid_to:r.ecp_valid_to, workers_under_policy:r.workers_ecp}] : []), (row, index) => [index + 1, row.ecp_number, fmtDate(row.ecp_valid_from), fmtDate(row.ecp_valid_to), row.workers_under_policy || row.workers_ecp])}</div>
         </div>`;
@@ -552,7 +550,14 @@ function renderContent() {
             html += `<div class="no-docs"><i class="fas fa-folder-open" style="font-size:24px;margin-bottom:8px;display:block;"></i>No documents uploaded for this application.</div>`;
         }
 
-        html += `</div></div></div>`;
+        html += `</div></div>`; // Close document-grid and form-section-card
+        
+        html += `<div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 12px; padding-top: 20px; border-top: 1px solid #cbd5e1;">
+          <button class="btn btn-danger" onclick="closeModal('detailsModal'); openActionModal(${c.cid}, 'rejected')"><i class="fas fa-times"></i> Reject Application</button>
+          <button class="btn btn-primary" onclick="closeModal('detailsModal'); openActionModal(${c.cid}, 'approved')"><i class="fas fa-check"></i> Approve Application</button>
+        </div>`;
+
+        html += `</div>`; // Close form-container
         document.getElementById('detailsBody').innerHTML = html;
     }
 
@@ -592,6 +597,7 @@ function renderContent() {
         if (typeof Swal !== 'undefined' && Swal.fire) {
             const result = await Swal.fire({
                 title,
+                width: '450px',
                 html: `
                     <div style="text-align:left;">
                         <label style="display:block;font-size:12px;font-weight:700;margin-bottom:8px;color:#475569;">${label}</label>

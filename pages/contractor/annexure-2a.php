@@ -70,10 +70,10 @@ function renderContent() {
     $disabled_attr = ($is_readonly || $is_approved_limited_edit || $is_approved_view_only) ? 'disabled' : '';
     $limited_edit_readonly_attr = $is_approved_view_only ? 'readonly' : '';
     $limited_edit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
-    $saved_limited_row_readonly_attr = $is_limited_update_mode ? 'readonly' : $limited_edit_readonly_attr;
-    $saved_limited_file_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
-    $saved_limited_action_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
-    $ecp_choice_disabled_attr = $is_limited_update_mode ? 'disabled' : $limited_edit_disabled_attr;
+    $saved_limited_row_readonly_attr = $limited_edit_readonly_attr;
+    $saved_limited_file_disabled_attr = $limited_edit_disabled_attr;
+    $saved_limited_action_disabled_attr = $limited_edit_disabled_attr;
+    $ecp_choice_disabled_attr = $limited_edit_disabled_attr;
     $submit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
     $draft_disabled_attr = ($is_readonly || $is_approved_view_only) ? 'disabled' : '';
     $selected_ecp_covered = $c['ecp_covered'] ?? 'YES';
@@ -323,9 +323,623 @@ function renderContent() {
             .registration-actions { flex-direction: column; }
             .registration-actions .btn { width: 100%; }
         }
+
+        /* Contractor registration polish: compact cards and contained actions */
+        .container-fluid.py-4 {
+            max-width: 1180px;
+            padding-top: 18px !important;
+            padding-bottom: 28px !important;
+        }
+        #contractorTabs {
+            margin-bottom: 18px !important;
+            background: #fff;
+            border: 1px solid #dbe3ef;
+            border-radius: 10px;
+            padding: 4px 8px 0;
+        }
+        #contractorTabs .nav-link {
+            padding: 12px 18px;
+            font-size: 13px;
+        }
+        .sticky-bottom-bar {
+            position: static !important;
+            background: #fff !important;
+            border-top: 1px solid #e2e8f0;
+            padding: 14px 0 0 !important;
+            margin: 0 !important;
+            z-index: 1 !important;
+            backdrop-filter: none !important;
+        }
+        #registrationDetails .registration-card {
+            border: 1px solid #d7e0ec;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            padding: 14px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        #registrationDetails .registration-section-header {
+            background: #eef6ff;
+            border-left: 3px solid #2563eb;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 800;
+            color: #15345f;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+        #registrationDetails .registration-grid {
+            grid-template-columns: minmax(220px, .95fr) minmax(280px, 1.35fr);
+            gap: 12px 18px;
+            align-items: end;
+        }
+        #registrationDetails .form-label {
+            margin-bottom: 6px;
+            font-size: 11px;
+            color: #334155;
+        }
+        #registrationDetails .form-control,
+        #registrationDetails .form-select {
+            min-height: 38px;
+            border-radius: 7px;
+            border: 1px solid #c8d3df;
+            padding: 8px 10px;
+            font-size: 13px;
+        }
+        #registrationDetails .form-control:disabled,
+        #registrationDetails .form-select:disabled,
+        #registrationDetails .form-control[readonly] {
+            background-color: #f1f5f9;
+            color: #0f172a;
+            opacity: 1;
+        }
+        #registrationDetails textarea.form-control { min-height: 82px; }
+        #registrationDetails .gov-radio-group { min-height: 38px; gap: 16px; }
+        #registrationDetails .gov-radio-group .form-check-label { font-size: 13px; font-weight: 700; color: #475569; }
+        #registrationDetails .registration-actions {
+            padding: 14px 0 0;
+            margin-top: 4px;
+            background: #fff;
+        }
+        @media (max-width: 768px) {
+            #registrationDetails .registration-grid { grid-template-columns: 1fr; }
+        }
+
+        /* Annexure 2A UI fix: keep this page contained inside the CLMS shell. */
+        .annexure2a-page {
+            max-width: 1180px;
+            padding-top: 18px !important;
+            padding-bottom: 30px !important;
+        }
+        .annexure2a-page,
+        .annexure2a-page * { letter-spacing: 0; }
+        .annexure2a-page > .d-flex.justify-content-between.align-items-center.mb-4 {
+            align-items: center !important;
+            gap: 16px;
+            margin-bottom: 18px !important;
+        }
+        .annexure2a-page h2 {
+            font-size: 22px;
+            line-height: 1.25;
+        }
+        .annexure2a-page > .d-flex.justify-content-between.align-items-center.mb-4 > .text-end {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .annexure2a-page .card {
+            border-radius: 8px;
+            border: 1px solid #dbe3ef;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+        }
+        .annexure2a-page .card-header {
+            padding: 12px 16px;
+            background: #fff;
+        }
+        .annexure2a-page .card-header h5 {
+            font-size: 14px;
+            font-weight: 800;
+        }
+        .annexure2a-page .form-label {
+            letter-spacing: 0;
+            line-height: 1.25;
+        }
+        .annexure2a-page .form-control,
+        .annexure2a-page .form-select {
+            min-height: 40px;
+            border-radius: 7px;
+            font-size: 13px;
+            padding: 9px 12px;
+        }
+        .annexure2a-page textarea.form-control { min-height: 78px; }
+        .annexure2a-page #contractorTabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 18px !important;
+            overflow-x: auto;
+            scrollbar-width: thin;
+        }
+        .annexure2a-page #contractorTabs .nav-link {
+            min-height: 42px;
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+            border-radius: 7px 7px 0 0;
+        }
+        .annexure2a-page .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 0 0 8px 8px;
+        }
+        .annexure2a-page #poTable { min-width: 920px; }
+        .annexure2a-page #pwoTable { min-width: 620px; }
+        .annexure2a-page .gov-table { min-width: 760px; }
+        .annexure2a-page .gov-table th,
+        .annexure2a-page .gov-table td {
+            padding: 9px 10px;
+            font-size: 12px;
+        }
+        .annexure2a-page .gov-table .form-control { min-width: 132px; }
+        .annexure2a-page #basicDetails > .text-end.mb-5 {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 22px !important;
+        }
+        .annexure2a-page #basicDetails > .text-end.mb-5 .btn,
+        .annexure2a-page .registration-actions .btn {
+            border-radius: 7px;
+            min-height: 40px;
+            line-height: 1.2;
+        }
+        .annexure2a-page #basicDetails > .text-end.mb-5 .btn {
+            padding: 10px 22px !important;
+            font-size: 13px;
+        }
+        .annexure2a-page .registration-actions {
+            position: sticky;
+            bottom: 0;
+            z-index: 5;
+            margin-top: 18px;
+            padding: 12px 0 4px;
+            background: linear-gradient(180deg, rgba(248,250,252,0), #fff 28%);
+        }
+        @media (max-width: 768px) {
+            .annexure2a-page { padding-left: 12px !important; padding-right: 12px !important; }
+            .annexure2a-page > .d-flex.justify-content-between.align-items-center.mb-4 {
+                align-items: flex-start !important;
+                flex-direction: column;
+            }
+            .annexure2a-page > .d-flex.justify-content-between.align-items-center.mb-4 > .text-end {
+                width: 100%;
+                justify-content: flex-start;
+            }
+            .annexure2a-page > .d-flex.justify-content-between.align-items-center.mb-4 > .text-end .badge,
+            .annexure2a-page > .d-flex.justify-content-between.align-items-center.mb-4 > .text-end .btn,
+            .annexure2a-page #basicDetails > .text-end.mb-5 .btn {
+                width: 100%;
+                justify-content: center;
+                margin-left: 0 !important;
+            }
+            .annexure2a-page .card-body.p-4 { padding: 14px !important; }
+            .annexure2a-page .registration-actions {
+                position: static;
+                flex-direction: column;
+            }
+            .annexure2a-page .registration-actions .btn { width: 100%; }
+        }
+
+        /* Full-width registration tab requested: remove side gap in main workspace. */
+        .annexure2a-page.container-fluid.py-4 {
+            width: calc(100% + 48px) !important;
+            max-width: none !important;
+            margin: -24px -24px 0 -24px !important;
+            padding: 16px 14px 28px !important;
+        }
+        .annexure2a-page #contractorTabs,
+        .annexure2a-page #contractorTabsContent,
+        .annexure2a-page #annexure2AForm,
+        .annexure2a-page #registrationDetails {
+            width: 100%;
+            max-width: none;
+        }
+        .annexure2a-page #contractorTabs {
+            border-radius: 0;
+            border-left: 0;
+            border-right: 0;
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+        .annexure2a-page #registrationDetails {
+            display: none;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            align-items: start;
+        }
+        .annexure2a-page #registrationDetails.active,
+        .annexure2a-page #registrationDetails.show.active {
+            display: grid;
+        }
+        .annexure2a-page #registrationDetails .registration-card {
+            width: 100%;
+            margin-bottom: 0;
+        }
+        .annexure2a-page #registrationDetails .registration-card:has(.gov-table),
+        .annexure2a-page #registrationDetails #reasonCard,
+        .annexure2a-page #registrationDetails #section7Card,
+        .annexure2a-page #registrationDetails .registration-actions {
+            grid-column: 1 / -1;
+        }
+        .annexure2a-page #registrationDetails .registration-grid {
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px 14px;
+            align-items: end;
+        }
+        .annexure2a-page #registrationDetails .registration-grid .span-2 {
+            grid-column: 1 / -1;
+        }
+        .annexure2a-page #registrationDetails .registration-section-header {
+            min-height: 36px;
+            display: flex;
+            align-items: center;
+        }
+        .annexure2a-page #registrationDetails .registration-actions {
+            border-top: 1px solid #e2e8f0;
+            padding: 12px 14px;
+            margin: 0 -14px -14px;
+        }
+        @media (min-width: 1500px) {
+            .annexure2a-page #registrationDetails {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+            .annexure2a-page #registrationDetails .registration-card:has(.gov-table),
+            .annexure2a-page #registrationDetails #section7Card,
+            .annexure2a-page #registrationDetails .registration-actions {
+                grid-column: 1 / -1;
+            }
+        }
+        @media (max-width: 900px) {
+            .annexure2a-page.container-fluid.py-4 {
+                width: calc(100% + 48px) !important;
+                margin: -24px -24px 0 -24px !important;
+                padding-left: 10px !important;
+                padding-right: 10px !important;
+            }
+            .annexure2a-page #registrationDetails,
+            .annexure2a-page #registrationDetails.show.active {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 768px) {
+            .annexure2a-page.container-fluid.py-4 {
+                width: 100% !important;
+                margin: 0 !important;
+                padding-left: 10px !important;
+                padding-right: 10px !important;
+            }
+        }
+
+        /* Registration tab reset: no page scrollbar, clean full-width sections. */
+        .main-content:has(.annexure2a-page) {
+            padding: 0 !important;
+            overflow-x: hidden !important;
+        }
+        .main-content:has(.annexure2a-page) .annexure2a-page.container-fluid.py-4 {
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 14px 12px 24px !important;
+            overflow-x: hidden !important;
+        }
+        .annexure2a-page #contractorTabsContent,
+        .annexure2a-page #annexure2AForm,
+        .annexure2a-page #registrationDetails {
+            max-width: 100% !important;
+            overflow-x: hidden !important;
+        }
+        .annexure2a-page #registrationDetails,
+        .annexure2a-page #registrationDetails.show.active {
+            display: block !important;
+        }
+        .annexure2a-page #registrationDetails:not(.show) {
+            display: none !important;
+        }
+        .annexure2a-page #registrationDetails .registration-card {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 0 10px !important;
+            padding: 12px !important;
+            border-radius: 8px !important;
+        }
+        .annexure2a-page #registrationDetails .registration-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+            gap: 10px 12px !important;
+            align-items: end !important;
+        }
+        .annexure2a-page #registrationDetails .registration-grid .span-2 {
+            grid-column: 1 / -1 !important;
+        }
+        .annexure2a-page #registrationDetails .row {
+            --bs-gutter-x: 12px;
+            --bs-gutter-y: 10px;
+        }
+        .annexure2a-page #registrationDetails .registration-section-header {
+            min-height: 0 !important;
+            padding: 7px 10px !important;
+            margin-bottom: 10px !important;
+            font-size: 12px !important;
+            line-height: 1.25 !important;
+        }
+        .annexure2a-page #registrationDetails .form-control,
+        .annexure2a-page #registrationDetails .form-select {
+            width: 100% !important;
+            min-width: 0 !important;
+        }
+        .annexure2a-page #registrationDetails textarea.form-control {
+            min-height: 64px !important;
+        }
+        .annexure2a-page #registrationDetails .table-responsive {
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow-x: hidden !important;
+            border: 1px solid #dbe3ef;
+            border-radius: 8px;
+        }
+        .annexure2a-page #registrationDetails .gov-table,
+        .annexure2a-page #registrationDetails #ecpTable,
+        .annexure2a-page #registrationDetails #licenseTable {
+            width: 100% !important;
+            min-width: 0 !important;
+            table-layout: fixed !important;
+        }
+        .annexure2a-page #registrationDetails .gov-table th,
+        .annexure2a-page #registrationDetails .gov-table td {
+            white-space: normal !important;
+            word-break: break-word;
+            padding: 7px 8px !important;
+            font-size: 11px !important;
+        }
+        .annexure2a-page #registrationDetails .gov-table input[type="file"] {
+            font-size: 11px !important;
+            padding: 6px !important;
+        }
+        .annexure2a-page #registrationDetails .gov-table .delete-btn {
+            min-width: 28px;
+            padding: 4px 6px;
+        }
+        .annexure2a-page #registrationDetails .registration-actions {
+            position: sticky !important;
+            bottom: 0;
+            z-index: 20;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin: 12px -12px -24px !important;
+            padding: 10px 12px !important;
+            background: #fff !important;
+            border-top: 1px solid #dbe3ef;
+            box-shadow: 0 -8px 16px rgba(15, 23, 42, 0.06);
+        }
+        @media (max-width: 1100px) {
+            .annexure2a-page #registrationDetails .registration-grid {
+                grid-template-columns: 1fr !important;
+            }
+            .annexure2a-page #registrationDetails .gov-table th,
+            .annexure2a-page #registrationDetails .gov-table td {
+                padding: 6px !important;
+                font-size: 10.5px !important;
+            }
+        }
+        @media (max-width: 768px) {
+            .main-content:has(.annexure2a-page) .annexure2a-page.container-fluid.py-4 {
+                padding: 10px !important;
+            }
+            .annexure2a-page #registrationDetails .table-responsive {
+                overflow-x: auto !important;
+            }
+            .annexure2a-page #registrationDetails .gov-table {
+                min-width: 720px !important;
+            }
+            .annexure2a-page #registrationDetails .registration-actions {
+                position: static !important;
+                flex-direction: column;
+                margin: 12px -10px -10px !important;
+            }
+            .annexure2a-page #registrationDetails .registration-actions .btn {
+                width: 100%;
+            }
+        }
+
+        /* Kill double vertical scrollbar on this page. */
+        html:has(.annexure2a-page),
+        body:has(.annexure2a-page) {
+            height: 100vh !important;
+            max-height: 100vh !important;
+            overflow: hidden !important;
+        }
+        body:has(.annex2a-page) .layout-wrapper,
+        body:has(.annexure2a-page) .layout-wrapper {
+            height: calc(100vh - 72px) !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+        }
+        body:has(.annexure2a-page) .main-content {
+            height: calc(100vh - 72px) !important;
+            min-height: 0 !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            padding: 0 !important;
+            scrollbar-gutter: stable;
+        }
+        body:has(.annexure2a-page) .sidebar {
+            height: calc(100vh - 72px) !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+        }
+        .annexure2a-page { min-height: auto !important; }
+
+        /* Hide the remaining visible scrollbar while preserving wheel/touch scrolling. */
+        body:has(.annexure2a-page) .main-content,
+        .annexure2a-page #registrationDetails .table-responsive {
+            scrollbar-width: none !important;
+            -ms-overflow-style: none !important;
+        }
+        body:has(.annexure2a-page) .main-content::-webkit-scrollbar,
+        .annexure2a-page #registrationDetails .table-responsive::-webkit-scrollbar {
+            width: 0 !important;
+            height: 0 !important;
+            display: none !important;
+        }
+
+        /* Single-scroll mode: only rendered Annexure data scrolls. */
+        body:has(.annexure2a-page) .main-content {
+            overflow: hidden !important;
+            padding: 0 !important;
+        }
+        body:has(.annexure2a-page) .sidebar {
+            overflow: hidden !important;
+        }
+        body:has(.annexure2a-page) .annexure2a-page.container-fluid.py-4 {
+            height: calc(100vh - 72px) !important;
+            max-height: calc(100vh - 72px) !important;
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 14px 12px 76px !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            scrollbar-width: auto !important;
+            -ms-overflow-style: auto !important;
+            scrollbar-gutter: stable;
+        }
+        body:has(.annexure2a-page) .annexure2a-page.container-fluid.py-4::-webkit-scrollbar {
+            width: 10px !important;
+            height: 0 !important;
+            display: block !important;
+        }
+        body:has(.annexure2a-page) .annexure2a-page.container-fluid.py-4::-webkit-scrollbar-track {
+            background: #e2e8f0 !important;
+        }
+        body:has(.annexure2a-page) .annexure2a-page.container-fluid.py-4::-webkit-scrollbar-thumb {
+            background: #94a3b8 !important;
+            border-radius: 10px !important;
+            border: 2px solid #e2e8f0 !important;
+        }
+        body:has(.annexure2a-page) .main-content::-webkit-scrollbar,
+        body:has(.annexure2a-page) .sidebar::-webkit-scrollbar,
+        body:has(.annexure2a-page)::-webkit-scrollbar {
+            width: 0 !important;
+            height: 0 !important;
+            display: none !important;
+        }
+
+        /* Final scroll placement: layout scrolls, not the inner Annexure form. */
+        body:has(.annexure2a-page) {
+            overflow: hidden !important;
+        }
+        body:has(.annexure2a-page) .layout-wrapper {
+            height: calc(100vh - 72px) !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+        }
+        body:has(.annexure2a-page) .main-content {
+            height: calc(100vh - 72px) !important;
+            min-height: 0 !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            padding: 0 !important;
+            scrollbar-width: auto !important;
+            -ms-overflow-style: auto !important;
+            scrollbar-gutter: stable;
+        }
+        body:has(.annexure2a-page) .main-content::-webkit-scrollbar {
+            width: 10px !important;
+            height: 0 !important;
+            display: block !important;
+        }
+        body:has(.annexure2a-page) .main-content::-webkit-scrollbar-track {
+            background: #e2e8f0 !important;
+        }
+        body:has(.annexure2a-page) .main-content::-webkit-scrollbar-thumb {
+            background: #94a3b8 !important;
+            border-radius: 10px !important;
+            border: 2px solid #e2e8f0 !important;
+        }
+        body:has(.annexure2a-page) .annexure2a-page.container-fluid.py-4 {
+            height: auto !important;
+            max-height: none !important;
+            overflow-y: visible !important;
+            overflow-x: hidden !important;
+            padding: 14px 12px 24px !important;
+            scrollbar-width: none !important;
+            -ms-overflow-style: none !important;
+        }
+        body:has(.annexure2a-page) .annexure2a-page.container-fluid.py-4::-webkit-scrollbar {
+            width: 0 !important;
+            height: 0 !important;
+            display: none !important;
+        }
+
+        /* Annexure scroll fix: keep one scrollbar on the main content only. */
+        html:has(.annexure2a-page),
+        body:has(.annexure2a-page) {
+            height: 100vh !important;
+            max-height: 100vh !important;
+            overflow: hidden !important;
+        }
+        body:has(.annexure2a-page) .layout-wrapper {
+            height: calc(100vh - 72px) !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+        }
+        body:has(.annexure2a-page) .sidebar {
+            height: calc(100vh - 72px) !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+        }
+        body:has(.annexure2a-page) .main-content {
+            height: calc(100vh - 72px) !important;
+            min-height: 0 !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            padding: 24px !important;
+            scrollbar-width: auto !important;
+            -ms-overflow-style: auto !important;
+        }
+        body:has(.annexure2a-page) .main-content::-webkit-scrollbar {
+            width: 10px !important;
+            height: 0 !important;
+            display: block !important;
+        }
+        body:has(.annexure2a-page) .main-content::-webkit-scrollbar-track {
+            background: #e2e8f0 !important;
+        }
+        body:has(.annexure2a-page) .main-content::-webkit-scrollbar-thumb {
+            background: #94a3b8 !important;
+            border-radius: 10px !important;
+            border: 2px solid #e2e8f0 !important;
+        }
+        body:has(.annexure2a-page) .annexure2a-page.container-fluid.py-4 {
+            height: auto !important;
+            max-height: none !important;
+            overflow-y: visible !important;
+            overflow-x: hidden !important;
+            padding-top: 0 !important;
+            padding-bottom: 24px !important;
+        }
+        body:has(.annexure2a-page) #contractorTabsContent,
+        body:has(.annexure2a-page) #annexure2AForm,
+        body:has(.annexure2a-page) #registrationDetails,
+        body:has(.annexure2a-page) .tab-content,
+        body:has(.annexure2a-page) .tab-pane {
+            height: auto !important;
+            max-height: none !important;
+            overflow-y: visible !important;
+        }
     </style>
 
-<div class="container-fluid py-4 px-lg-5">
+<div class="annexure2a-page container-fluid py-4 px-lg-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="fw-extrabold mb-1" style="font-weight: 800; color: #1e293b;">Contractor Registration</h2>
@@ -465,11 +1079,10 @@ function renderContent() {
                                         <th>Currency</th>
                                         <th>Total Value</th>
                                         <th>Doc Date</th>
-                                        <th>Status <i class="fas fa-info-circle text-primary ms-1" style="cursor: pointer;" title="Indicates whether the purchase order is approved and active in SAP. Only Released POs are active."></i></th>
                                     </tr>
                                 </thead>
                                 <tbody id="poTableBody">
-                                    <tr><td colspan="9" class="text-center py-4 text-muted">No PO records found for this vendor code.</td></tr>
+                                    <tr><td colspan="8" class="text-center py-4 text-muted">No PO records found for this vendor code.</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -479,7 +1092,7 @@ function renderContent() {
 
                 <!-- PWO & Sales Orders -->
                 <div class="row">
-                    <div class="col-lg-6">
+                    <div class="col-lg-12">
                         <div class="card shadow-sm mb-4">
                             <div class="card-header bg-white py-3 border-bottom">
                                 <h5 class="mb-0 text-info" style="font-size: 0.9rem;"><i class="fas fa-ship me-2"></i> PWO Details</h5>
@@ -604,7 +1217,7 @@ function renderContent() {
                     <input type="hidden" name="wage_category" value="<?= htmlspecialchars($c['wage_category'] ?? '') ?>">
                 </div>
 
-                <div class="registration-card">
+                <div class="registration-card registration-card-wide">
                     <div class="registration-section-header">6. Employee Compensation Policy</div>
                     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                         <div class="gov-radio-group">
@@ -956,6 +1569,34 @@ function renderContent() {
 </div>
 
 <!-- Bootstrap 5 Bundle with Popper -->
+<script>
+(function normalizeAnnexure2AScroll() {
+    document.documentElement.style.height = '100vh';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.height = '100vh';
+    document.body.style.overflow = 'hidden';
+    const wrapper = document.querySelector('.layout-wrapper');
+    const main = document.querySelector('.main-content');
+    const page = document.querySelector('.annexure2a-page');
+    if (wrapper) {
+        wrapper.style.height = 'calc(100vh - 72px)';
+        wrapper.style.minHeight = '0';
+        wrapper.style.overflow = 'hidden';
+    }
+    if (main) {
+        main.style.height = 'calc(100vh - 72px)';
+        main.style.overflowY = 'auto';
+        main.style.overflowX = 'hidden';
+        main.style.padding = '24px';
+    }
+    if (page) {
+        page.style.height = 'auto';
+        page.style.maxHeight = 'none';
+        page.style.overflowY = 'visible';
+        page.style.overflowX = 'hidden';
+    }
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
@@ -1091,6 +1732,28 @@ function renderContent() {
         validateEPFESI();
     }
 
+
+    function unlockEcpForResubmit() {
+        if (!ANNEXURE2A_LIMITED_EDIT) return;
+
+        document.querySelectorAll('input[name="ecp_covered"]').forEach(input => {
+            input.disabled = false;
+            input.readOnly = false;
+        });
+        document.querySelectorAll('input[type="hidden"][name="ecp_covered"]').forEach(input => input.remove());
+
+        document.querySelectorAll('#ecpTableBody input, #ecp_exemption_reason').forEach(input => {
+            input.disabled = false;
+            input.readOnly = false;
+        });
+
+        document.querySelectorAll('#ecpTableBody .delete-btn, #addEcpBtn').forEach(btn => {
+            btn.disabled = false;
+            btn.style.display = '';
+        });
+
+        updateSlNos('ecpTableBody');
+    }
     function validateEcpRowDates(input) {
         const row = input.closest('tr');
         const fromVal = row.querySelector('.ecp-from').value;
@@ -1288,13 +1951,6 @@ function renderContent() {
                         <td>${p.currency}</td>
                         <td class="fw-bold">${p.total_value}</td>
                         <td>${p.document_date}</td>
-                        <td>
-                            <span class="badge ${['R','RELEASED'].includes(String(p.release_status).trim().toUpperCase())?'bg-success':'bg-warning'}" 
-                                  title="${['R','RELEASED'].includes(String(p.release_status).trim().toUpperCase()) ? 'Active and approved in SAP' : 'Pending approval'}"
-                                  style="cursor: help;">
-                                ${['R','RELEASED'].includes(String(p.release_status).trim().toUpperCase())?'Released':'Pending'}
-                            </span>
-                        </td>
                     </tr>
                 `).join('');
             } else {
@@ -1511,6 +2167,7 @@ function renderContent() {
         toggleEPF();
         toggleESI();
         toggleEcpPolicy();
+        unlockEcpForResubmit();
         toggleLicenceMandatory();
         initialEditableState = getEditableState();
     });

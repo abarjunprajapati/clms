@@ -62,6 +62,27 @@ try {
     $target_path = $upload_dir . $filename;
     $db_path = '../../uploads/contractor_docs/' . $filename; // Store relative path for UI
 
+    // Ensure metadata column exists
+    $conn->query("ALTER TABLE contractor_documents ADD COLUMN IF NOT EXISTS metadata JSON NULL AFTER remarks");
+
+    // Capture metadata
+    $metadata = [];
+    if ($doc_type === 'workmen_compensation') {
+        $metadata['valid_from'] = $_POST['wc_valid_from'] ?? null;
+        $metadata['valid_to'] = $_POST['wc_valid_to'] ?? null;
+        $metadata['workers_covered'] = $_POST['wc_workers'] ?? null;
+        $metadata['rate_of_wages'] = $_POST['wc_wages'] ?? null;
+        $metadata['exceeds_esic'] = $_POST['wc_esic_override'] ?? 'No';
+    } else if ($doc_type === 'cla_license') {
+        $metadata['license_no'] = $_POST['cla_license_no'] ?? null;
+        $metadata['issue_date'] = $_POST['cla_issue_date'] ?? null;
+        if (!empty($_POST['cla_issue_date'])) {
+            $metadata['expiry_date'] = date('Y-m-d', strtotime('+1 year -1 day', strtotime($_POST['cla_issue_date'])));
+        }
+    }
+    
+    $meta_json = !empty($metadata) ? json_encode($metadata) : null;
+
     if (move_uploaded_file($file['tmp_name'], $target_path)) {
         // Check if document already exists
         $check = $conn->prepare("SELECT id FROM contractor_documents WHERE contractor_id = ? AND doc_type = ?");
@@ -71,15 +92,15 @@ try {
         $check->close();
 
         if ($existing) {
-            $sql = "UPDATE contractor_documents SET file_path = ?, original_name = ?, status = 'pending', remarks = ?, uploaded_at = NOW() WHERE id = ?";
+            $sql = "UPDATE contractor_documents SET file_path = ?, original_name = ?, status = 'pending', remarks = ?, metadata = ?, uploaded_at = NOW() WHERE id = ?";
             $upd = $conn->prepare($sql);
-            $upd->bind_param("sssi", $db_path, $file['name'], $remarks, $existing['id']);
+            $upd->bind_param("ssssi", $db_path, $file['name'], $remarks, $meta_json, $existing['id']);
             $upd->execute();
             $upd->close();
         } else {
-            $sql = "INSERT INTO contractor_documents (contractor_id, doc_type, file_path, original_name, status, remarks, uploaded_at) VALUES (?, ?, ?, ?, 'pending', ?, NOW())";
+            $sql = "INSERT INTO contractor_documents (contractor_id, doc_type, file_path, original_name, status, remarks, metadata, uploaded_at) VALUES (?, ?, ?, ?, 'pending', ?, ?, NOW())";
             $ins = $conn->prepare($sql);
-            $ins->bind_param("issss", $c_id, $doc_type, $db_path, $file['name'], $remarks);
+            $ins->bind_param("isssss", $c_id, $doc_type, $db_path, $file['name'], $remarks, $meta_json);
             $ins->execute();
             $ins->close();
         }

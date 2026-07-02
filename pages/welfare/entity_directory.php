@@ -35,7 +35,7 @@ function entityDirectoryRows($conn) {
     $customers = db_fetch_all($conn, "
         SELECT id, customer_code, customer_name, Customer_MOB1, EMAIL_ADDRESS, Address, ACTIVE_IND, created_at, user_id, user_status
         FROM sap_customer_master
-        WHERE UPPER(ACTIVE_IND) = 'A'
+        WHERE UPPER(ACTIVE_IND) = 'A' OR ACTIVE_IND IS NULL OR ACTIVE_IND = ''
         ORDER BY created_at DESC
     ");
 

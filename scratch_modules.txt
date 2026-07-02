@@ -1,0 +1,847 @@
+array (
+  '__dash_link__' => 
+  array (
+    'icon' => 'fa-tachometer-alt',
+    'color' => '#6366f1',
+  ),
+  'adm_abdash_abdashboard' => 
+  array (
+    'icon' => 'fa-tachometer-alt',
+    'color' => '#6366f1',
+  ),
+  'adm_abusers' => 
+  array (
+    'icon' => 'fa-users-cog',
+    'color' => '#6366f1',
+  ),
+  'adm_abroles' => 
+  array (
+    'icon' => 'fa-user-shield',
+    'color' => '#6366f1',
+  ),
+  'adm_abpermissions' => 
+  array (
+    'icon' => 'fa-key',
+    'color' => '#6366f1',
+  ),
+  'adm_abworkflow_monitor' => 
+  array (
+    'icon' => 'fa-eye',
+    'color' => '#6366f1',
+  ),
+  'adm_abworkflow_control' => 
+  array (
+    'icon' => 'fa-gamepad',
+    'color' => '#6366f1',
+  ),
+  'adm_abdocuments_monitor' => 
+  array (
+    'icon' => 'fa-file-invoice',
+    'color' => '#6366f1',
+  ),
+  'adm_abtraining_monitor' => 
+  array (
+    'icon' => 'fa-graduation-cap',
+    'color' => '#6366f1',
+  ),
+  'adm_abgatepass_monitor' => 
+  array (
+    'icon' => 'fa-id-card',
+    'color' => '#6366f1',
+  ),
+  'adm_absap_sync_logs' => 
+  array (
+    'icon' => 'fa-sync',
+    'color' => '#6366f1',
+  ),
+  'adm_abworker_management' => 
+  array (
+    'icon' => 'fa-user-clock',
+    'color' => '#6366f1',
+  ),
+  'adm_abcontractor_control' => 
+  array (
+    'icon' => 'fa-building-circle-exclamation',
+    'color' => '#6366f1',
+  ),
+  'adm_abexecution_management' => 
+  array (
+    'icon' => 'fa-link',
+    'color' => '#6366f1',
+  ),
+  'adm_abcomp_abcompliance_dashboard_dash_abcomp_abcompliance_dashboard_dashboard' => 
+  array (
+    'icon' => 'fa-shield-check',
+    'color' => '#6366f1',
+  ),
+  'adm_abatt_abattendance_dashboard_dash_abatt_abattendance_dashboard_dashboard' => 
+  array (
+    'icon' => 'fa-calendar-check',
+    'color' => '#6366f1',
+  ),
+  'adm_abbiometric_dash_abbiometric_dashboard' => 
+  array (
+    'icon' => 'fa-fingerprint',
+    'color' => '#6366f1',
+  ),
+  'adm_abpass_limits' => 
+  array (
+    'icon' => 'fa-sliders-h',
+    'color' => '#6366f1',
+  ),
+  'certified_wages' => 
+  array (
+    'icon' => 'fa-indian-rupee-sign',
+    'color' => '#6366f1',
+  ),
+  'labour_license_threshold' => 
+  array (
+    'icon' => 'fa-scale-balanced',
+    'color' => '#6366f1',
+  ),
+  'temporary_pass_validity' => 
+  array (
+    'icon' => 'fa-calendar-day',
+    'color' => '#6366f1',
+  ),
+  'age_range_mapping' => 
+  array (
+    'icon' => 'fa-user-clock',
+    'color' => '#6366f1',
+  ),
+  'gate_pass_document_master' => 
+  array (
+    'icon' => 'fa-file-shield',
+    'color' => '#6366f1',
+  ),
+  'payment_gateway' => 
+  array (
+    'icon' => 'fa-credit-card',
+    'color' => '#6366f1',
+  ),
+  'adm_abmaster_data' => 
+  array (
+    'icon' => 'fa-database',
+    'color' => '#6366f1',
+  ),
+  'muster_roll_monitor' => 
+  array (
+    'icon' => 'fa-file-invoice',
+    'color' => '#6366f1',
+  ),
+  'check_esi_comp_check_esi_compliance' => 
+  array (
+    'icon' => 'fa-shield-check',
+    'color' => '#6366f1',
+  ),
+  'check_epf_comp_check_epf_compliance' => 
+  array (
+    'icon' => 'fa-shield-check',
+    'color' => '#6366f1',
+  ),
+  'dash_dashboard' => 
+  array (
+    'icon' => 'fa-handshake',
+    'color' => '#6366f1',
+  ),
+  'invoices' => 
+  array (
+    'icon' => 'fa-file-invoice-dollar',
+    'color' => '#6366f1',
+  ),
+  'request' => 
+  array (
+    'icon' => 'fa-user-clock',
+    'color' => '#6366f1',
+  ),
+  'adm_abpolicy_monitor' => 
+  array (
+    'icon' => 'fa-microchip',
+    'color' => '#6366f1',
+  ),
+  'adm_abnotifications_logs' => 
+  array (
+    'icon' => 'fa-bell-slash',
+    'color' => '#6366f1',
+  ),
+  'adm_abalerts_dash_abalerts_dashboard' => 
+  array (
+    'icon' => 'fa-exclamation-triangle',
+    'color' => '#6366f1',
+  ),
+  'adm_absystem_health' => 
+  array (
+    'icon' => 'fa-heartbeat',
+    'color' => '#6366f1',
+  ),
+  'adm_abaudit_logs' => 
+  array (
+    'icon' => 'fa-history',
+    'color' => '#6366f1',
+  ),
+  'adm_abrep_abreports' => 
+  array (
+    'icon' => 'fa-file-medical-alt',
+    'color' => '#6366f1',
+  ),
+  'adm_abdata_export' => 
+  array (
+    'icon' => 'fa-download',
+    'color' => '#6366f1',
+  ),
+  'adm_absettings' => 
+  array (
+    'icon' => 'fa-cog',
+    'color' => '#6366f1',
+  ),
+  'welf_admin_dash_admin_dashboard' => 
+  array (
+    'icon' => 'fa-tachometer-alt',
+    'color' => '#6366f1',
+  ),
+  'adm_abcreate_user' => 
+  array (
+    'icon' => 'fa-user-plus',
+    'color' => '#6366f1',
+  ),
+  'welf_pass_limits' => 
+  array (
+    'icon' => 'fa-sliders-h',
+    'color' => '#6366f1',
+  ),
+  'welf_certified_wages' => 
+  array (
+    'icon' => 'fa-indian-rupee-sign',
+    'color' => '#6366f1',
+  ),
+  'welf_labour_license_threshold' => 
+  array (
+    'icon' => 'fa-scale-balanced',
+    'color' => '#6366f1',
+  ),
+  'welf_temporary_pass_validity' => 
+  array (
+    'icon' => 'fa-calendar-day',
+    'color' => '#6366f1',
+  ),
+  'welf_education_correction' => 
+  array (
+    'icon' => 'fa-graduation-cap',
+    'color' => '#6366f1',
+  ),
+  'welf_nationality_master' => 
+  array (
+    'icon' => 'fa-globe',
+    'color' => '#6366f1',
+  ),
+  'welf_age_range_mapping' => 
+  array (
+    'icon' => 'fa-user-clock',
+    'color' => '#6366f1',
+  ),
+  'welf_gate_pass_document_master' => 
+  array (
+    'icon' => 'fa-file-shield',
+    'color' => '#6366f1',
+  ),
+  'welf_training_type_master' => 
+  array (
+    'icon' => 'fa-graduation-cap',
+    'color' => '#6366f1',
+  ),
+  'welf_training_venue_master' => 
+  array (
+    'icon' => 'fa-location-dot',
+    'color' => '#6366f1',
+  ),
+  'welf_payment_gateway' => 
+  array (
+    'icon' => 'fa-credit-card',
+    'color' => '#6366f1',
+  ),
+  'welf_temp_pass_control' => 
+  array (
+    'icon' => 'fa-clock',
+    'color' => '#6366f1',
+  ),
+  'welf_entity_directory' => 
+  array (
+    'icon' => 'fa-address-book',
+    'color' => '#6366f1',
+  ),
+  'welf_approve_3a' => 
+  array (
+    'icon' => 'fa-file-contract',
+    'color' => '#6366f1',
+  ),
+  'welf_enrollment_monitor' => 
+  array (
+    'icon' => 'fa-users-viewfinder',
+    'color' => '#6366f1',
+  ),
+  'welf_training_monitor' => 
+  array (
+    'icon' => 'fa-graduation-cap',
+    'color' => '#6366f1',
+  ),
+  'welf_gatepass_monitor' => 
+  array (
+    'icon' => 'fa-id-card-clip',
+    'color' => '#6366f1',
+  ),
+  'welf_acc_tracking' => 
+  array (
+    'icon' => 'fa-fingerprint',
+    'color' => '#6366f1',
+  ),
+  'welf_productivity_dash_productivity_dashboard' => 
+  array (
+    'icon' => 'fa-chart-line',
+    'color' => '#6366f1',
+  ),
+  'welf_muster_roll_monitor' => 
+  array (
+    'icon' => 'fa-file-invoice',
+    'color' => '#6366f1',
+  ),
+  'welf_esi_contribution_monitor' => 
+  array (
+    'icon' => 'fa-hand-holding-dollar',
+    'color' => '#6366f1',
+  ),
+  'welf_check_esi_comp_check_esi_compliance' => 
+  array (
+    'icon' => 'fa-shield-check',
+    'color' => '#6366f1',
+  ),
+  'welf_check_epf_comp_check_epf_compliance' => 
+  array (
+    'icon' => 'fa-shield-check',
+    'color' => '#6366f1',
+  ),
+  'welf_lwf_comp_lwf_compliance_checking_checking' => 
+  array (
+    'icon' => 'fa-clipboard-check',
+    'color' => '#6366f1',
+  ),
+  'welf_lwf_master' => 
+  array (
+    'icon' => 'fa-sliders-h',
+    'color' => '#6366f1',
+  ),
+  'welf_comp_compliance_monitor_monitor' => 
+  array (
+    'icon' => 'fa-shield-check',
+    'color' => '#6366f1',
+  ),
+  'welf_blocking_control' => 
+  array (
+    'icon' => 'fa-building-circle-exclamation',
+    'color' => '#6366f1',
+  ),
+  'welf_worker_block' => 
+  array (
+    'icon' => 'fa-user-slash',
+    'color' => '#6366f1',
+  ),
+  'welf_noc_approvals' => 
+  array (
+    'icon' => 'fa-exchange-alt',
+    'color' => '#6366f1',
+  ),
+  'welf_verification_history' => 
+  array (
+    'icon' => 'fa-history',
+    'color' => '#6366f1',
+  ),
+  'welf_rep_reports' => 
+  array (
+    'icon' => 'fa-file-invoice',
+    'color' => '#6366f1',
+  ),
+  'welf_sap_logs' => 
+  array (
+    'icon' => 'fa-sync',
+    'color' => '#6366f1',
+  ),
+  'welf_approve_contractors' => 
+  array (
+    'icon' => 'fa-building-circle-check',
+    'color' => '#6366f1',
+  ),
+  'welf_verify_documents' => 
+  array (
+    'icon' => 'fa-file-shield',
+    'color' => '#6366f1',
+  ),
+  'welf_issue_temp_pass' => 
+  array (
+    'icon' => 'fa-clock',
+    'color' => '#6366f1',
+  ),
+  'welf_acc_generation' => 
+  array (
+    'icon' => 'fa-fingerprint',
+    'color' => '#6366f1',
+  ),
+  'welf_acc_return_queue' => 
+  array (
+    'icon' => 'fa-undo',
+    'color' => '#6366f1',
+  ),
+  'welf_monthly_comp_monthly_compliance_approvals_approvals' => 
+  array (
+    'icon' => 'fa-certificate',
+    'color' => '#6366f1',
+  ),
+  'welf_esic_wage_limit' => 
+  array (
+    'icon' => 'fa-cog',
+    'color' => '#6366f1',
+  ),
+  'welf_att_attendance_monitor_monitor' => 
+  array (
+    'icon' => 'fa-calendar-check',
+    'color' => '#6366f1',
+  ),
+  'annexure2a' => 
+  array (
+    'icon' => 'fa-file-invoice',
+    'color' => '#6366f1',
+  ),
+  'enrolment4atypecontractor' => 
+  array (
+    'icon' => 'fa-user-check',
+    'color' => '#6366f1',
+  ),
+  'enrolment4atyperepresentative' => 
+  array (
+    'icon' => 'fa-user-tie',
+    'color' => '#6366f1',
+  ),
+  'enrolment4atypesupervisor' => 
+  array (
+    'icon' => 'fa-user-shield',
+    'color' => '#6366f1',
+  ),
+  'enrolment4atypeworkmen' => 
+  array (
+    'icon' => 'fa-users',
+    'color' => '#6366f1',
+  ),
+  'welfareactions' => 
+  array (
+    'icon' => 'fa-clock-rotate-left',
+    'color' => '#6366f1',
+  ),
+  'profile' => 
+  array (
+    'icon' => 'fa-id-card',
+    'color' => '#6366f1',
+  ),
+  'training_request' => 
+  array (
+    'icon' => 'fa-graduation-cap',
+    'color' => '#6366f1',
+  ),
+  'payment' => 
+  array (
+    'icon' => 'fa-credit-card',
+    'color' => '#6366f1',
+  ),
+  'book_safety_training' => 
+  array (
+    'icon' => 'fa-calendar-check',
+    'color' => '#6366f1',
+  ),
+  'gatepass6a' => 
+  array (
+    'icon' => 'fa-id-badge',
+    'color' => '#6366f1',
+  ),
+  'gatepassreupload' => 
+  array (
+    'icon' => 'fa-file-circle-exclamation',
+    'color' => '#6366f1',
+  ),
+  'pass_status' => 
+  array (
+    'icon' => 'fa-id-card',
+    'color' => '#6366f1',
+  ),
+  'work_block_unblock' => 
+  array (
+    'icon' => 'fa-user-slash',
+    'color' => '#6366f1',
+  ),
+  'muster_roll' => 
+  array (
+    'icon' => 'fa-file-invoice',
+    'color' => '#6366f1',
+  ),
+  'esi_contribution' => 
+  array (
+    'icon' => 'fa-hand-holding-dollar',
+    'color' => '#6366f1',
+  ),
+  'esi_ecr_pf_upload' => 
+  array (
+    'icon' => 'fa-file-upload',
+    'color' => '#6366f1',
+  ),
+  'esi_comp_esi_compliance_check_check' => 
+  array (
+    'icon' => 'fa-shield-check',
+    'color' => '#6366f1',
+  ),
+  'epf_comp_epf_compliance' => 
+  array (
+    'icon' => 'fa-file-invoice-dollar',
+    'color' => '#6366f1',
+  ),
+  'lwf_comp_lwf_compliance' => 
+  array (
+    'icon' => 'fa-balance-scale',
+    'color' => '#6366f1',
+  ),
+  'monthly_comp_monthly_compliance_certificate_certificate' => 
+  array (
+    'icon' => 'fa-certificate',
+    'color' => '#6366f1',
+  ),
+  'lwf_rate_view' => 
+  array (
+    'icon' => 'fa-indian-rupee-sign',
+    'color' => '#6366f1',
+  ),
+  'att_attendance' => 
+  array (
+    'icon' => 'fa-calendar-check',
+    'color' => '#6366f1',
+  ),
+  'noc_management' => 
+  array (
+    'icon' => 'fa-exchange-alt',
+    'color' => '#6366f1',
+  ),
+  'comp_compliance' => 
+  array (
+    'icon' => 'fa-shield-check',
+    'color' => '#6366f1',
+  ),
+  'documents' => 
+  array (
+    'icon' => 'fa-folder-open',
+    'color' => '#6366f1',
+  ),
+  'rep_reports' => 
+  array (
+    'icon' => 'fa-chart-bar',
+    'color' => '#6366f1',
+  ),
+  'fl_dash_dashboard' => 
+  array (
+    'icon' => 'fa-tachometer-alt',
+    'color' => '#6366f1',
+  ),
+  'fl_entry_validation' => 
+  array (
+    'icon' => 'fa-sign-in-alt',
+    'color' => '#6366f1',
+  ),
+  'fl_exit_validation' => 
+  array (
+    'icon' => 'fa-sign-out-alt',
+    'color' => '#6366f1',
+  ),
+  'fl_active_pass' => 
+  array (
+    'icon' => 'fa-id-badge',
+    'color' => '#6366f1',
+  ),
+  'fl_blocked_workers' => 
+  array (
+    'icon' => 'fa-user-slash',
+    'color' => '#6366f1',
+  ),
+  'fl_expired_pass' => 
+  array (
+    'icon' => 'fa-exclamation-triangle',
+    'color' => '#6366f1',
+  ),
+  'fl_logs' => 
+  array (
+    'icon' => 'fa-history',
+    'color' => '#6366f1',
+  ),
+  'fl_manual_override' => 
+  array (
+    'icon' => 'fa-unlock-alt',
+    'color' => '#6366f1',
+  ),
+  'fl_rep_reports' => 
+  array (
+    'icon' => 'fa-chart-line',
+    'color' => '#6366f1',
+  ),
+  'pass_issuer_dash_pass_issuer_dashboard' => 
+  array (
+    'icon' => 'fa-tachometer-alt',
+    'color' => '#6366f1',
+  ),
+  'verify_documents' => 
+  array (
+    'icon' => 'fa-file-shield',
+    'color' => '#6366f1',
+  ),
+  'pending_requests' => 
+  array (
+    'icon' => 'fa-list-ul',
+    'color' => '#6366f1',
+  ),
+  'issue_temp_pass' => 
+  array (
+    'icon' => 'fa-id-badge',
+    'color' => '#6366f1',
+  ),
+  'acc_generation' => 
+  array (
+    'icon' => 'fa-microchip',
+    'color' => '#6366f1',
+  ),
+  'issue_acc_pass' => 
+  array (
+    'icon' => 'fa-id-card-clip',
+    'color' => '#6366f1',
+  ),
+  'reupload_cases' => 
+  array (
+    'icon' => 'fa-upload',
+    'color' => '#6366f1',
+  ),
+  'pass_validity' => 
+  array (
+    'icon' => 'fa-calendar-check',
+    'color' => '#6366f1',
+  ),
+  'cust_annexure3a' => 
+  array (
+    'icon' => 'fa-file-contract',
+    'color' => '#6366f1',
+  ),
+  'cust_welfareactions' => 
+  array (
+    'icon' => 'fa-clock-rotate-left',
+    'color' => '#6366f1',
+  ),
+  'cust_dash_dashboard' => 
+  array (
+    'icon' => 'fa-tachometer-alt',
+    'color' => '#6366f1',
+  ),
+  'cust_profile' => 
+  array (
+    'icon' => 'fa-id-card',
+    'color' => '#6366f1',
+  ),
+  'cont_enrolment4atypeworkmen' => 
+  array (
+    'icon' => 'fa-users',
+    'color' => '#6366f1',
+  ),
+  'cont_enrolment4atyperetraining' => 
+  array (
+    'icon' => 'fa-arrows-rotate',
+    'color' => '#6366f1',
+  ),
+  'cont_training_request' => 
+  array (
+    'icon' => 'fa-graduation-cap',
+    'color' => '#6366f1',
+  ),
+  'cont_book_safety_training' => 
+  array (
+    'icon' => 'fa-calendar-check',
+    'color' => '#6366f1',
+  ),
+  'cont_payment' => 
+  array (
+    'icon' => 'fa-credit-card',
+    'color' => '#6366f1',
+  ),
+  'cont_gatepass6a' => 
+  array (
+    'icon' => 'fa-id-badge',
+    'color' => '#6366f1',
+  ),
+  'cont_gatepassreupload' => 
+  array (
+    'icon' => 'fa-file-circle-exclamation',
+    'color' => '#6366f1',
+  ),
+  'cont_pass_status' => 
+  array (
+    'icon' => 'fa-fingerprint',
+    'color' => '#6366f1',
+  ),
+  'cont_att_attendance' => 
+  array (
+    'icon' => 'fa-calendar-check',
+    'color' => '#6366f1',
+  ),
+  'cont_comp_compliance' => 
+  array (
+    'icon' => 'fa-shield-check',
+    'color' => '#6366f1',
+  ),
+  'cont_documents' => 
+  array (
+    'icon' => 'fa-folder-open',
+    'color' => '#6366f1',
+  ),
+  'cont_rep_reports' => 
+  array (
+    'icon' => 'fa-chart-bar',
+    'color' => '#6366f1',
+  ),
+  'enrollment_approval' => 
+  array (
+    'icon' => 'fa-user-check',
+    'color' => '#6366f1',
+  ),
+  'training_class_master' => 
+  array (
+    'icon' => 'fa-calendar-plus',
+    'color' => '#6366f1',
+  ),
+  'training_requests' => 
+  array (
+    'icon' => 'fa-envelope-open-text',
+    'color' => '#6366f1',
+  ),
+  'training_schedule' => 
+  array (
+    'icon' => 'fa-calendar-alt',
+    'color' => '#6366f1',
+  ),
+  'upcoming_sessions' => 
+  array (
+    'icon' => 'fa-clock',
+    'color' => '#6366f1',
+  ),
+  'conduct_results' => 
+  array (
+    'icon' => 'fa-users-cog',
+    'color' => '#6366f1',
+  ),
+  'training_status' => 
+  array (
+    'icon' => 'fa-user-check',
+    'color' => '#6366f1',
+  ),
+  'training_location_master' => 
+  array (
+    'icon' => 'fa-location-dot',
+    'color' => '#6366f1',
+  ),
+  'instructor_master' => 
+  array (
+    'icon' => 'fa-person-chalkboard',
+    'color' => '#6366f1',
+  ),
+  'safety_training_type_master' => 
+  array (
+    'icon' => 'fa-list-check',
+    'color' => '#6366f1',
+  ),
+  'training_fee_master' => 
+  array (
+    'icon' => 'fa-indian-rupee-sign',
+    'color' => '#6366f1',
+  ),
+  'training_language_master' => 
+  array (
+    'icon' => 'fa-language',
+    'color' => '#6366f1',
+  ),
+  'pending_training' => 
+  array (
+    'icon' => 'fa-hourglass-half',
+    'color' => '#6366f1',
+  ),
+  'retraining' => 
+  array (
+    'icon' => 'fa-redo',
+    'color' => '#6366f1',
+  ),
+  'retraining_requests' => 
+  array (
+    'icon' => 'fa-tasks',
+    'color' => '#6366f1',
+  ),
+  'training_batch_report' => 
+  array (
+    'icon' => 'fa-file-lines',
+    'color' => '#6366f1',
+  ),
+  'exec_dash_dashboard' => 
+  array (
+    'icon' => 'fa-tachometer-alt',
+    'color' => '#6366f1',
+  ),
+  'exec_training_att_training_attendance' => 
+  array (
+    'icon' => 'fa-file-signature',
+    'color' => '#6366f1',
+  ),
+  'exec_contractors' => 
+  array (
+    'icon' => 'fa-building',
+    'color' => '#6366f1',
+  ),
+  'exec_work_orders' => 
+  array (
+    'icon' => 'fa-handshake',
+    'color' => '#6366f1',
+  ),
+  'exec_deployments' => 
+  array (
+    'icon' => 'fa-users-viewfinder',
+    'color' => '#6366f1',
+  ),
+  'exec_att_attendance' => 
+  array (
+    'icon' => 'fa-calendar-check',
+    'color' => '#6366f1',
+  ),
+  'exec_att_attendance_exceptions_exceptions' => 
+  array (
+    'icon' => 'fa-triangle-exclamation',
+    'color' => '#6366f1',
+  ),
+  'exec_observations' => 
+  array (
+    'icon' => 'fa-edit',
+    'color' => '#6366f1',
+  ),
+  'exec_escalations' => 
+  array (
+    'icon' => 'fa-bullhorn',
+    'color' => '#6366f1',
+  ),
+  'exec_productivity' => 
+  array (
+    'icon' => 'fa-chart-line',
+    'color' => '#6366f1',
+  ),
+  'exec_rep_reports' => 
+  array (
+    'icon' => 'fa-file-invoice',
+    'color' => '#6366f1',
+  ),
+  'm_link_' => 
+  array (
+    'icon' => '\'.$m[\'icon\'].\'',
+    'color' => '#6366f1',
+  ),
+)

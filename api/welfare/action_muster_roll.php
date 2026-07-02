@@ -10,7 +10,7 @@ function respondJSON($success, $message, $data = []) {
     exit;
 }
 
-if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['welfare_user', 'welfare', 'super_admin', 'admin'])) {
+if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['welfare_user', 'welfare_admin', 'welfare', 'super_admin', 'admin'])) {
     respondJSON(false, 'Unauthorized access.');
 }
 

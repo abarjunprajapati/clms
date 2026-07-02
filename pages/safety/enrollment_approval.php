@@ -124,7 +124,7 @@ function renderContent() {
                 (
                     SELECT tb2.id
                     FROM training_class_batches tb2
-                    WHERE LOWER(TRIM(tb2.language_name)) = LOWER(TRIM(COALESCE(w.safety_language, '')))
+                    WHERE LOWER(TRIM(tb2.language_name)) = LOWER(TRIM(COALESCE(NULLIF(w.training_booking_language, ''), w.safety_language, '')))
                       AND tb2.training_date >= CURDATE()
                       AND LOWER(COALESCE(tb2.status, '')) IN ('open', 'scheduled', 'active')
                     ORDER BY tb2.training_date ASC, tb2.id ASC
@@ -163,7 +163,7 @@ function renderContent() {
                   LIMIT 1
               )
             ORDER BY $batchOrderExpr ASC,
-                     COALESCE(LOWER(w.safety_language), 'zzz') ASC,
+                     COALESCE(LOWER(NULLIF(w.training_booking_language, '')), LOWER(w.safety_language), 'zzz') ASC,
                      COALESCE(tr.updated_at, tr.created_at) ASC, tr.id ASC
         ");
 
@@ -175,7 +175,8 @@ function renderContent() {
     // fall back to batch_number stored on the training_request row itself.
     $groups = []; // [ lang_key => [ 'language'=>..., 'batches'=> [ batchKey => [...] ] ] ]
     foreach ($safetyApprovalRequests as $req) {
-        $lang    = trim((string)($req['batch_language'] ?? $req['safety_language'] ?? ''));
+        $effectiveLang = !empty($req['training_booking_language']) ? $req['training_booking_language'] : ($req['safety_language'] ?? '');
+        $lang    = trim((string)($req['batch_language'] ?? $effectiveLang ?? ''));
         $langKey = $lang !== '' ? strtolower($lang) : '__no_language__';
 
         // Use pre-assigned active batch (from training_class_batches)
@@ -400,7 +401,7 @@ function renderContent() {
             <div class="text-muted"><?= htmlspecialchars($approval['department'] ?? '-') ?> / <?= htmlspecialchars($approval['nature_of_work'] ?? '-') ?></div>
           </td>
           <td>
-            <span class="badge badge-info"><?= htmlspecialchars($approval['safety_language'] ?? '-') ?></span>
+            <span class="badge badge-info"><?= htmlspecialchars(!empty($approval['training_booking_language']) ? $approval['training_booking_language'] : ($approval['safety_language'] ?? '-')) ?></span>
           </td>
           <td>
             <code><?= htmlspecialchars($approval['executing_officer_code'] ?? '-') ?></code>
@@ -593,7 +594,7 @@ function showWorkmanDetails(data) {
   document.getElementById('wm-skill-cat').textContent  = data.skill_category || 'N/A';
   document.getElementById('wm-nature-work').textContent= data.nature_of_work || 'N/A';
   document.getElementById('wm-experience').textContent = (data.experience || '0') + ' Years';
-  document.getElementById('wm-safety-lang').textContent= data.safety_language || 'N/A';
+  document.getElementById('wm-safety-lang').textContent= (data.training_booking_language || data.safety_language || 'N/A');
   document.getElementById('wm-exec-officer').textContent= (data.executing_officer_name || 'N/A') + ' (E-Code: ' + (data.executing_officer_code || 'N/A') + ')';
   document.getElementById('wm-aadhaar').textContent    = data.aadhaar || 'N/A';
   document.getElementById('wm-epf').textContent        = data.epf_registered_worker || 'N/A';
@@ -683,7 +684,7 @@ async function reviewSafetyEnrollment(workmanId, decision) {
   const rejecting = decision === 'rejected';
   const prompt = await Swal.fire({
     icon: rejecting ? 'warning' : 'question',
-    title: rejecting ? 'Reject enrollment?' : 'Approve enrollment?',
+    title: rejecting ? 'Reject enrollment?' : 'Confirm schedule of safety class.',
     text: rejecting
       ? 'The enrollment will return to the contractor for correction and resubmission.'
       : 'The worker will be released for Safety training scheduling.',
@@ -707,7 +708,7 @@ async function reviewBatchGroup(workmanIds, decision, batchLabel) {
     icon: rejecting ? 'warning' : 'question',
     title: rejecting
       ? `Reject all ${count} enrollment(s) in "${batchLabel}"?`
-      : `Approve all ${count} enrollment(s) in "${batchLabel}"?`,
+      : `Confirm schedule of safety class.`,
     html: rejecting
       ? `All selected workers in <strong>${batchLabel}</strong> will be returned to their contractors for correction.`
       : `All <strong>${count} workers</strong> in batch <strong>${batchLabel}</strong> will be released for Safety training scheduling.`,
@@ -735,7 +736,7 @@ async function reviewSafetyEnrollmentBatch(decision) {
   const rejecting = decision === 'rejected';
   const prompt = await Swal.fire({
     icon: rejecting ? 'warning' : 'question',
-    title: rejecting ? `Reject ${workmanIds.length} enrollment(s)?` : `Approve ${workmanIds.length} enrollment(s)?`,
+    title: rejecting ? `Reject ${workmanIds.length} enrollment(s)?` : `Confirm schedule of safety class.`,
     text: rejecting
       ? 'Selected enrollments will return to the contractor for correction and resubmission.'
       : 'Selected workers will be released for Safety training scheduling.',

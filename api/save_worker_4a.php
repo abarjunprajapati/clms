@@ -649,10 +649,22 @@ function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $r
     $existing = db_single(
         $conn,
         "SELECT id, status
-         FROM training_requests
-         WHERE workman_id = ?
-           AND status IN ('pending_eo','pending_safety','welfare_pending','pending','safety_rejected','scheduled','contractor_confirmed','passed')
-         ORDER BY id DESC
+         FROM training_requests tr
+         WHERE tr.workman_id = ?
+           AND tr.status IN ('pending_eo','pending_safety','welfare_pending','pending','safety_rejected','scheduled','contractor_confirmed')
+           AND NOT EXISTS (
+               SELECT 1
+               FROM training_session_workers tsw_done
+               WHERE tsw_done.training_request_id = tr.id
+                 AND LOWER(COALESCE(tsw_done.result, 'pending')) IN ('pass', 'passed', 'fail', 'failed')
+           )
+           AND NOT EXISTS (
+               SELECT 1
+               FROM training_results trr_done
+               WHERE trr_done.training_request_id = tr.id
+                 AND LOWER(COALESCE(trr_done.result, '')) IN ('pass', 'passed', 'fail', 'failed')
+           )
+         ORDER BY tr.id DESC
          LIMIT 1",
         'i',
         [$workman_id]
@@ -802,6 +814,25 @@ worker4a_ensure_schema($conn);
 
     $contractor_row = worker4a_get_contractor_row($conn, $data);
     $editing_worker_id = (int)($data['worker_id'] ?? 0);
+    $enrolmentTypeForGate = strtolower(trim((string)($data['enrolment_type'] ?? '')));
+    if (($_SESSION['role'] ?? '') === 'contractor' && $enrolmentTypeForGate !== 'retraining' && $limit_type === 'Workman') {
+        $contractorStatus = strtolower((string)($contractor_row['status'] ?? ''));
+        $annexureStatus = '';
+        $contractorIdForGate = (int)($contractor_row['id'] ?? 0);
+        if ($contractorIdForGate > 0 && worker4a_table_exists($conn, 'annexure2a')) {
+            $annexureRow = db_single(
+                $conn,
+                "SELECT workflow_status FROM annexure2a WHERE contractor_id = ? ORDER BY id DESC LIMIT 1",
+                'i',
+                [$contractorIdForGate]
+            );
+            $annexureStatus = strtolower((string)($annexureRow['workflow_status'] ?? ''));
+        }
+        $lockedStatuses = ['pending', 'submitted', 'resubmitted', 'under_review', 'under_verification', 'correction_required', 'hold', 'rejected', 'block', 'blocked'];
+        if ($contractorStatus !== 'approved' || in_array($annexureStatus, $lockedStatuses, true)) {
+            throw new Exception('Workmen Enrollment is locked until Welfare approves the latest Contractor Registration submission.');
+        }
+    }
 
     // Point 19: Enforce pass limit for Representative (and Supervisor) on new enrollments
     if ($contractor_row && $editing_worker_id === 0 && $action !== 'draft') {
@@ -1009,7 +1040,7 @@ worker4a_ensure_schema($conn);
         'insurance_doc' => $uploaded_files['insurance_doc'],
         'aadhaar_doc' => $uploaded_files['aadhaar_doc'],
         'signature_doc' => $uploaded_files['signature'],
-        'status' => $action === 'draft' ? 'draft' : 'pending',
+        'status' => ($action === 'draft' || $safetyFeePaymentOption === 'pay_later') ? 'draft' : 'pending',
         'training_status' => 'pending',
         'worker_type' => $worker_type,
         'safety_training_status' => 'PENDING_TRAINING',

@@ -152,6 +152,7 @@ function renderContent() {
           <button type="button" class="btn btn-sm btn-primary" onclick='viewBatchDetails(<?= json_encode($b) ?>)'><i class="fas fa-eye"></i> View</button>
           <a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a>
           <button type="button" class="btn btn-sm btn-outline" onclick="viewRescheduleHistory(<?= (int)$b['id'] ?>, '<?= htmlspecialchars($b['batch_number']) ?>')">History</button>
+          <a class="btn btn-sm btn-warning" href="reschedule_batch.php?batch_id=<?= (int)$b['id'] ?>" title="Reschedule this batch"><i class="fas fa-calendar-day"></i> Reschedule</a>
           <button
             class="btn btn-sm <?= $active ? 'btn-warning' : 'btn-success' ?>"
             type="button"

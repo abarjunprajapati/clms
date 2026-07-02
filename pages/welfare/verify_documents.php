@@ -144,12 +144,17 @@ function welfareGatePassDocsForRequest($conn, $workmanId, $requestId, $gatePassD
 
     if ($requestId && welfareDocumentColumnExists($conn, 'gate_pass_request_id')) {
         $res = $conn->query("
-            SELECT document_type, file_path, COALESCE(status, 'pending') AS status
-            FROM documents
-            WHERE workman_id = $workmanId
-              AND gate_pass_request_id = $requestId
-              AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
-            ORDER BY id DESC
+            SELECT d.document_type, d.file_path, COALESCE(d.status, 'pending') AS status
+            FROM documents d
+            JOIN (
+                SELECT document_type, MAX(id) AS latest_id
+                FROM documents
+                WHERE workman_id = $workmanId
+                  AND gate_pass_request_id = $requestId
+                  AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
+                GROUP BY document_type
+            ) latest_docs ON latest_docs.latest_id = d.id
+            ORDER BY d.id DESC
         ");
         while ($res && ($row = $res->fetch_assoc())) {
             $docs[] = $row;
@@ -215,13 +220,18 @@ function welfareGatePassDocumentsSql($conn, $workmanId, $requestId, $requestCrea
         );
         if ($linkedCount >= 3) {
             return "
-                SELECT id, document_type, COALESCE(status, 'pending') AS status,
-                       COALESCE(remarks, '') AS remarks, file_path, uploaded_at, 'documents' AS source_table
-                FROM documents
-                WHERE workman_id = $workmanId
-                  AND gate_pass_request_id = $requestId
-                  AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
-                ORDER BY uploaded_at DESC, id DESC
+                SELECT d.id, d.document_type, COALESCE(d.status, 'pending') AS status,
+                       COALESCE(d.remarks, '') AS remarks, d.file_path, d.uploaded_at, 'documents' AS source_table
+                FROM documents d
+                JOIN (
+                    SELECT document_type, MAX(id) AS latest_id
+                    FROM documents
+                    WHERE workman_id = $workmanId
+                      AND gate_pass_request_id = $requestId
+                      AND " . welfareGatePassDocMatchSql($gatePassDocTypesSql) . "
+                    GROUP BY document_type
+                ) latest_docs ON latest_docs.latest_id = d.id
+                ORDER BY d.uploaded_at DESC, d.id DESC
             ";
         }
     }
@@ -273,6 +283,7 @@ function renderContent() {
             w.contractor_id,
             w.name AS worker_name,
             w.worker_type,
+            w.photo,
             c.contractor_name,
             (
                 SELECT COUNT(*)
@@ -284,8 +295,8 @@ function renderContent() {
         JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
         JOIN workmen w ON w.id = gprw.workman_id
         LEFT JOIN contractors c ON w.contractor_id = c.id
-        WHERE COALESCE(gpr.status, 'pending') IN ('pending', 'reupload_required')
-          AND COALESCE(gprw.status, 'pending') IN ('pending', 'reupload_required')
+        WHERE COALESCE(gpr.status, 'pending') IN ('pending', 'submitted', 'under_review')
+          AND COALESCE(gprw.status, 'pending') IN ('pending', 'submitted', 'under_review')
           AND $safetyTrainingReadySql
           $workmanFilterSql
         ORDER BY gpr.created_at DESC, gprw.id DESC
@@ -335,6 +346,7 @@ function renderContent() {
             w.contractor_id,
             w.name AS worker_name,
             w.worker_type,
+            w.photo,
             c.contractor_name
         FROM gate_pass_request_workers gprw
         JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
@@ -391,7 +403,7 @@ function renderContent() {
     <?php if (empty($pendingApps)): ?>
         <div class="alert alert-info"><i class="fas fa-info-circle"></i> No pending documents in the queue.</div>
     <?php else: ?>
-        <div class="card glass mb-4">
+        <div class="card glass" style="margin-bottom: 30px;">
             <div class="card-header bg-light">
                 <div class="card-title">
                     <i class="fas fa-users text-primary"></i> Pending Document Verifications
@@ -401,7 +413,8 @@ function renderContent() {
                 <div class="table-responsive">
                     <table class="custom-data-table" style="width: 100%; border-collapse: collapse;">
                         <thead>
-                            <tr id="master-row-<?= $safeId ?>">
+                            <tr id="master-row-<?= $safeId ?? '' ?>">
+                                <th>S.No.</th>
                                 <th>Contractor</th>
                                 <th>Role</th>
                                 <th>Worker Name</th>
@@ -411,12 +424,15 @@ function renderContent() {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($pendingApps as $app): 
+                            <?php 
+                            $sno = 1;
+                            foreach ($pendingApps as $app): 
                                 $appId = $app['application_id'] ?: $app['request_no'];
                                 $safeId = 'req-' . (int)$app['request_id'] . '-wm-' . (int)$app['workman_id'];
                             ?>
                             <!-- Master Row -->
                             <tr>
+                                <td><?= $sno++ ?></td>
                                 <td><span class="fw-semibold text-dark"><?= htmlspecialchars($app['contractor_name'] ?? 'N/A') ?></span></td>
                                 <td><span class="badge badge-outline"><?= strtoupper($app['pass_type'] ?: ($app['worker_type'] ?? 'Workman')) ?></span></td>
                                 <td><?= htmlspecialchars($app['worker_name'] ?? 'Unknown Worker') ?></td>
@@ -434,83 +450,97 @@ function renderContent() {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-primary" onclick="toggleAppDocs('<?= $safeId ?>')">
+                                    <button class="btn btn-sm btn-primary" onclick="toggleAppDocs(this, '<?= $safeId ?>')">
                                         <i class="fas fa-eye"></i> View Docs
                                     </button>
-                                </td>
-                            </tr>
-                            
-                            <!-- Detail Row (Accordion / Horizontal Cards) -->
-                            <tr id="docs-row-<?= $safeId ?>" class="docs-detail-row" style="display:none;" data-master-row="master-row-<?= $safeId ?>">
-                                <td colspan="6">
-                                    <div class="docs-detail-panel">
-                                        <h6 class="docs-detail-title">
-                                            <i class="fas fa-file-contract"></i> Documents for <?= htmlspecialchars($app['worker_name'] ?? 'Unknown Worker') ?>
-                                        </h6>
-                                        
-                                        <div class="document-card-grid">
-                                            <?php
-                                            $workmanId = (int)$app['workman_id'];
-                                            $docsSql = welfareGatePassDocumentsSql(
-                                                $conn,
-                                                $workmanId,
-                                                (int)$app['request_id'],
-                                                $app['request_created_at'] ?? '',
-                                                $gatePassDocTypesSql
-                                            );
-                                            $docs = $conn->query($docsSql);
-                                            
-                                            if (!$docs || $docs->num_rows === 0): ?>
-                                                <div class="text-muted" style="font-size: 13px; font-style: italic;">No pending documents found.</div>
-                                            <?php endif;
-                                            
-                                            while ($docs && $doc = $docs->fetch_assoc()):
-                                                $statusBadge = ['pending' => 'warning', 'approved' => 'success', 'rejected' => 'danger', 'reupload_required' => 'info'][$doc['status']] ?? 'gray';
-                                            ?>
-                                            
-                                            <!-- Horizontal Document Card -->
-                                            <div class="doc-card" id="doc-card-<?= $doc['id'] ?>">
-                                                <div class="doc-card-head">
-                                                    <strong class="doc-card-title">
-                                                        <?= strtoupper(str_replace('_', ' ', $doc['document_type'])) ?>
-                                                    </strong>
-                                                    <span class="badge badge-<?= $statusBadge ?> doc-card-badge">
-                                                        <?= strtoupper($doc['status']) ?>
-                                                    </span>
-                                                </div>
-                                                
-                                                <div class="doc-card-view">
-                                                    <?php if (!empty($doc['file_path'])):
-                                                        $docPath = strpos($doc['file_path'], '/') === false && strpos($doc['file_path'], '\\') === false
-                                                            ? '../../uploads/documents/' . $doc['file_path']
-                                                            : '../../' . ltrim($doc['file_path'], '/\\');
-                                                    ?>
-                                                        <a class="btn btn-sm btn-light doc-view-btn" href="<?= htmlspecialchars($docPath) ?>" target="_blank">
-                                                            <i class="fas fa-file-pdf" style="color: #ef4444; margin-right: 4px;"></i> View Document
-                                                        </a>
-                                                    <?php else: ?>
-                                                        <button class="btn btn-sm btn-light doc-view-btn" onclick="previewDoc('<?= htmlspecialchars($appId, ENT_QUOTES) ?>', '<?= htmlspecialchars($doc['document_type'], ENT_QUOTES) ?>')">
-                                                            <i class="fas fa-file-pdf" style="color: #ef4444; margin-right: 4px;"></i> View Document
-                                                        </button>
-                                                    <?php endif; ?>
-                                                </div>
-
-                                                <div class="doc-card-spacer"></div>
-
-                                                <input type="text" class="form-control form-control-sm doc-remarks" id="remarks-<?= $doc['id'] ?>" value="<?= htmlspecialchars($doc['remarks'] ?? '') ?>" placeholder="Remarks (Mandatory if Rejecting)...">
-                                                
-                                                <div class="doc-action-row">
-                                                    <button class="btn btn-sm btn-success" onclick="updateDoc(<?= $doc['id'] ?>, 'approved', '<?= $doc['source_table'] ?>', <?= (int)$app['request_id'] ?>)">
-                                                        <i class="fas fa-check-circle"></i> Approve
-                                                    </button>
-                                                    <button class="btn btn-sm btn-danger" onclick="updateDoc(<?= $doc['id'] ?>, 'reupload_required', '<?= $doc['source_table'] ?>', <?= (int)$app['request_id'] ?>)">
-                                                        <i class="fas fa-times-circle"></i> Reject
-                                                    </button>
+                                    
+                                    <!-- Detail Row Template -->
+                                    <template id="template-<?= $safeId ?>">
+                                        <div class="docs-detail-panel" style="margin: 10px 0;">
+                                            <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; background: var(--gray-50); padding: 12px; border-radius: 8px; border: 1px solid var(--gray-200);">
+                                                <?php if (!empty($app['photo'])): 
+                                                    $photoPath = strpos($app['photo'], '/') === false && strpos($app['photo'], '\\') === false
+                                                        ? '../../uploads/workers/' . $app['photo']
+                                                        : '../../' . ltrim($app['photo'], '/\\');
+                                                ?>
+                                                    <img src="<?= htmlspecialchars($photoPath) ?>" alt="Worker Photo" style="width: 70px; height: 70px; border-radius: 8px; object-fit: cover; border: 2px solid var(--white); box-shadow: var(--shadow-sm);">
+                                                <?php else: ?>
+                                                    <div style="width: 70px; height: 70px; border-radius: 8px; background: var(--white); display: flex; align-items: center; justify-content: center; border: 1px solid var(--gray-300); box-shadow: var(--shadow-sm);">
+                                                        <i class="fas fa-user text-muted" style="font-size: 24px;"></i>
+                                                    </div>
+                                                <?php endif; ?>
+                                                <div>
+                                                    <h6 class="docs-detail-title" style="margin-bottom: 4px; font-size: 15px;">
+                                                        <?= htmlspecialchars($app['worker_name'] ?? 'Unknown Worker') ?>
+                                                    </h6>
+                                                    <div class="text-muted" style="font-size: 12px;"><i class="fas fa-id-card"></i> Verify documents for enrolment</div>
                                                 </div>
                                             </div>
-                                            <?php endwhile; ?>
+                                        
+                                            <div class="document-card-grid">
+                                                <?php
+                                                $workmanId = (int)$app['workman_id'];
+                                                $docsSql = welfareGatePassDocumentsSql(
+                                                    $conn,
+                                                    $workmanId,
+                                                    (int)$app['request_id'],
+                                                    $app['request_created_at'] ?? '',
+                                                    $gatePassDocTypesSql
+                                                );
+                                                $docs = $conn->query($docsSql);
+                                                
+                                                if (!$docs || $docs->num_rows === 0): ?>
+                                                    <div class="text-muted" style="font-size: 13px; font-style: italic;">No pending documents found.</div>
+                                                <?php endif;
+                                                
+                                                while ($docs && $doc = $docs->fetch_assoc()):
+                                                    $statusBadge = ['pending' => 'warning', 'approved' => 'success', 'rejected' => 'danger', 'reupload_required' => 'info'][$doc['status']] ?? 'gray';
+                                                ?>
+                                                
+                                                <!-- Horizontal Document Card -->
+                                                <div class="doc-card" id="doc-card-<?= $doc['id'] ?>">
+                                                    <div class="doc-card-head">
+                                                        <strong class="doc-card-title">
+                                                            <?= strtoupper(str_replace('_', ' ', $doc['document_type'])) ?>
+                                                        </strong>
+                                                        <span class="badge badge-<?= $statusBadge ?> doc-card-badge">
+                                                            <?= strtoupper($doc['status']) ?>
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    <div class="doc-card-view">
+                                                        <?php if (!empty($doc['file_path'])):
+                                                            $docPath = strpos($doc['file_path'], '/') === false && strpos($doc['file_path'], '\\') === false
+                                                                ? '../../uploads/documents/' . $doc['file_path']
+                                                                : '../../' . ltrim($doc['file_path'], '/\\');
+                                                        ?>
+                                                            <a class="btn btn-sm btn-light doc-view-btn" href="<?= htmlspecialchars($docPath) ?>" target="_blank">
+                                                                <i class="fas fa-file-pdf" style="color: #ef4444; margin-right: 4px;"></i> View Document
+                                                            </a>
+                                                        <?php else: ?>
+                                                            <button class="btn btn-sm btn-light doc-view-btn" onclick="previewDoc('<?= htmlspecialchars($appId, ENT_QUOTES) ?>', '<?= htmlspecialchars($doc['document_type'], ENT_QUOTES) ?>')">
+                                                                <i class="fas fa-file-pdf" style="color: #ef4444; margin-right: 4px;"></i> View Document
+                                                            </button>
+                                                        <?php endif; ?>
+                                                    </div>
+
+                                                    <div class="doc-card-spacer"></div>
+
+                                                    <input type="text" class="form-control form-control-sm doc-remarks" id="remarks-<?= $doc['id'] ?>" value="<?= htmlspecialchars($doc['remarks'] ?? '') ?>" placeholder="Remarks (Mandatory if Rejecting)...">
+                                                    
+                                                    <div class="doc-action-row">
+                                                        <button class="btn btn-sm btn-success" onclick="updateDoc(<?= $doc['id'] ?>, 'approved', '<?= $doc['source_table'] ?>', <?= (int)$app['request_id'] ?>)">
+                                                            <i class="fas fa-check-circle"></i> Approve
+                                                        </button>
+                                                        <button class="btn btn-sm btn-danger" onclick="updateDoc(<?= $doc['id'] ?>, 'reupload_required', '<?= $doc['source_table'] ?>', <?= (int)$app['request_id'] ?>)">
+                                                            <i class="fas fa-times-circle"></i> Reject
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <?php endwhile; ?>
+                                            </div>
                                         </div>
-                                    </div>
+                                    </template>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -521,7 +551,7 @@ function renderContent() {
         </div>
     <?php endif; ?>
 
-    <div class="card glass mb-4">
+    <div class="card glass" style="margin-bottom: 30px;">
         <div class="card-header bg-light">
             <div class="card-title">
                 <i class="fas fa-check-double text-success"></i> Approved Gate Pass Document Verifications
@@ -535,6 +565,7 @@ function renderContent() {
                 <table class="custom-data-table" style="width: 100%; border-collapse: collapse;">
                     <thead>
                         <tr>
+                            <th>S.No.</th>
                             <th>Contractor</th>
                             <th>Role</th>
                             <th>Worker Name</th>
@@ -544,10 +575,13 @@ function renderContent() {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($approvedApps as $app):
+                        <?php 
+                        $sno = 1;
+                        foreach ($approvedApps as $app):
                             $safeId = 'approved-req-' . (int)$app['request_id'] . '-wm-' . (int)$app['workman_id'];
                         ?>
                         <tr>
+                            <td><?= $sno++ ?></td>
                             <td><span class="fw-semibold text-dark"><?= htmlspecialchars($app['contractor_name'] ?? 'N/A') ?></span></td>
                             <td><span class="badge badge-outline"><?= strtoupper($app['pass_type'] ?: ($app['worker_type'] ?? 'Workman')) ?></span></td>
                             <td><?= htmlspecialchars($app['worker_name'] ?? 'Unknown Worker') ?></td>
@@ -559,17 +593,31 @@ function renderContent() {
                             </td>
                             <td><span class="badge badge-success">APPROVED</span></td>
                             <td>
-                                <button class="btn btn-sm btn-outline" onclick="toggleAppDocs('<?= $safeId ?>')">
+                                <button class="btn btn-sm btn-outline" onclick="toggleAppDocs(this, '<?= $safeId ?>')">
                                     <i class="fas fa-eye"></i> View Docs
                                 </button>
-                            </td>
-                        </tr>
-                        <tr id="docs-row-<?= $safeId ?>" class="docs-detail-row" style="display:none;">
-                            <td colspan="6">
-                                <div class="docs-detail-panel">
-                                    <h6 class="docs-detail-title">
-                                        <i class="fas fa-file-contract"></i> Approved documents for <?= htmlspecialchars($app['worker_name'] ?? 'Unknown Worker') ?>
-                                    </h6>
+                                
+                                <template id="template-<?= $safeId ?>">
+                                <div class="docs-detail-panel" style="margin: 10px 0;">
+                                         <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; background: var(--gray-50); padding: 12px; border-radius: 8px; border: 1px solid var(--gray-200);">
+                                             <?php if (!empty($app['photo'])): 
+                                                 $photoPath = strpos($app['photo'], '/') === false && strpos($app['photo'], '\\') === false
+                                                     ? '../../uploads/workers/' . $app['photo']
+                                                     : '../../' . ltrim($app['photo'], '/\\');
+                                             ?>
+                                                 <img src="<?= htmlspecialchars($photoPath) ?>" alt="Worker Photo" style="width: 70px; height: 70px; border-radius: 8px; object-fit: cover; border: 2px solid var(--white); box-shadow: var(--shadow-sm);">
+                                             <?php else: ?>
+                                                 <div style="width: 70px; height: 70px; border-radius: 8px; background: var(--white); display: flex; align-items: center; justify-content: center; border: 1px solid var(--gray-300); box-shadow: var(--shadow-sm);">
+                                                     <i class="fas fa-user text-muted" style="font-size: 24px;"></i>
+                                                 </div>
+                                             <?php endif; ?>
+                                             <div>
+                                                 <h6 class="docs-detail-title" style="margin-bottom: 4px; font-size: 15px;">
+                                                     <?= htmlspecialchars($app['worker_name'] ?? 'Unknown Worker') ?>
+                                                 </h6>
+                                                 <div class="text-muted" style="font-size: 12px;"><i class="fas fa-check-circle text-success"></i> Approved Documents</div>
+                                             </div>
+                                         </div>
                                     <div class="document-card-grid">
                                         <?php
                                         $workmanId = (int)$app['workman_id'];
@@ -613,7 +661,7 @@ function renderContent() {
                                         </div>
                                         <?php endwhile; ?>
                                     </div>
-                                </div>
+                        </template>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -624,7 +672,7 @@ function renderContent() {
         </div>
     </div>
 
-    <div class="card glass mb-4" id="contractor-documents">
+    <div class="card glass" id="contractor-documents" style="margin-bottom: 30px;">
         <div class="card-header bg-light">
             <div class="card-title">
                 <i class="fas fa-building-shield text-primary"></i> Contractor Uploaded Documents
@@ -638,6 +686,7 @@ function renderContent() {
                 <table class="custom-data-table" style="width: 100%; border-collapse: collapse;">
                     <thead>
                         <tr>
+                            <th>S.No.</th>
                             <th>Contractor</th>
                             <th>Vendor Code</th>
                             <th>Document Type</th>
@@ -649,11 +698,14 @@ function renderContent() {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($contractorDocs as $doc):
+                        <?php 
+                        $sno = 1;
+                        foreach ($contractorDocs as $doc):
                             $statusBadge = ['pending' => 'warning', 'verified' => 'success', 'rejected' => 'danger', 'reupload_required' => 'info'][$doc['status']] ?? 'gray';
                             $docUrl = welfareDocUrl($doc['file_path'] ?? '');
                         ?>
                         <tr id="contractor-doc-row-<?= (int)$doc['id'] ?>">
+                            <td><?= $sno++ ?></td>
                             <td><strong><?= htmlspecialchars($doc['contractor_name'] ?? 'N/A') ?></strong></td>
                             <td><code><?= htmlspecialchars($doc['vendor_code'] ?? '-') ?></code></td>
                             <td><?= strtoupper(str_replace('_', ' ', htmlspecialchars($doc['doc_type'] ?? 'Document'))) ?></td>
@@ -692,19 +744,47 @@ function renderContent() {
     </div>
 
     <script>
-    function toggleAppDocs(safeId) {
-        const row = document.getElementById('docs-row-' + safeId);
-        if (row.style.display === 'none' || row.style.display === '') {
-            // Optional: Close all other open rows first for a cleaner look
-            document.querySelectorAll('tr[id^="docs-row-"]').forEach(el => el.style.display = 'none');
-            
-            row.style.display = 'table-row';
-            // Scroll slightly to bring it into view smoothly
-            row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    function toggleAppDocs(btn, safeId) {
+        if (typeof $ === 'undefined' || !$.fn.DataTable) {
+            console.error("DataTables not ready");
+            return;
+        }
+        const tr = $(btn).closest('tr');
+        const table = tr.closest('table').DataTable();
+        const row = table.row(tr);
+
+        if (row.child.isShown()) {
+            row.child.hide();
+            tr.removeClass('shown');
         } else {
-            row.style.display = 'none';
+            const tmpl = tr[0].querySelector('#template-' + safeId);
+            if (tmpl) {
+                row.child(tmpl.innerHTML).show();
+                tr.addClass('shown');
+            }
         }
     }
+
+    document.addEventListener("DOMContentLoaded", function() {
+        const initDT = function() {
+            if (typeof $ !== 'undefined' && $.fn.DataTable) {
+                $('.custom-data-table').DataTable({
+                    "pageLength": 10,
+                    "ordering": false,
+                    "responsive": true,
+                    "autoWidth": false,
+                    "dom": '<"d-flex justify-content-between align-items-center p-3 border-bottom"lf>rt<"d-flex justify-content-between align-items-center p-3 border-top"ip>',
+                    "language": {
+                        "search": "Filter:",
+                        "lengthMenu": "Show _MENU_ entries"
+                    }
+                });
+            } else {
+                setTimeout(initDT, 50);
+            }
+        };
+        initDT();
+    });
 
     async function updateDoc(id, status, sourceTable, requestId = 0) {
         const remarks = document.getElementById('remarks-' + id).value;
@@ -743,11 +823,16 @@ function renderContent() {
 
                 // If all documents are approved, remove this request from the pending queue.
                 if (data.all_approved) {
-                    const detailRow = card ? card.closest('tr[id^="docs-row-"]') : null;
-                    if (detailRow) {
-                        const masterRowId = detailRow.dataset.masterRow;
-                        document.getElementById(masterRowId)?.remove();
-                        detailRow.remove();
+                    const card = document.getElementById('doc-card-' + id);
+                    if (card) {
+                        const childTr = card.closest('tr');
+                        if (childTr) {
+                            const table = $(childTr).closest('table').DataTable();
+                            const parentTr = childTr.previousElementSibling;
+                            if (parentTr) {
+                                table.row(parentTr).remove().draw(false);
+                            }
+                        }
                     }
                     showToast('All documents are verified. The worker has moved to pending pass requests.', 'success');
                 }
@@ -794,13 +879,16 @@ function renderContent() {
     }
 
     function showToast(message, type) {
-        const toast = document.createElement('div');
-        toast.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;padding:14px 18px;border-radius:10px;color:#fff;font-size:13px;font-weight:600;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,0.15);animation:slideIn 0.4s ease;max-width:430px;';
-        toast.style.background = type === 'success' ? '#059669' : '#dc2626';
-        toast.textContent = message;
-        document.body.appendChild(toast);
-        setTimeout(function() { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.5s'; }, 4000);
-        setTimeout(function() { toast.remove(); }, 4500);
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: type === 'success' ? 'Success' : 'Error',
+                text: message,
+                icon: type,
+                confirmButtonColor: '#1e3a8a'
+            });
+        } else {
+            alert(message);
+        }
     }
 
     function previewDoc(appId, docType) {

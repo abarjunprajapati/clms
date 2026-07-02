@@ -63,6 +63,7 @@ function renderContent() {
               <table class="data-table mt-3">
                 <thead>
                   <tr>
+                    <th>S.No.</th>
                     <th>Workman Name</th>
                     <th>Temp ID</th>
                     <th>Aadhaar</th>
@@ -71,8 +72,9 @@ function renderContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  <?php foreach($res as $r): ?>
+                  <?php $sno = 1; foreach($res as $r): ?>
                   <tr>
+                    <td><?= $sno++ ?></td>
                     <td><?= htmlspecialchars($r['name']) ?></td>
                     <td><?= htmlspecialchars($r['temp_id']) ?></td>
                     <td><?= htmlspecialchars($r['aadhaar']) ?></td>
@@ -83,7 +85,7 @@ function renderContent() {
                   </tr>
                   <?php endforeach; ?>
                   <?php if(empty($res)): ?>
-                  <tr><td colspan="5" class="text-center">No workmen found matching your search.</td></tr>
+                  <tr><td colspan="6" class="text-center">No workmen found matching your search.</td></tr>
                   <?php endif; ?>
                 </tbody>
               </table>
@@ -100,6 +102,7 @@ function renderContent() {
             <table class="data-table">
               <thead>
                 <tr>
+                  <th>S.No.</th>
                   <th>Workman</th>
                   <th>Temp Pass No</th>
                   <th>Contractor</th>
@@ -110,12 +113,13 @@ function renderContent() {
                 </tr>
               </thead>
               <tbody>
-                <?php foreach($issuedPasses as $pass):
+                <?php $sno2 = 1; foreach($issuedPasses as $pass):
                   $validFrom = $pass['temp_valid_from'] ?? $pass['valid_from'] ?? null;
                   $validTo = $pass['temp_valid_to'] ?? $pass['valid_to'] ?? null;
                   $daysLeft = $validTo ? ceil((strtotime($validTo) - time()) / 86400) : null;
                 ?>
                 <tr>
+                  <td><?= $sno2++ ?></td>
                   <td>
                     <div style="font-weight:600"><?= htmlspecialchars($pass['name'] ?? 'Unknown') ?></div>
                     <div style="font-size:11px;opacity:0.65">ID: <?= htmlspecialchars($pass['id'] ?? '') ?> | <?= htmlspecialchars(ucfirst($pass['worker_type'] ?? 'Workmen')) ?></div>
@@ -125,22 +129,29 @@ function renderContent() {
                   <td><?= $validFrom ? date('d M Y', strtotime($validFrom)) : 'N/A' ?></td>
                   <td><?= $validTo ? date('d M Y', strtotime($validTo)) : 'N/A' ?></td>
                   <td>
-                    <?php if($daysLeft !== null && $daysLeft < 0): ?>
-                      <span class="badge badge-danger">Expired</span>
-                    <?php elseif($daysLeft !== null && $daysLeft <= 3): ?>
-                      <span class="badge badge-warning"><?= $daysLeft ?> Days Left</span>
+                    <?php 
+                    if(in_array($pass['status'], ['permanent_active', 'acc_generated'])): 
+                    ?>
+                      <span class="badge badge-success">Permanent Active</span>
                     <?php else: ?>
-                      <span class="badge badge-success">Active</span>
+                      <?php if($daysLeft !== null && $daysLeft < 0): ?>
+                        <span class="badge badge-danger">Expired</span>
+                      <?php elseif($daysLeft !== null && $daysLeft <= 3): ?>
+                        <span class="badge badge-warning"><?= $daysLeft ?> Days Left</span>
+                      <?php else: ?>
+                        <span class="badge badge-info">Temp Active</span>
+                      <?php endif; ?>
                     <?php endif; ?>
                   </td>
                   <td style="display:flex;gap:8px;flex-wrap:wrap">
-                    <a href="../../api/welfare/download_pass.php?id=<?= (int)$pass['id'] ?>&type=temp" target="_blank" class="btn btn-sm btn-outline">
+                    <?php $ptype = in_array($pass['status'], ['permanent_active', 'acc_generated']) ? 'perm' : 'temp'; ?>
+                    <a href="../../api/welfare/download_pass.php?id=<?= (int)$pass['id'] ?>&type=<?= $ptype ?>" target="_blank" class="btn btn-sm btn-outline">
                       <i class="fas fa-eye"></i> View
                     </a>
-                    <a href="../../api/welfare/download_pass.php?id=<?= (int)$pass['id'] ?>&type=temp&action=print" target="_blank" class="btn btn-sm btn-primary">
+                    <a href="../../api/welfare/download_pass.php?id=<?= (int)$pass['id'] ?>&type=<?= $ptype ?>&action=print" target="_blank" class="btn btn-sm btn-primary">
                       <i class="fas fa-print"></i> Print
                     </a>
-                    <?php if(empty($pass['acc_number'])): ?>
+                    <?php if(empty($pass['acc_number']) && !in_array($pass['status'], ['permanent_active', 'acc_generated'])): ?>
                     <a href="acc_generation.php" class="btn btn-sm btn-success">
                       <i class="fas fa-microchip"></i> Generate ACC
                     </a>
@@ -150,7 +161,7 @@ function renderContent() {
                 <?php endforeach; ?>
                 <?php if(empty($issuedPasses)): ?>
                 <tr>
-                  <td colspan="7" style="text-align:center;padding:40px;color:var(--gray-500)">
+                  <td colspan="8" style="text-align:center;padding:40px;color:var(--gray-500)">
                     <i class="fas fa-id-card" style="font-size:42px;opacity:0.3"></i><br>
                     No temporary ID cards issued yet.
                   </td>
@@ -379,44 +390,55 @@ function renderContent() {
       fromInput.addEventListener('change', calculateDuration);
       toInput.addEventListener('change', calculateDuration);
 
-      form.addEventListener('submit', async (e) => {
+      form.addEventListener('submit', (e) => {
         e.preventDefault();
         calculateDuration();
         if (parseInt(durationInput.value || '0', 10) > maxTempValidityDays) {
           alert(`Temporary pass validity cannot exceed ${maxTempValidityDays} days.`);
           return;
         }
-        if (!confirm('Issue temporary gate pass?')) return;
 
-        const formData = new FormData(form);
-        const data = Object.fromEntries(formData.entries());
+        Swal.fire({
+          title: 'Confirm',
+          text: 'Issue temporary gate pass?',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#1e3a8a',
+          cancelButtonColor: '#d33',
+          confirmButtonText: 'Yes, Issue'
+        }).then(async (swalResult) => {
+          if (!swalResult.isConfirmed) return;
+          
+          const formData = new FormData(form);
+          const data = Object.fromEntries(formData.entries());
 
-        try {
-          const res = await fetch('../../api/welfare/issue_pass.php', {
-            method: 'POST',
-            body: JSON.stringify(data),
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
-            }
-          });
-          const raw = await res.text();
-          let result = {};
           try {
-            result = raw ? JSON.parse(raw) : {};
-          } catch (parseError) {
-            result = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+            const res = await fetch('../../api/welfare/issue_pass.php', {
+              method: 'POST',
+              body: JSON.stringify(data),
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+              }
+            });
+            const raw = await res.text();
+            let result = {};
+            try {
+              result = raw ? JSON.parse(raw) : {};
+            } catch (parseError) {
+              result = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+            }
+            if (!res.ok && !result.message) result.message = 'Temporary pass issue failed on the server.';
+            if (result.success) {
+              alert(result.message || 'Temporary pass issued successfully!');
+              window.location.href = 'pending_requests.php';
+            } else {
+              alert('Error: ' + (result.message || result.error || 'Unknown error'));
+            }
+          } catch (err) {
+            alert('API Error: ' + err.message);
           }
-          if (!res.ok && !result.message) result.message = 'Temporary pass issue failed on the server.';
-          if (result.success) {
-            alert(result.message || 'Temporary pass issued successfully!');
-            window.location.href = 'acc_generation.php';
-          } else {
-            alert('Error: ' + (result.message || result.error || 'Unknown error'));
-          }
-        } catch (err) {
-          alert('API Error: ' + err.message);
-        }
+        });
       });
     </script>
     <?php

@@ -197,52 +197,70 @@ function renderContent() {
         return result;
       }
 
-      async function issuePermanentPass(id) {
-        if (!confirm('Issue permanent pass and activate ACC for this workman?')) return;
-        
-        try {
-          const res = await fetch('../../api/welfare/complete_biometric.php', {
-            method: 'POST',
-            body: JSON.stringify({ workman_id: id }),
-            headers: { 
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+      function issuePermanentPass(id) {
+        Swal.fire({
+          title: 'Confirm',
+          text: 'Issue permanent pass and activate ACC for this workman?',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#1e3a8a',
+          cancelButtonColor: '#d33',
+          confirmButtonText: 'Yes, Issue'
+        }).then(async (swalResult) => {
+          if (!swalResult.isConfirmed) return;
+          try {
+            const res = await fetch('../../api/welfare/complete_biometric.php', {
+              method: 'POST',
+              body: JSON.stringify({ workman_id: id }),
+              headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+              }
+            });
+            const result = await parsePassApiResponse(res, 'Permanent pass issue failed on the server. Please check api_errors.log.');
+            if (result.success) {
+              alert(result.message || 'Permanent pass issued successfully.');
+              location.reload();
+            } else {
+              alert('Error: ' + (result.message || result.error || 'Unknown error'));
             }
-          });
-          const result = await parsePassApiResponse(res, 'Permanent pass issue failed on the server. Please check api_errors.log.');
-          if (result.success) {
-            alert(result.message || 'Permanent pass issued successfully.');
-            location.reload();
-          } else {
-            alert('Error: ' + (result.message || result.error || 'Unknown error'));
+          } catch (err) {
+            alert('API Error: ' + err.message);
           }
-        } catch (err) {
-          alert('API Error: ' + err.message);
-        }
+        });
       }
 
-      async function generateWorkerACC(id) {
-        if (!confirm('Generate ACC number for this workman?')) return;
-        
-        try {
-          const res = await fetch('../../api/welfare/generate_worker_acc.php', {
-            method: 'POST',
-            body: JSON.stringify({ workman_id: id }),
-            headers: { 
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+      function generateWorkerACC(id) {
+        Swal.fire({
+          title: 'Confirm',
+          text: 'Generate ACC number for this workman?',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#1e3a8a',
+          cancelButtonColor: '#d33',
+          confirmButtonText: 'Yes, Generate'
+        }).then(async (swalResult) => {
+          if (!swalResult.isConfirmed) return;
+          try {
+            const res = await fetch('../../api/welfare/generate_worker_acc.php', {
+              method: 'POST',
+              body: JSON.stringify({ workman_id: id }),
+              headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
+              }
+            });
+            const result = await parsePassApiResponse(res, 'ACC generation failed on the server. Please check api_errors.log.');
+            if (result.success) {
+              alert(result.message || 'ACC Generated successfully!');
+              location.reload();
+            } else {
+              alert('Error: ' + (result.message || result.error || 'Unknown error'));
             }
-          });
-          const result = await parsePassApiResponse(res, 'ACC generation failed on the server. Please check api_errors.log.');
-          if (result.success) {
-            alert(result.message || 'ACC Generated successfully!');
-            location.reload();
-          } else {
-            alert('Error: ' + (result.message || result.error || 'Unknown error'));
+          } catch (err) {
+            alert('API Error: ' + err.message);
           }
-        } catch (err) {
-          alert('API Error: ' + err.message);
-        }
+        });
       }
     </script>
     <?php

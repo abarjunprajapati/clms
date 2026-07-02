@@ -21,7 +21,7 @@ if (!$request_id) {
 
 // Fetch the request and worker info
 $stmt = $conn->prepare("
-    SELECT tr.*, w.email, w.name as worker_name, c.name as contractor_name
+    SELECT tr.*, w.email, w.name as worker_name, c.contractor_name as contractor_name
     FROM training_requests tr
     JOIN workmen w ON tr.workman_id = w.id
     LEFT JOIN contractors c ON w.contractor_id = c.id

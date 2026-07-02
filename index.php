@@ -23,6 +23,12 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
     header('Location: ' . BASE_URL . $redirect);
     exit;
 }
+
+$popup_message = "";
+$popup_file = __DIR__ . '/uploads/popup.txt';
+if (file_exists($popup_file)) {
+    $popup_message = trim(file_get_contents($popup_file));
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -30,60 +36,112 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="csrf-token" content="<?= get_csrf_token() ?>">
-  <title>CLMS Web Login - CLMS</title>
+  <title>CLMS</title>
   
   <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
   <link rel="stylesheet" href="css/auth_redesign.css" />
   <link rel="stylesheet" href="css/auth_components.css" />
   <link rel="stylesheet" href="css/auth_responsive.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <style>
+    input[type='text']:not([id*='pass']):not([name*='pass'])<?php echo $isInternalLogin ? ':not(#login-user)' : ''; ?>, 
+    input[type='search'], 
+    textarea { text-transform: uppercase; }
+  </style>
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+    <?php if (!empty($popup_message)): ?>
+    Swal.fire({
+      title: 'Announcement',
+      text: <?= json_encode($popup_message) ?>,
+      icon: 'info',
+      confirmButtonText: 'Proceed'
+    });
+    <?php endif; ?>
+    <?php if (isset($_GET['blocked'])): ?>
+    Swal.fire({
+      title: 'Access Denied',
+      text: <?= json_encode('Your account has been blocked: ' . ($_GET['reason'] ?? 'Administrative action') . '. Please contact Welfare Admin.') ?>,
+      icon: 'error',
+      confirmButtonText: 'Understood'
+    });
+    <?php endif; ?>
+  });
+  
+  document.addEventListener('input', function(e) {
+    if (e.target.id === 'login-pass') return; // Exclude password field even if visibility toggled
+    <?php if ($isInternalLogin): ?>
+    if (e.target.id === 'login-user') return; // Do not force uppercase for internal login user ID
+    <?php endif; ?>
+    if ((e.target.tagName === 'INPUT' && (e.target.type === 'text' || e.target.type === 'search')) || e.target.tagName === 'TEXTAREA') {
+      let start = e.target.selectionStart;
+      let end = e.target.selectionEnd;
+      e.target.value = e.target.value.toUpperCase();
+      e.target.setSelectionRange(start, end);
+    }
+  });
+  </script>
 </head>
 <body>
 
 <div class="auth-split-wrapper">
   <!-- LEFT BRAND PANEL (Desktop-only) -->
-  <div class="auth-left-pane">
-    <div class="left-brand-content">
-      <!-- High-fidelity inline SVG workforce illustration -->
-      <svg class="brand-illustration" viewBox="0 0 500 400" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="250" cy="200" r="160" fill="url(#grad-circle)" opacity="0.15"/>
-        <!-- Gears representing industry & workforce -->
-        <g transform="translate(180, 160) scale(0.9)" style="transform-origin: center;">
-          <path d="M50 0 L58 15 A40 40 0 0 1 72 21 L87 13 L93 25 L78 33 A40 40 0 0 1 78 47 L93 55 L87 67 L72 59 A40 40 0 0 1 58 65 L50 80 L38 80 L30 65 A40 40 0 0 1 16 59 L1 67 L-5 55 L10 47 A40 40 0 0 1 10 33 L-5 25 L1 13 L16 21 A40 40 0 0 1 30 15 L38 0 Z" fill="#60a5fa" opacity="0.8"/>
-          <circle cx="44" cy="40" r="18" fill="#1e3a8a"/>
-        </g>
-        <g transform="translate(290, 220) scale(0.65)" style="transform-origin: center;">
-          <path d="M50 0 L58 15 A40 40 0 0 1 72 21 L87 13 L93 25 L78 33 A40 40 0 0 1 78 47 L93 55 L87 67 L72 59 A40 40 0 0 1 58 65 L50 80 L38 80 L30 65 A40 40 0 0 1 16 59 L1 67 L-5 55 L10 47 A40 40 0 0 1 10 33 L-5 25 L1 13 L16 21 A40 40 0 0 1 30 15 L38 0 Z" fill="#93c5fd" opacity="0.6"/>
-          <circle cx="44" cy="40" r="18" fill="#1d4ed8"/>
-        </g>
-        <!-- Connected Network Nodes -->
-        <line x1="200" y1="260" x2="320" y2="140" stroke="#bfdbfe" stroke-width="3" stroke-dasharray="8 6"/>
-        <line x1="160" y1="130" x2="280" y2="280" stroke="#bfdbfe" stroke-width="2" opacity="0.5"/>
-        <circle cx="200" cy="260" r="12" fill="#60a5fa"/>
-        <circle cx="320" cy="140" r="16" fill="#3b82f6"/>
-        <circle cx="160" cy="130" r="10" fill="#93c5fd"/>
-        <circle cx="280" cy="280" r="14" fill="#60a5fa"/>
-        <!-- Shield of integrity -->
-        <path d="M250 120 L300 140 V200 C300 240 250 270 250 270 C250 270 200 240 200 200 V140 Z" fill="url(#grad-shield)" filter="drop-shadow(0 8px 16px rgba(0,0,0,0.15))"/>
-        <path d="M245 160 H255 V195 H245 Z M245 205 H255 V215 H245 Z" fill="#ffffff"/>
-        <!-- Gradients Definitions -->
-        <defs>
-          <linearGradient id="grad-circle" x1="90" y1="40" x2="410" y2="360" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#ffffff"/>
-            <stop offset="1" stop-color="#bfdbfe" stop-opacity="0"/>
-          </linearGradient>
-          <linearGradient id="grad-shield" x1="200" y1="120" x2="300" y2="270" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#60a5fa"/>
-            <stop offset="1" stop-color="#2563eb"/>
-          </linearGradient>
-        </defs>
-      </svg>
-      <h1>Contract Labour<br>Management System</h1>
-      <p>Secure, enterprise-grade contractor workforce compliance and gate pass orchestration portal.</p>
+  <div class="auth-left-pane" style="position: relative; background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);">
+    
+    <!-- Top Left Logo -->
+    <div style="position: absolute; top: 35px; left: 45px; z-index: 10;">
+      <div style="background: white; padding: 10px; border-radius: 16px; display: inline-block; box-shadow: 0 8px 25px rgba(0,0,0,0.25);">
+        <img src="uploads/logo/logo.png" alt="CSL Logo" style="height: 65px; object-fit: contain;">
+      </div>
+    </div>
+
+    <!-- Premium Glassmorphism Showcase Card -->
+    <div class="left-brand-content" style="
+        position: relative; 
+        z-index: 5;
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        padding: 4rem 3rem;
+        border-radius: 28px;
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        max-width: 640px;
+        transform: translateY(-5%);
+        animation: floatIllustration 8s ease-in-out infinite;
+    ">
+
+
+      <!-- Decorative UI Accents -->
+      <div style="position: absolute; top: -15px; right: 40px; background: #3b82f6; padding: 6px 16px; border-radius: 30px; font-size: 0.75rem; font-weight: 800; color: #fff; letter-spacing: 1px; box-shadow: 0 8px 16px rgba(59,130,246,0.4);">
+        ENTERPRISE PORTAL
+      </div>
+      <div style="width: 60px; height: 4px; background: linear-gradient(90deg, #60a5fa, transparent); margin-bottom: 25px; border-radius: 2px;"></div>
+
+      <h1 style="font-size: 3.2rem; font-weight: 800; line-height: 1.1; margin-bottom: 1rem; color: #ffffff; text-shadow: 0 4px 20px rgba(0,0,0,0.15); letter-spacing: -0.02em;">
+        Contract Labour<br>
+        <span style="color: #ffffff; font-weight: 300;">Management System</span>
+      </h1>
       
-      <div class="left-security-tagline">
-        <i class="fas fa-shield-halved"></i>
-        <span>ISO 27001 Certified Security Infrastructure</span>
+      <h2 style="font-size: 1.4rem; font-weight: 600; color: #e2e8f0; margin-bottom: 2rem; letter-spacing: 0.5px;">
+        Cochin Shipyard Ltd. (CLMS-CSL)
+      </h2>
+
+      <p style="font-size: 1.1rem; color: #bfdbfe; font-weight: 400; line-height: 1.7; margin-bottom: 3.5rem; max-width: 90%;">
+        Navigating Workforce Excellence with Smart Digital Solution. Streamlined orchestrations, secure access, and enterprise-grade compliance.
+      </p>
+      
+      <div class="left-security-tagline" style="
+          display: inline-flex;
+          background: rgba(0, 0, 0, 0.2);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          padding: 14px 24px;
+          border-radius: 50px;
+          box-shadow: inset 0 2px 10px rgba(255,255,255,0.05);
+      ">
+        <i class="fas fa-shield-halved" style="color: #60a5fa; font-size: 1.3rem;"></i>
+        <span style="font-size: 0.95rem; font-weight: 600; letter-spacing: 0.5px;">ISO 27001 Certified Security Infrastructure</span>
       </div>
     </div>
   </div>
@@ -98,7 +156,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
           <div class="auth-card-logo-wrapper">
             <img src="uploads/logo/logo.png" alt="Logo" onerror="this.outerHTML='<i class=\'fas fa-building fa-2x\' style=\'color: var(--primary-color);\'></i>'">
           </div>
-          <h2 class="auth-card-title">CLMS Web</h2>
+          <h2 class="auth-card-title">CLMS</h2>
           <p class="auth-card-subtitle">Contract Labour Management System</p>
         </div>
 
@@ -111,7 +169,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
           <!-- User ID Input -->
           <div class="form-group">
             <div class="input-wrapper">
-              <input type="text" id="login-user" class="form-control" placeholder="<?= $isInternalLogin ? 'STAFF USER ID' : 'CONTRACTOR / CUSTOMER CODE' ?>" required autocomplete="username">
+              <input type="text" id="login-user" class="form-control" placeholder=" " required autocomplete="username">
               <i class="fas fa-user-shield input-icon"></i>
               <label class="form-label" for="login-user"><?= $isInternalLogin ? 'STAFF USER ID' : 'CONTRACTOR / CUSTOMER CODE' ?></label>
             </div>
@@ -124,7 +182,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
               <i class="fas fa-keyboard"></i> Caps Lock is Active
             </div>
             <div class="input-wrapper">
-              <input type="password" id="login-pass" class="form-control" placeholder="Password" required autocomplete="current-password">
+              <input type="password" id="login-pass" class="form-control" placeholder=" " required autocomplete="current-password">
               <i class="fas fa-lock input-icon"></i>
               <i class="fas fa-eye toggle-pwd" id="toggle-password" onclick="togglePwdVisibility('login-pass', 'toggle-password')"></i>
               <label class="form-label" for="login-pass">Password</label>
@@ -135,7 +193,7 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSIO
           <div class="form-group">
             <div class="captcha-row">
               <div style="position:relative; width:100%;">
-                <input type="text" id="login-captcha" class="form-control" placeholder="Security Code" required maxlength="6" style="padding-left:16px; text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
+                <input type="text" id="login-captcha" class="form-control" placeholder=" " required maxlength="6" style="padding-left:16px; text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
                 <label class="form-label" for="login-captcha" style="left:12px;">Security Code</label>
               </div>
               <div class="captcha-img-container" onclick="refreshCaptcha()" title="Click to refresh security code">

@@ -1,6 +1,6 @@
 <?php
 require_once '../../include/auth.php';
-checkAuth(['contractor', 'customer']);
+checkAuth(['contractor', 'customer', 'welfare_user', 'welfare_admin', 'welfare', 'admin', 'super_admin']);
 include '../../include/config.php';
 include '../../include/customer_portal_context.php';
 include '../../include/layout.php';
@@ -12,11 +12,18 @@ $user_id = $_SESSION['user_id'];
 clms_get_portal_contractor($conn);
 
 function renderContent() {
-    global $conn, $user_id;
+    global $conn, $user_id, $role;
 
-    $contractor = db_single($conn, "SELECT id, contractor_name FROM contractors WHERE user_id = ?", 'i', [$user_id]);
-    $c_id = $contractor['id'] ?? null;
     ensureComplianceSchema($conn);
+
+    $contractorList = [];
+    if ($role === 'contractor' || $role === 'customer') {
+        $contractor = db_single($conn, "SELECT id, contractor_name FROM contractors WHERE user_id = ?", 'i', [$user_id]);
+        $c_id = $contractor['id'] ?? null;
+    } else {
+        $c_id = isset($_GET['contractor_id']) ? intval($_GET['contractor_id']) : null;
+        $contractorList = db_fetch_all($conn, "SELECT id, vendor_code, contractor_name FROM contractors WHERE status = 'approved' ORDER BY contractor_name ASC");
+    }
 
     $selectedMonth = $_GET['month'] ?? date('Y-m', strtotime('-1 month'));
 
@@ -32,6 +39,7 @@ function renderContent() {
     }
     ?>
 
+
     <div class="content-header">
       <div>
         <h2 class="page-title"><i class="fas fa-file-invoice-dollar" style="color:#3b82f6;margin-right:10px;"></i> EPF Statutory Compliance</h2>
@@ -39,61 +47,129 @@ function renderContent() {
       </div>
     </div>
 
-    <?php if (!$c_id): ?>
+    <?php if (!empty($contractorList)): ?>
+    <div class="card glass" style="margin-bottom:20px;">
+      <div class="card-body" style="padding:16px;">
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+          <div class="form-group" style="margin:0;min-width:260px;">
+            <label class="form-label" style="font-size:11px;">Select Contractor</label>
+            <select class="form-control" onchange="window.location.href='?contractor_id='+this.value+'&month='+document.getElementById('monthFilter')?.value">
+              <option value="">-- Select Contractor --</option>
+              <?php foreach($contractorList as $cl): ?>
+                <option value="<?= $cl['id'] ?>" <?= $c_id == $cl['id'] ? 'selected' : '' ?>><?= htmlspecialchars($cl['contractor_name']) ?> (<?= htmlspecialchars($cl['vendor_code']) ?>)</option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if (!$c_id && ($role === 'contractor' || $role === 'customer')): ?>
     <div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i><div>Complete contractor registration first.</div></div>
     <?php return; endif; ?>
 
-    <div style="display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start;">
+    <?php if (!$c_id): ?>
+    <div class="alert alert-info"><i class="fas fa-info-circle"></i><div>Please select a contractor to view EPF compliance records.</div></div>
+    <?php return; endif; ?>
 
-      <!-- Main Action Card -->
-      <div>
+
+
+    <div style="margin-top: 20px;">
         <div class="card glass">
-          <div class="card-header"><div class="card-title"><i class="fas fa-file-excel"></i> Prepare & Upload ECR</div></div>
-          <div class="card-body">
-            <div class="alert alert-info" style="margin-bottom:16px;">
-              <i class="fas fa-info-circle"></i>
-              <div>
-                <strong>Workflow:</strong><br>
-                1. Select the wage month and download the pre-filled Excel or Text template.<br>
-                2. Upload this template to the EPFO portal to file your return.<br>
-                3. Download the final returned ECR statement (.txt) from EPFO and upload it here.
-              </div>
+            <div class="card-header"><div class="card-title">EPF compliance</div></div>
+            <div class="card-body">
+                <form id="epfForm" enctype="multipart/form-data">
+                    <input type="hidden" name="contribution_month" id="hidden_contribution_month" value="<?= htmlspecialchars($selectedMonth) ?>">
+                    <div style="display:flex; gap:16px; align-items:center; margin-bottom: 20px;">
+                        <label class="form-label" style="margin:0; font-weight:bold;">Select wage month</label>
+                        <select class="form-control" id="contributionMonth_m" style="width:120px;" required>
+                            <?php 
+                            $months = ['01'=>'Jan','02'=>'Feb','03'=>'Mar','04'=>'Apr','05'=>'May','06'=>'Jun','07'=>'Jul','08'=>'Aug','09'=>'Sep','10'=>'Oct','11'=>'Nov','12'=>'Dec'];
+                            $cm = explode('-', $selectedMonth)[1] ?? date('m');
+                            foreach($months as $k=>$v) echo "<option value='$k' ".($cm==$k?'selected':'').">$v</option>";
+                            ?>
+                        </select>
+                        <select class="form-control" id="contributionMonth_y" style="width:100px;" required>
+                            <?php
+                            $cy = explode('-', $selectedMonth)[0] ?? date('Y');
+                            for($i=2020; $i<=2030; $i++) echo "<option value='$i' ".($cy==$i?'selected':'').">$i</option>";
+                            ?>
+                        </select>
+                    </div>
+
+                    <table class="data-table" style="margin-bottom:30px;">
+                        <thead>
+                            <tr>
+                                <th>SL NO</th>
+                                <th>Wage Month</th>
+                                <th style="text-align:center;">Download</th>
+                                <th style="text-align:center;">Download text</th>
+                                <th style="text-align:center;">Upload ECR</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1.</td>
+                                <td><span id="display_wage_month"><?= date('M Y', strtotime($selectedMonth.'-01')) ?></span></td>
+                                <td style="text-align:center;">
+                                    <button type="button" class="btn btn-outline" style="border:1px solid #94a3b8; color:#334155; padding:6px 12px;" onclick="downloadTemplate('excel')">Download in Excel</button>
+                                </td>
+                                <td style="text-align:center;">
+                                    <button type="button" class="btn btn-outline" style="border:1px solid #94a3b8; color:#334155; padding:6px 12px;" onclick="downloadTemplate('text')">Download Text</button>
+                                </td>
+                                <td style="text-align:center;">
+                                    <input type="file" name="ecr_file" accept=".txt,.csv" style="display:none;" id="ecr_file_input" onchange="document.getElementById('epfForm').dispatchEvent(new Event('submit'))">
+                                    <button type="button" class="btn btn-outline" style="border:1px solid #94a3b8; color:#334155; padding:6px 12px;" onclick="document.getElementById('ecr_file_input').click()">Upload ECR</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </form>
+
+                <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+                    <button class="btn btn-outline" style="border-radius:20px; border:1px solid #94a3b8;" onclick="document.getElementById('ecr_file_input').click()"><i class="fas fa-plus"></i> Add anytime to upload</button>
+                </div>
+                
+                <div style="font-weight:600; margin-bottom:10px;">History</div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>SL NO</th>
+                            <th>Wage month</th>
+                            <th style="text-align:center;">Download</th>
+                            <th style="text-align:center;">Upload</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if(empty($history)): ?>
+                            <tr><td colspan="4" style="text-align:center;">No history found.</td></tr>
+                        <?php else: ?>
+                            <?php $idx=1; foreach($history as $h): ?>
+                                <tr>
+                                    <td><?= $idx++ ?></td>
+                                    <td><?= date('M Y', strtotime($h['month_year'].'-01')) ?></td>
+                                    <td style="text-align:center;">
+                                        <button class="btn btn-outline" style="padding:4px 8px; font-size:12px; border:1px solid #cbd5e1; margin-right:4px;">Download in Excel</button>
+                                        <button class="btn btn-outline" style="padding:4px 8px; font-size:12px; border:1px solid #cbd5e1;">Download Text</button>
+                                    </td>
+                                    <td style="text-align:center;">
+                                        <button class="btn btn-outline" style="padding:4px 8px; font-size:12px; border:1px solid #cbd5e1;">Upload ECR after downloading from EPF site</button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
-
-            <form id="epfForm" enctype="multipart/form-data">
-              <div class="form-grid">
-                <div class="form-group">
-                  <label class="form-label required">Wage Month</label>
-                  <input type="month" class="form-control" name="contribution_month" id="contributionMonth" required value="<?= htmlspecialchars($selectedMonth) ?>">
-                </div>
-
-                <div class="form-group" style="display: flex; gap: 8px; align-items: flex-end;">
-                  <button type="button" class="btn btn-outline" onclick="downloadTemplate('excel')" style="flex:1;">
-                    <i class="fas fa-file-csv" style="color:#10b981;"></i> Prefill Excel
-                  </button>
-                  <button type="button" class="btn btn-outline" onclick="downloadTemplate('text')" style="flex:1;">
-                    <i class="fas fa-file-alt" style="color:#2563eb;"></i> Prefill Text (#~#)
-                  </button>
-                </div>
-
-                <div class="form-group span-2" style="margin-top: 14px;">
-                  <label class="form-label required">Upload Official EPFO ECR File (.txt / .csv)</label>
-                  <input type="file" class="form-control" name="ecr_file" accept=".txt,.csv" required>
-                  <small class="form-hint">Submit the official .txt file with #~# separators downloaded from the EPF site.</small>
-                </div>
-              </div>
-
-              <button type="submit" class="btn btn-primary" style="margin-top:16px;" id="epfBtn">
-                <i class="fas fa-upload"></i> Submit ECR & Verify Compliance
-              </button>
-            </form>
-          </div>
         </div>
-
-        <!-- Mismatch details if active record has mismatch -->
+        
         <?php if ($activeRecord && $activeRecord['validation_status'] === 'mismatch'): ?>
         <div class="card glass" style="margin-top: 20px; border-color: #f87171;">
-          <div class="card-header" style="background: rgba(239, 68, 68, 0.08);"><div class="card-title" style="color: #ef4444;"><i class="fas fa-exclamation-circle"></i> ECR Compliance Mismatch Report - <?= htmlspecialchars($selectedMonth) ?></div></div>
+          <div class="card-header" style="background: rgba(239, 68, 68, 0.08); display:flex; justify-content:space-between; align-items:center;">
+              <div class="card-title" style="color: #ef4444; margin:0;"><i class="fas fa-exclamation-circle"></i> Report</div>
+              <button class="btn btn-outline" style="border:1px solid #f87171; color:#ef4444; padding:4px 10px;" onclick="window.location.href='../../api/contractor/download_epf_report.php?compliance_id=<?= $activeRecord['id'] ?>'"><i class="fas fa-file-excel"></i> Export to Excel</button>
+          </div>
           <div class="card-body">
             <div style="font-size: 13px; color: #ef4444; white-space: pre-line; line-height: 1.6;">
               <?= htmlspecialchars($activeRecord['validation_errors']) ?>
@@ -101,52 +177,6 @@ function renderContent() {
           </div>
         </div>
         <?php endif; ?>
-      </div>
-
-      <!-- Compliance History & Status Sidebar -->
-      <div>
-        <div class="card glass">
-          <div class="card-header"><div class="card-title"><i class="fas fa-history"></i> ECR Submission History</div></div>
-          <div class="card-body" style="padding:0;">
-            <?php if ($history): ?>
-            <table class="data-table" style="width:100%;">
-              <thead>
-                <tr>
-                  <th>Month</th>
-                  <th>Workers</th>
-                  <th>EPF Wages</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php foreach ($history as $row): ?>
-                <?php
-                  $status = $row['status'] ?? 'pending';
-                  $valStatus = $row['validation_status'] ?? 'pending';
-                  $valBadge = $valStatus === 'passed' ? 'badge-success' : ($valStatus === 'mismatch' ? 'badge-danger' : 'badge-warning');
-                  $monthText = date('M Y', strtotime($row['month_year'] . '-01'));
-                ?>
-                <tr>
-                  <td><strong><?= htmlspecialchars($monthText) ?></strong></td>
-                  <td><?= (int)$row['challan_worker_count'] ?></td>
-                  <td>₹<?= number_format((float)$row['wage_total'], 2) ?></td>
-                  <td>
-                    <span class="badge <?= $valBadge ?>"><?= strtoupper($valStatus) ?></span>
-                  </td>
-                </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-            <?php else: ?>
-            <div style="text-align:center;padding:30px 0;color:var(--text-muted);">
-              <i class="fas fa-history" style="font-size:32px;opacity:.15;display:block;margin-bottom:8px;"></i>
-              <p>No EPF compliance records submitted.</p>
-            </div>
-            <?php endif; ?>
-          </div>
-        </div>
-      </div>
-
     </div>
 
     <style>
@@ -166,8 +196,10 @@ function renderContent() {
 
     <script>
     function downloadTemplate(format) {
-      const month = document.getElementById('contributionMonth').value;
-      if (!month) {
+      const m = document.getElementById('contributionMonth_m').value;
+      const y = document.getElementById('contributionMonth_y').value;
+      const month = y + '-' + m;
+      if (!m || !y) {
         showToast('Please select a wage month first.', 'error');
         return;
       }
@@ -181,11 +213,17 @@ function renderContent() {
       document.body.appendChild(t); setTimeout(()=>t.remove(),3500);
     }
 
-    document.getElementById('contributionMonth').addEventListener('change', (e) => {
-      const url = new URL(window.location.href);
-      url.searchParams.set('month', e.target.value);
-      window.location.href = url.toString();
-    });
+    const updateDisplayMonth = () => {
+      const m = document.getElementById('contributionMonth_m').value;
+      const y = document.getElementById('contributionMonth_y').value;
+      if(m && y) {
+          const url = new URL(window.location.href);
+          url.searchParams.set('month', y + '-' + m);
+          window.location.href = url.toString();
+      }
+    };
+    document.getElementById('contributionMonth_m').addEventListener('change', updateDisplayMonth);
+    document.getElementById('contributionMonth_y').addEventListener('change', updateDisplayMonth);
 
     document.getElementById('epfForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -201,7 +239,9 @@ function renderContent() {
           showToast('EPF compliance ECR submitted and verified successfully!', 'success');
           setTimeout(() => {
             const url = new URL(window.location.href);
-            url.searchParams.set('month', document.getElementById('contributionMonth').value);
+            const m = document.getElementById('contributionMonth_m').value;
+            const y = document.getElementById('contributionMonth_y').value;
+            url.searchParams.set('month', y + '-' + m);
             window.location.href = url.toString();
           }, 1800);
         } else {

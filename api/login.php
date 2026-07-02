@@ -43,7 +43,11 @@ try {
     $auth_source = '';
 
     // 1. PRIMARY CHECK: All portal logins must use the assigned user/contractor/customer code, not email.
-    $stmt = $conn->prepare("SELECT * FROM users WHERE contractor_id = ?");
+    if ($login_scope === 'internal') {
+        $stmt = $conn->prepare("SELECT * FROM users WHERE BINARY contractor_id = ?");
+    } else {
+        $stmt = $conn->prepare("SELECT * FROM users WHERE contractor_id = ?");
+    }
     if (!$stmt) apiError('Database error', 500);
     $stmt->bind_param('s', $username);
     $stmt->execute();
@@ -53,6 +57,13 @@ try {
     if ($user) {
         if ($user['status'] !== 'active') {
             apiError('Your account is currently inactive. Please contact admin.', 401);
+        }
+
+        if ($user['role'] === 'contractor') {
+            $c_check = db_single($conn, "SELECT is_blocked, block_reason FROM contractors WHERE vendor_code = ?", "s", [$username]);
+            if ($c_check && !empty($c_check['is_blocked'])) {
+                apiError('Access Denied: Your account has been blocked (' . ($c_check['block_reason'] ?: 'Administrative action') . '). Please contact Welfare Admin.', 403);
+            }
         }
 
         if (empty($user['password'])) {

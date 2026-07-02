@@ -204,7 +204,7 @@ CREATE TABLE IF NOT EXISTS workmen (
     name VARCHAR(100) NOT NULL,
     father_name VARCHAR(100),
     dob DATE,
-    gender VARCHAR(10),
+    gender VARCHAR(20),
     marital_status VARCHAR(20),
     aadhaar VARCHAR(20) UNIQUE,
     esic_number VARCHAR(50),

@@ -67,6 +67,19 @@ function renderContent() {
             <div class="card glass">
                 <div class="card-header"><div class="card-title"><i class="fas fa-user"></i> Worker Profile Details</div></div>
                 <div class="card-body">
+                    <?php if (!empty($data['photo'])): 
+                        $photoPath = strpos($data['photo'], '/') === false && strpos($data['photo'], '\\') === false
+                            ? '../../uploads/workers/' . $data['photo']
+                            : '../../' . ltrim($data['photo'], '/\\');
+                    ?>
+                    <div style="display:flex; gap: 20px; align-items: center; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid #eee;">
+                        <img src="<?= htmlspecialchars($photoPath) ?>" alt="Worker Photo" style="width: 100px; height: 100px; border-radius: 8px; object-fit: cover; border: 2px solid var(--gray-200); box-shadow: var(--shadow-sm);">
+                        <div>
+                            <h3 style="margin: 0; font-size: 18px; color: var(--gray-800);"><?= htmlspecialchars($data['name'] ?? 'Unknown Worker') ?></h3>
+                            <p style="margin: 5px 0 0 0; font-size: 13px; color: var(--gray-500);"><i class="fas fa-id-card"></i> Aadhaar: <?= htmlspecialchars($data['aadhaar'] ?? 'N/A') ?> &nbsp;|&nbsp; <i class="fas fa-building"></i> Contractor: <?= htmlspecialchars($data['contractor_name'] ?? 'N/A') ?></p>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
                         <!-- Personal Info -->
                         <div>

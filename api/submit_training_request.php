@@ -136,55 +136,6 @@ try {
         }
 
         $preferredShift = in_array($input['preferred_shift'] ?? '', ['morning','evening']) ? $input['preferred_shift'] : 'morning';
-        $previousFailed = db_single(
-            $conn,
-            "SELECT id FROM training_requests
-             WHERE workman_id = ?
-               AND status IN ('failed','rejected','correction_required')
-             ORDER BY id DESC LIMIT 1",
-            'i',
-            [$workerId]
-        );
-
-        if ($previousFailed) {
-            db_execute(
-                $conn,
-                "UPDATE training_requests
-                 SET training_type = ?,
-                     requested_date = ?,
-                     preferred_date = ?,
-                     preferred_shift = ?,
-                     remarks = ?,
-                     source = 'contractor',
-                     requested_by = ?,
-                     status = 'pending',
-                     contractor_confirmed = 0,
-                     scheduled_date = NULL,
-                     scheduled_shift = NULL,
-                     scheduled_venue = NULL,
-                     scheduled_time = NULL,
-                     batch_number = NULL,
-                     instructor = NULL,
-                     safety_remarks = NULL,
-                     conduct_remarks = NULL,
-                     updated_at = NOW()
-                 WHERE id = ?",
-                'sssssii',
-                [
-                    $trainingType,
-                    date('Y-m-d'),
-                    $preferredDate !== '' ? $preferredDate : null,
-                    $preferredShift,
-                    trim($input['remarks'] ?? 'Re-training requested after failed Safety Induction.'),
-                    $userId,
-                    (int)$previousFailed['id'],
-                ]
-            );
-            training_update_workman_status($conn, $workerId);
-            $created++;
-            $paymentWorkerIds[] = $workerId;
-            continue;
-        }
 
         training_insert_request($conn, [
             'workman_id' => $workerId,

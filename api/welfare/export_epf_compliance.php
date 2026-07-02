@@ -43,11 +43,11 @@ header('Content-Disposition: attachment; filename="EPF_Compliance_Mismatch_Repor
 
 $output = fopen('php://output', 'w');
 
-// CSV Headers matching Page 48 columns + details
+// CSV Headers matching Page 48 columns
 fputcsv($output, [
-    'ACC NO', 'PF NO', 'Name of Worker', 'Company Name', 'Vendor Code', 
-    'Vendor Name', 'Mustroll Wage (Total days x Rate)', 'ECR EPF Wage', 
-    'Difference', 'Mismatch Rating', 'Status'
+    'ACC NO', 'Name of Worker', 'Vendor Code', 
+    'Vendor name', 'Musterroll wage (Total days x Rate)', 'ECR EPF wage', 
+    'Status'
 ]);
 
 foreach ($submissions as $sub) {
@@ -100,7 +100,6 @@ foreach ($submissions as $sub) {
 
         // Find ECR record
         $ecrWage = 0.00;
-        $rating = 'Complied';
         $status = 'Complied';
         
         $found = false;
@@ -115,25 +114,19 @@ foreach ($submissions as $sub) {
 
         if ($found) {
             if (abs($ecrWage - $mrWage) > 1.0 && $ecrWage < $mrWage) {
-                $rating = 'Underpaid';
                 $status = 'Not Complied';
             }
         } else {
-            $rating = 'Excluded';
             $status = 'Not Complied';
         }
 
         fputcsv($output, [
             $w['acc_number'] ?: ('W-' . $w['id']),
-            $w['pf_no'] ?: 'N/A',
             $w['name'],
-            $sub['contractor_name'], // Contractor Name / Company Name
             $sub['vendor_code'],
-            $sub['contractor_name'], // Vendor Name
+            $sub['contractor_name'], // Vendor Name / Company Name
             number_format($mrWage, 2, '.', ''),
             number_format($ecrWage, 2, '.', ''),
-            number_format($mrWage - $ecrWage, 2, '.', ''),
-            $rating,
             $status
         ]);
     }
@@ -143,15 +136,11 @@ foreach ($submissions as $sub) {
         if (!isset($matchedUans[$rec['uan']])) {
             fputcsv($output, [
                 'N/A',
-                'N/A',
                 $rec['member_name'],
-                $sub['contractor_name'],
                 $sub['vendor_code'],
                 $sub['contractor_name'],
                 '0.00',
                 number_format((float)$rec['epf_wages'], 2, '.', ''),
-                number_format(- (float)$rec['epf_wages'], 2, '.', ''),
-                'NA',
                 'NA'
             ]);
         }

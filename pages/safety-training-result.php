@@ -116,8 +116,8 @@
   <!-- Failed Workmen – Retraining Option -->
   <div class="card" style="margin-bottom:20px;border-color:var(--danger)">
     <div class="card-header" style="background:#fef2f2">
-      <div class="card-title"><i class="fas fa-exclamation-triangle" style="color:var(--danger)"></i> Failed Workmen – 7 Workmen</div>
-      <button class="btn btn-warning btn-sm" onclick="requestRetraining()"><i class="fas fa-redo"></i> Request Retraining</button>
+      <div class="card-title" id="failedWorkmenTitle"><i class="fas fa-exclamation-triangle" style="color:var(--danger)"></i> Failed Workmen</div>
+      <button class="btn btn-warning btn-sm" id="requestRetrainingBtn"><i class="fas fa-redo"></i> Request Retraining</button>
     </div>
     <div class="card-body">
       <div class="alert alert-warning">
@@ -222,6 +222,8 @@
 
     // Update Failed List
     const failedRows = data.filter(r => r.result.toLowerCase() !== 'pass');
+    const failedTitle = document.getElementById('failedWorkmenTitle');
+    if (failedTitle) failedTitle.innerHTML = `<i class="fas fa-exclamation-triangle" style="color:var(--danger)"></i> Failed Workmen - ${failedRows.length} Workmen`;
     failedList.innerHTML = failedRows.map(r => `<span class="badge badge-danger">${r.workman_id} – ${r.name} (${r.total})</span>`).join('');
     if (failedRows.length === 0) failedList.innerHTML = '<span class="text-success">All workmen passed!</span>';
 
@@ -267,11 +269,73 @@
     document.querySelectorAll('.fail-row').forEach(r => r.style.display = (val === 'pass') ? 'none' : '');
   }
 
-  function requestRetraining() {
-    showToast('Retraining request submitted for failed workmen. Safety team notified.', 'info');
+  function showTrainingMessage(message, type='success') {
+    const old = document.querySelector('.training-toast-msg');
+    if (old) old.remove();
+    const toast = document.createElement('div');
+    toast.className = 'training-toast-msg';
+    toast.style.cssText = 'position:fixed;bottom:30px;right:30px;z-index:9999;padding:14px 20px;border-radius:12px;color:white;font-size:14px;font-weight:600;box-shadow:0 8px 30px rgba(0,0,0,.2);background:' + (type === 'error' ? '#ef4444' : '#10b981');
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
   }
 
-  document.addEventListener('DOMContentLoaded', loadResults);
+  async function requestRetraining() {
+    const failedRows = resultsData.filter(r => String(r.result || '').toLowerCase() !== 'pass' && parseInt(r.workman_id, 10) > 0);
+    const btn = document.getElementById('requestRetrainingBtn');
+    if (failedRows.length === 0) {
+      showTrainingMessage('No failed workmen found for retraining.', 'error');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting...';
+    }
+
+    let successCount = 0;
+    const errors = [];
+    for (const row of failedRows) {
+      const formData = new FormData();
+      formData.append('workman_id', row.workman_id);
+      try {
+        const res = await fetch('../api/safety/request_retraining.php', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+          successCount++;
+        } else {
+          errors.push(data.error || data.message || `Worker ${row.workman_id} failed`);
+        }
+      } catch (err) {
+        errors.push(`Worker ${row.workman_id}: network error`);
+      }
+    }
+
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-redo"></i> Request Retraining';
+    }
+
+    if (successCount > 0) {
+      showTrainingMessage(`Retraining requested for ${successCount} workmen.`, 'success');
+      await loadResults();
+    }
+    if (errors.length > 0) {
+      showTrainingMessage(errors[0], 'error');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadResults();
+    document.getElementById('requestRetrainingBtn')?.addEventListener('click', requestRetraining);
+  });
 </script>
 </body>
 </html>

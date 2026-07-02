@@ -106,6 +106,8 @@ function renderContent() {
     $annexure2a = $c_id ? db_single($conn, "SELECT workflow_status, submitted_at, updated_at FROM annexure2a WHERE contractor_id = ? ORDER BY id DESC LIMIT 1", 'i', [$c_id]) : null;
     $annexure2a_status = strtolower($annexure2a['workflow_status'] ?? '');
     $display_contractor_status = ($contractor_status === 'pending' && $annexure2a_status === 'resubmitted') ? 'resubmitted' : $contractor_status;
+    $operationalAccess = clms_onboarding_is_complete($conn, 'contractor', $vendor_code, $user_id);
+    $entryEnrollmentLocked = in_array($annexure2a_status, ['pending', 'submitted', 'resubmitted', 'under_review', 'under_verification', 'correction_required', 'hold', 'rejected', 'block', 'blocked'], true);
 
     $workmenTable = contractorTableExists($conn, 'workmen') ? 'workmen' : (contractorTableExists($conn, 'workers') ? 'workers' : 'workmen');
     $workerNameCol = contractorColumnExists($conn, $workmenTable, 'name') ? 'name' : 'worker_name';
@@ -272,14 +274,8 @@ function renderContent() {
         return '../../uploads/' . ltrim($path, '/');
     };
 
-    if ($contractor_status === 'approved') {
+    if ($operationalAccess) {
         $flow = [
-            ['label' => 'Dashboard', 'detail' => 'Overview of your workforce and compliance', 'icon' => 'fa-tachometer-alt', 'link' => 'dashboard.php', 'status' => 'done', 'count' => 'Live'],
-            // ['label' => 'Customer Registration', 'detail' => 'Customer mapped statutory and manpower submission', 'icon' => 'fa-file-signature', 'link' => 'annexure-3a.php', 'status' => 'active', 'count' => 'Open'],
-            ['label' => 'Contractor', 'detail' => 'Enroll yourself for site access and training', 'icon' => 'fa-user-check', 'link' => 'enrolment-4a.php?type=contractor', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('contractor'))],
-            ['label' => 'Representative', 'detail' => 'Register official representatives (Max 2)', 'icon' => 'fa-user-tie', 'link' => 'enrolment-4a.php?type=representative', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('representative'))],
-            ['label' => 'Supervisor', 'detail' => 'Register site supervisors (1 per 50 workmen)', 'icon' => 'fa-user-shield', 'link' => 'enrolment-4a.php?type=supervisor', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('supervisor'))],
-            ['label' => 'Workmen', 'detail' => 'Register and manage your workers', 'icon' => 'fa-users', 'link' => 'enrolment-4a.php?type=workmen', 'status' => 'active', 'count' => contractorSafeCount($conn, 'workmen', "{$cidWhere} AND " . contractorWorkerTypeWhere('workmen'))],
             ['label' => 'Safety Training Request', 'detail' => 'Submit requests and confirm Safety schedule', 'icon' => 'fa-graduation-cap', 'link' => 'training_request.php', 'status' => 'active', 'count' => $trainingRequestReady],
             ['label' => 'Pending Fee Payment', 'detail' => 'View unpaid PWO workers and complete safety fee payment', 'icon' => 'fa-credit-card', 'link' => 'payment.php', 'status' => 'active', 'count' => $pendingPaymentWorkers],
             ['label' => 'Book Safety Training', 'detail' => 'Book appointment against available Safety batches', 'icon' => 'fa-calendar-check', 'link' => 'book_safety_training.php', 'status' => 'active', 'count' => $bookingPending],
@@ -314,21 +310,31 @@ function renderContent() {
         
         $current_step = $timeline[$display_contractor_status] ?? $timeline['pending'];
     }
+    if ($entryEnrollmentLocked) {
+        foreach ($flow as &$step) {
+            if (in_array($step['link'] ?? '', ['enrolment-4a.php?type=workmen', 'enrolment-4a.php?type=workman'], true)) {
+                $step['detail'] = 'Available after Welfare approves the latest Contractor Registration submission';
+                $step['status'] = 'pending';
+                $step['count'] = 'Approval Pending';
+            }
+        }
+        unset($step);
+    }
     ?>
 
 
     <div class="content-header">
       <div>
-        <h2 class="page-title"><?= $contractor_status === 'approved' ? ' Main Dashboard' : 'Contractor Onboarding' ?></h2>
-        <p class="page-subtitle"><?= htmlspecialchars($contractor_name) ?> | <?= $contractor_status === 'approved' ? 'Site Operational Hub' : 'Complete your registration to unlock workforce modules.' ?></p>
+        <h2 class="page-title"><?= $operationalAccess ? ' Main Dashboard' : 'Contractor Onboarding' ?></h2>
+        <p class="page-subtitle"><?= htmlspecialchars($contractor_name) ?> | <?= $operationalAccess ? 'Site Operational Hub' : 'Complete your registration to unlock workforce modules.' ?></p>
       </div>
       
       <div style="display:flex; gap:10px;">
-          <a href="pass_status.php" class="btn btn-primary" style="margin-left:10px;"><i class="fas fa-satellite-dish"></i> Track Pass Status</a>
-      </div>
+          <a href="pass_status.php" class="btn btn-primary" style="margin-left:10px;"><i class="fas fa-satellite-dish"></i> Overview</a>
+        </div>
     </div>
 
-                                                                                          <?php if ($contractor_status === 'approved'): ?>
+                                                                                          <?php if ($operationalAccess): ?>
                                                                                           <!-- <div class="card glass" style="background:linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color:white; padding:25px; margin-bottom:25px; border:none; box-shadow:0 15px 30px -10px rgba(79,70,229,0.5);">
                                                                                               <div style="display:flex; align-items:center; gap:25px;">
                                                                                                   <div style="width:60px; height:60px; background:rgba(255,255,255,0.2); border-radius:15px; display:flex; align-items:center; justify-content:center; font-size:28px;">
@@ -384,7 +390,7 @@ function renderContent() {
       <div class="stat-card glass"><div class="stat-icon" style="background:rgba(59,130,246,.12);color:#2563eb"><i class="fas fa-user-check"></i></div><div class="stat-value"><?= $contractorPass ?></div><div class="stat-label">Contractors</div></div>
       <div class="stat-card glass"><div class="stat-icon" style="background:rgba(236,72,153,.12);color:#db2777"><i class="fas fa-user-tie"></i></div><div class="stat-value"><?= $repPass ?></div><div class="stat-label">Representatives</div></div>
       <div class="stat-card glass"><div class="stat-icon" style="background:rgba(139,92,246,.12);color:#7c3aed"><i class="fas fa-user-shield"></i></div><div class="stat-value"><?= $supPass ?></div><div class="stat-label">Supervisors</div></div>
-      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(245,158,11,.14);color:#d97706"><i class="fas fa-users"></i></div><div class="stat-value"><?= $workmenCount ?></div><div class="stat-label">Workmen</div></div>
+      <div class="stat-card glass"><div class="stat-icon" style="background:rgba(245,158,11,.14);color:#d97706"><i class="fas fa-users"></i></div><div class="stat-value"><?= $workmenCount ?></div><div class="stat-label">Approval Pending</div></div>
     </div>
 
 
@@ -404,7 +410,7 @@ function renderContent() {
       <?php endforeach; ?>
     </div>
 
-    <?php if ($contractor_status === 'approved'): ?>
+    <?php if ($operationalAccess): ?>
     <div class="safety-booking-panel glass">
       <div class="safety-booking-head">
         <div>

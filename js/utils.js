@@ -2,7 +2,7 @@
 // GLOBAL API CONFIG & UTILITIES
 // =============================================
 // Dynamic BASE_URL with fallback support
-const BASE_URL = (() => {
+var BASE_URL = (() => {
   if (window.CLMS_BASE_URL) {
     return window.CLMS_BASE_URL + 'api/';
   }
@@ -19,9 +19,9 @@ const BASE_URL = (() => {
 })();
 
 // Fallback to localhost if live server API is down
-let API_RETRY_LOCALHOST = false;
+var API_RETRY_LOCALHOST = false;
 
-const AppState = window.AppState || {
+var AppState = window.AppState || {
   applicationId: null,
   currentAppId: null,
   currentScreen: null
@@ -59,7 +59,7 @@ function setAppId(id) {
 
 window.setAppId = setAppId;
 
-let isLoading = false;
+var isLoading = false;
 
 async function safeLoad(fn) {
   if (isLoading) {

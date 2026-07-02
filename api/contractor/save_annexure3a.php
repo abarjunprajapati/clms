@@ -343,13 +343,17 @@ $clean_reason_input = function($value) {
     return $value;
 };
 
-$epf_non_registration_reason = $clean_reason_input($_POST['epf_non_registration_reason'] ?? '');
+$epf_reason_type = trim($_POST['epf_non_registration_reason_type'] ?? '');
+$epf_non_registration_reason = ($epf_reason_type === 'Others') ? $clean_reason_input($_POST['epf_non_registration_reason'] ?? '') : $epf_reason_type;
+if (empty($epf_non_registration_reason)) $epf_non_registration_reason = $clean_reason_input($_POST['epf_non_registration_reason'] ?? '');
 
 $esi_registered_raw = $_POST['esi_registered'] ?? ($_POST['is_esi_registered'] ?? '0');
 $is_esi_registered = ($esi_registered_raw === 'YES' || $esi_registered_raw === '1' || $esi_registered_raw === 1) ? 1 : 0;
 $esi_code = $is_esi_registered ? trim($_POST['esi_code'] ?? '') : '';
 $ecp_covered = trim($_POST['ecp_covered'] ?? 'NO');
-$esi_non_registration_reason = $clean_reason_input($_POST['esi_non_registration_reason'] ?? '');
+$esi_reason_type = trim($_POST['esi_non_registration_reason_type'] ?? '');
+$esi_non_registration_reason = ($esi_reason_type === 'Others') ? $clean_reason_input($_POST['esi_non_registration_reason'] ?? '') : $esi_reason_type;
+if (empty($esi_non_registration_reason)) $esi_non_registration_reason = $clean_reason_input($_POST['esi_non_registration_reason'] ?? '');
 $ecp_exemption_reason = $clean_reason_input($_POST['ecp_exemption_reason'] ?? '');
 $epf_esi_exemption_reason = trim($_POST['epf_esi_exemption_reason'] ?? '');
 
@@ -756,7 +760,7 @@ if ($success) {
 
     successJson([
         'success' => true,
-        'message' => $action === 'draft' ? 'Annexure 3A draft saved successfully' : ($action === 'resubmit' ? 'Annexure 3A resubmitted successfully' : 'Annexure 3A and compliance documents submitted successfully'),
+        'message' => $action === 'draft' ? 'Customer Information draft saved successfully' : ($action === 'resubmit' ? 'Customer Information resubmitted successfully' : 'Customer Information and compliance documents submitted successfully'),
         'status' => $record_status,
         'id' => $annexure3a_id
     ]);

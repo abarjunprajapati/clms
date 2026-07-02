@@ -106,6 +106,40 @@ function clms_training_ensure_schema($conn) {
     }
 }
 
+function clms_training_attempts_30_sql($workmanExpr = 'w.id', $dateExpr = 'CURDATE()') {
+    $workmanExpr = trim((string)$workmanExpr) ?: 'w.id';
+    $dateExpr = trim((string)$dateExpr) ?: 'CURDATE()';
+
+    return "(
+        SELECT COUNT(DISTINCT tr_attempt.id)
+        FROM training_requests tr_attempt
+        WHERE tr_attempt.workman_id = $workmanExpr
+          AND tr_attempt.created_at >= DATE_SUB($dateExpr, INTERVAL 30 DAY)
+          AND (
+              LOWER(COALESCE(tr_attempt.status, 'pending')) IN ('failed', 'fail', 'absent', 'passed', 'pass', 'training_failed', 'training_passed', 'completed')
+              OR EXISTS (
+                  SELECT 1
+                  FROM training_session_workers tsw_attempt
+                  WHERE tsw_attempt.training_request_id = tr_attempt.id
+                    AND LOWER(COALESCE(tsw_attempt.result, '')) IN ('pass', 'passed', 'fail', 'failed', 'absent')
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM training_results trr_attempt
+                  WHERE trr_attempt.training_request_id = tr_attempt.id
+                    AND LOWER(COALESCE(trr_attempt.result, '')) IN ('pass', 'passed', 'fail', 'failed', 'absent')
+              )
+          )
+    )";
+}
+
+function clms_training_attempts_30_count($conn, $workmanId, $dateExpr = 'CURDATE()') {
+    clms_training_ensure_schema($conn);
+    $sql = "SELECT " . clms_training_attempts_30_sql('?', $dateExpr) . " AS cnt";
+    $row = db_single($conn, $sql, 'i', [(int)$workmanId]);
+    return (int)($row['cnt'] ?? 0);
+}
+
 function clms_training_ensure_request($conn, $workmanId, $contractorId, $requestedBy = 0, $source = 'execution', $remarks = '') {
     clms_training_ensure_schema($conn);
     $existing = db_single(

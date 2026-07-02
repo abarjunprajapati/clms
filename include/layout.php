@@ -1,6 +1,6 @@
 <?php
 error_reporting(E_ALL);
-ini_set('display_errors', 0);
+ini_set('display_errors', 1);
 require_once __DIR__ . '/onboarding_status.php';
 /**
  * Unified Layout for CLMS
@@ -45,9 +45,50 @@ function renderLayout($page_title, $content_callback, $role, $name) {
     })();
   </script>
   <title><?= $page_title ?> – CLMS</title>
+  <style>input[type='text']:not([id*='pass']):not([name*='pass']), input[type='search'], textarea { text-transform: uppercase; }</style>
+  <script>
+  document.addEventListener('input', function(e) {
+    if (e.target.type === 'password' || e.target.id.toLowerCase().includes('pass') || (e.target.name && e.target.name.toLowerCase().includes('pass'))) return;
+    if ((e.target.tagName === 'INPUT' && (e.target.type === 'text' || e.target.type === 'search')) || e.target.tagName === 'TEXTAREA') {
+      let start = e.target.selectionStart;
+      let end = e.target.selectionEnd;
+      e.target.value = e.target.value.toUpperCase();
+      e.target.setSelectionRange(start, end);
+    }
+  });
+  </script>
   <link rel="stylesheet" href="<?= BASE_URL ?>css/style.css?v=<?= filemtime(dirname(__DIR__) . '/css/style.css') ?>" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script>
+    // Global alert override using SweetAlert
+    window.originalAlert = window.alert;
+    window.alert = function(msg) {
+      if (typeof Swal !== 'undefined') {
+        let icon = 'info';
+        let title = 'Message';
+        let msgStr = String(msg).toLowerCase();
+        if (msgStr.includes('error') || msgStr.includes('fail') || msgStr.includes('required')) {
+          icon = 'error';
+          title = 'Error';
+        } else if (msgStr.includes('success') || msgStr.includes('successfully')) {
+          icon = 'success';
+          title = 'Success';
+        } else if (msgStr.includes('warning') || msgStr.includes('exceed')) {
+          icon = 'warning';
+          title = 'Warning';
+        }
+        Swal.fire({
+          icon: icon,
+          title: title,
+          text: msg,
+          confirmButtonColor: '#1e3a8a'
+        });
+      } else {
+        window.originalAlert(msg);
+      }
+    };
+  </script>
   
   <!-- DataTables CSS -->
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" />
@@ -146,6 +187,9 @@ function renderLayout($page_title, $content_callback, $role, $name) {
 <!-- TOPBAR -->
 <div class="topbar">
   <div class="topbar-brand">
+    <div class="mobile-menu-toggle" id="mobileMenuBtn">
+      <i class="fas fa-bars"></i>
+    </div>
     <div class="topbar-logo"><img src="<?= BASE_URL ?>uploads/logo/logo.png" alt="Logo" style="width: 35px; height: 35px; object-fit: contain;"></div>
     <div>
       <div class="topbar-title">Contractor Labour Management System</div>
@@ -178,6 +222,9 @@ function renderLayout($page_title, $content_callback, $role, $name) {
 </div>
 
 <div class="layout-wrapper">
+  <!-- SIDEBAR OVERLAY -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
   <!-- DYNAMIC SIDEBAR -->
   <div class="sidebar">
     <?php renderSidebar($role); ?>
@@ -231,6 +278,21 @@ function renderLayout($page_title, $content_callback, $role, $name) {
       item.classList.add('active');
     }
   });
+
+  // Mobile sidebar toggle
+  const mobileBtn = document.getElementById('mobileMenuBtn');
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  
+  if (mobileBtn && sidebar && overlay) {
+    function toggleSidebar() {
+      sidebar.classList.toggle('mobile-open');
+      overlay.classList.toggle('active');
+      document.body.style.overflow = sidebar.classList.contains('mobile-open') ? 'hidden' : '';
+    }
+    mobileBtn.addEventListener('click', toggleSidebar);
+    overlay.addEventListener('click', toggleSidebar);
+  }
 
   // Global DataTables Initialization with Auto S.No
   $(document).ready(function() {
@@ -423,14 +485,17 @@ function renderSidebar($role) {
             
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
             echo '<a href="'.$wb.'muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
+            echo '<a href="'.$wb.'esi_contribution_monitor.php" class="sidebar-item"><i class="fas fa-hand-holding-dollar"></i> ESI Contribution Monitor</a>';
             echo '<a href="'.$wb.'check_esi_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check ESI Compliance</a>';
             echo '<a href="'.$wb.'check_epf_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check EPF Compliance</a>';
+            echo '<a href="'.$wb.'lwf_compliance_checking.php" class="sidebar-item"><i class="fas fa-clipboard-check"></i> LWF Compliance Checking</a>';
+            echo '<a href="'.$wb.'lwf_master.php" class="sidebar-item"><i class="fas fa-sliders-h"></i> LWF Rate Master</a>';
 
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Lifecycle</div>';
             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';
             echo '<a href="'.$wb.'blocking_control.php" class="sidebar-item"><i class="fas fa-building-circle-exclamation"></i> Contractor Control</a>';
-            echo '<a href="'.$wb.'worker_block.php" class="sidebar-item"><i class="fas fa-user-slash"></i> Worker Blocking</a>';
-            echo '<a href="'.$wb.'noc_transfer.php" class="sidebar-item"><i class="fas fa-exchange-alt"></i> NOC & Transfer</a>';
+            // echo '<a href="'.$wb.'worker_block.php" class="sidebar-item"><i class="fas fa-user-slash"></i> Worker Blocking</a>';
+            echo '<a href="'.$wb.'noc_approvals.php" class="sidebar-item"><i class="fas fa-exchange-alt"></i> NOC Approvals</a>';
             echo '<a href="'.$wb.'verification_history.php" class="sidebar-item"><i class="fas fa-history"></i> Contractor History</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Reports & System</div>';
             echo '<a href="'.$wb.'reports.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Reports</a>';
@@ -442,7 +507,7 @@ function renderSidebar($role) {
         case 'welfare':
             $wb = BASE_URL . 'pages/welfare/';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Verification Desk</div>';
-            echo '<a href="'.$wb.'approve_contractors.php" class="sidebar-item"><i class="fas fa-building-circle-check"></i> Pending CLMS Approval</a>';
+            echo '<a href="'.$wb.'approve_contractors.php" class="sidebar-item"><i class="fas fa-building-circle-check"></i> Pending Customer Approval</a>';
             echo '<a href="'.$wb.'entity_directory.php" class="sidebar-item"><i class="fas fa-address-book"></i> Contractor / Customer Data</a>';
             echo '<a href="'.$wb.'approve_3a.php" class="sidebar-item"><i class="fas fa-file-contract"></i> Contractor Info Verification (3A)</a>';
             echo '<a href="'.$wb.'enrollment_monitor.php" class="sidebar-item"><i class="fas fa-users-viewfinder"></i> Enrollment Verification</a>';
@@ -454,13 +519,17 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'acc_generation.php" class="sidebar-item"><i class="fas fa-fingerprint"></i> Permanent ACC Approval</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Worker Lifecycle</div>';
             echo '<a href="'.$wb.'blocking_control.php" class="sidebar-item"><i class="fas fa-building-circle-exclamation"></i> Contractor Control</a>';
-            echo '<a href="'.$wb.'worker_block.php" class="sidebar-item"><i class="fas fa-user-slash"></i> Worker Blocking</a>';
-            echo '<a href="'.$wb.'noc_transfer.php" class="sidebar-item"><i class="fas fa-exchange-alt"></i> Company Change / NOC</a>';
+            // echo '<a href="'.$wb.'worker_block.php" class="sidebar-item"><i class="fas fa-user-slash"></i> Worker Blocking</a>';
+            echo '<a href="'.$wb.'noc_approvals.php" class="sidebar-item"><i class="fas fa-exchange-alt"></i> NOC Approvals</a>';
             echo '<a href="'.$wb.'acc_return_queue.php" class="sidebar-item"><i class="fas fa-undo"></i> Relieving Management</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
             echo '<a href="'.$wb.'muster_roll_monitor.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll Verification</a>';
+            echo '<a href="'.$wb.'esi_contribution_monitor.php" class="sidebar-item"><i class="fas fa-hand-holding-dollar"></i> ESI Contribution Monitor</a>';
             echo '<a href="'.$wb.'check_esi_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check ESI Compliance</a>';
             echo '<a href="'.$wb.'check_epf_compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Check EPF Compliance</a>';
+            echo '<a href="'.$wb.'lwf_compliance_checking.php" class="sidebar-item"><i class="fas fa-clipboard-check"></i> LWF Compliance Checking</a>';
+            echo '<a href="'.$wb.'monthly_compliance_approvals.php" class="sidebar-item"><i class="fas fa-certificate text-success"></i> Monthly Compliance Approvals</a>';
+            echo '<a href="'.$wb.'esic_wage_limit.php" class="sidebar-item"><i class="fas fa-cog"></i> ESIC Wage Limit</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Compliance & Monitor</div>';
             echo '<a href="'.$wb.'compliance_monitor.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Verification</a>';
             echo '<a href="'.$wb.'certified_wages.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> Certified Wage Rate</a>';
@@ -479,28 +548,42 @@ function renderSidebar($role) {
 
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Contractor Lifecycle</div>';
             echo '<a href="annexure-2a.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> CLMS Enrolment Request</a>';
+
+            echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Enrolment for Entry Pass</div>';
+            echo '<a href="enrolment-4a.php?type=contractor" class="sidebar-item"><i class="fas fa-user-check"></i> Contractor</a>';
+            echo '<a href="enrolment-4a.php?type=representative" class="sidebar-item"><i class="fas fa-user-tie"></i> Representative</a>';
+            echo '<a href="enrolment-4a.php?type=supervisor" class="sidebar-item"><i class="fas fa-user-shield"></i> Supervisor</a>';
+            echo '<a href="enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Workmen</a>';
+            
+            echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Overview & History</div>';
             echo '<a href="welfare-actions.php" class="sidebar-item"><i class="fas fa-clock-rotate-left"></i> Welfare Action History</a>';
             
             if ($onboardingComplete) {
-                echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
+                // echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
                 echo '<a href="profile.php" class="sidebar-item"><i class="fas fa-id-card"></i> Basic Details</a>';
                 
-                echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Management</div>';
-                echo '<a href="enrolment-4a.php?type=workmen" class="sidebar-item"><i class="fas fa-users"></i> Enrolment for Entry Pass</a>';
-                echo '<a href="book_safety_training.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Book Safety Training</a>';
+                echo '</div><div class="sidebar-section"><div class="sidebar-section-label">SAFETY</div>';
+                echo '<a href="training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training Request</a>';
                 echo '<a href="payment.php" class="sidebar-item"><i class="fas fa-credit-card"></i> Pending Fee Payment</a>';
-                echo '<a href="training_request.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Retraining</a>';
+                echo '<a href="book_safety_training.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Book Safety Training</a>';
+                
+                echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Workforce Management</div>';
                 echo '<a href="gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Gate Pass</a>';
                 echo '<a href="gatepass-reupload.php" class="sidebar-item"><i class="fas fa-file-circle-exclamation"></i> Re-upload Gate Pass Docs</a>';
                 echo '<a href="pass_status.php" class="sidebar-item"><i class="fas fa-id-card"></i> ACC Card</a>';
-                
+                echo '<a href="../worker/block_unblock.php" class="sidebar-item"><i class="fas fa-user-slash"></i> Worker Blocking</a>';
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Statutory Compliance</div>';
                 echo '<a href="muster_roll.php" class="sidebar-item"><i class="fas fa-file-invoice"></i> Muster Roll</a>';
                 echo '<a href="esi_contribution.php" class="sidebar-item"><i class="fas fa-hand-holding-dollar"></i> ESI Contribution</a>';
+                echo '<a href="esi_ecr_pf_upload.php" class="sidebar-item"><i class="fas fa-file-upload"></i> ESI ECR & PF Contribution Upload</a>';
+                echo '<a href="esi_compliance_check.php" class="sidebar-item"><i class="fas fa-shield-check"></i> ESI Compliance Status</a>';
                 echo '<a href="epf_compliance.php" class="sidebar-item"><i class="fas fa-file-invoice-dollar"></i> EPF Compliance</a>';
-                echo '<a href="compliance.php?tab=klwf" class="sidebar-item"><i class="fas fa-balance-scale"></i> KLWF Contribution</a>';
+                echo '<a href="lwf_compliance.php" class="sidebar-item"><i class="fas fa-balance-scale"></i> LWF Compliance</a>';
+                echo '<a href="monthly_compliance_certificate.php" class="sidebar-item"><i class="fas fa-certificate text-success"></i> Monthly Compliance Cert</a>';
+                echo '<a href="lwf_rate_view.php" class="sidebar-item"><i class="fas fa-indian-rupee-sign"></i> LWF Rate & Status</a>';
                 echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Operations & Compliance</div>';
                 echo '<a href="attendance.php" class="sidebar-item"><i class="fas fa-calendar-check"></i> Attendance</a>';
+                echo '<a href="noc_management.php" class="sidebar-item"><i class="fas fa-exchange-alt text-warning"></i> NOC Management</a>';
                 echo '<a href="compliance.php" class="sidebar-item"><i class="fas fa-shield-check"></i> Compliance Monitor</a>';
                 echo '<a href="documents.php" class="sidebar-item"><i class="fas fa-folder-open"></i> Documents</a>';
                 echo '<a href="reports.php" class="sidebar-item"><i class="fas fa-chart-bar"></i> Reports</a>';
@@ -533,11 +616,11 @@ function renderSidebar($role) {
         case 'pass_issuer':
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Pass Issuance Desk</div>';
             echo '<a href="pass_issuer_dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
-            echo '<a href="pending_requests.php" class="sidebar-item"><i class="fas fa-list-ul"></i> Pending Pass Requests</a>';
             echo '<a href="verify_documents.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Verify Documents</a>';
+            echo '<a href="pending_requests.php" class="sidebar-item"><i class="fas fa-list-ul"></i> Pending Pass Requests</a>';
             echo '<a href="issue_temp_pass.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Temporary Pass Issue</a>';
-            echo '<a href="issue_acc_pass.php" class="sidebar-item"><i class="fas fa-id-card-clip"></i> Permanent Pass (ACC)</a>';
             echo '<a href="acc_generation.php" class="sidebar-item"><i class="fas fa-microchip"></i> ACC Number Generation</a>';
+            // echo '<a href="issue_acc_pass.php" class="sidebar-item"><i class="fas fa-id-card-clip"></i> Permanent Pass (ACC)</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Management</div>';
             echo '<a href="pass_status.php" class="sidebar-item"><i class="fas fa-satellite-dish"></i> Pass Status Tracking</a>';
             echo '<a href="reupload_cases.php" class="sidebar-item"><i class="fas fa-upload"></i> Rejected / Re-upload</a>';
@@ -551,12 +634,12 @@ function renderSidebar($role) {
             $customerCode = $_SESSION['customer_code'] ?? $_SESSION['contractor_id'] ?? '';
             $onboardingComplete = clms_onboarding_is_complete($conn, 'customer', $customerCode, $_SESSION['user_id'] ?? 0);
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Customer Portal</div>';
-            echo '<a href="'.$cb.'annexure-3a.php" class="sidebar-item"><i class="fas fa-file-contract"></i> Contractor Info (3A)</a>';
+            echo '<a href="'.$cb.'annexure-3a.php" class="sidebar-item"><i class="fas fa-file-contract"></i> Contractor Info</a>';
             echo '<a href="'.$cb.'welfare-actions.php" class="sidebar-item"><i class="fas fa-clock-rotate-left"></i> Welfare Action History</a>';
 
             if (!$onboardingComplete) {
                 echo '<div class="sidebar-item text-muted" style="font-size:12px; padding:10px 15px; background:rgba(0,0,0,0.03); margin-top:10px; border-radius:8px;">';
-                echo '<i class="fas fa-lock me-2"></i> Dashboard and additional modules will unlock once Annexure 3A is approved.';
+                echo '<i class="fas fa-lock me-2"></i> Dashboard and additional modules will unlock once Contractor Info is approved.';
                 echo '</div>';
                 break;
             }
@@ -585,11 +668,11 @@ function renderSidebar($role) {
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Training Engine</div>';
             echo '<a href="dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
             echo '<a href="enrollment_approval.php" class="sidebar-item"><i class="fas fa-user-check"></i> Enrollment Approval Inbox</a>';
-            echo '<a href="training_class_master.php" class="sidebar-item"><i class="fas fa-calendar-plus"></i> Training Class Master</a>';
+            echo '<a href="training_class_master.php" class="sidebar-item"><i class="fas fa-calendar-plus"></i>Training Batch Creation</a>';
             // echo '<a href="training_requests.php" class="sidebar-item"><i class="fas fa-envelope-open-text"></i> Training Requests</a>';
             echo '<a href="training_schedule.php" class="sidebar-item"><i class="fas fa-calendar-alt"></i> Training Schedule</a>';
             echo '<a href="upcoming_sessions.php" class="sidebar-item"><i class="fas fa-clock"></i> Upcoming Sessions</a>';
-            echo '<a href="conduct_results.php" class="sidebar-item"><i class="fas fa-users-cog"></i> Conduct & Results</a>';
+            // echo '<a href="conduct_results.php" class="sidebar-item"><i class="fas fa-users-cog"></i> Conduct & Results</a>';
             echo '<a href="training_status.php" class="sidebar-item"><i class="fas fa-user-check"></i> Training Status</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Safety Masters</div>';
             echo '<a href="training_location_master.php" class="sidebar-item"><i class="fas fa-location-dot"></i> Location Master</a>';
@@ -599,7 +682,8 @@ function renderSidebar($role) {
             echo '<a href="training_language_master.php" class="sidebar-item"><i class="fas fa-language"></i> Language Master</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Monitoring</div>';
             echo '<a href="pending_training.php" class="sidebar-item"><i class="fas fa-hourglass-half"></i> Pending Workers</a>';
-            echo '<a href="retraining.php" class="sidebar-item"><i class="fas fa-redo"></i> Re-Training Requests</a>';
+            echo '<a href="retraining.php" class="sidebar-item"><i class="fas fa-redo"></i> Re-Training Eligibility</a>';
+            echo '<a href="retraining_requests.php" class="sidebar-item"><i class="fas fa-tasks"></i> Re-Training Inbox</a>';
             echo '<a href="training_batch_report.php" class="sidebar-item"><i class="fas fa-file-lines"></i> Batch Reports</a>';
             echo '<a href="reports.php" class="sidebar-item"><i class="fas fa-chart-bar"></i> Training Details</a>';
             break;
@@ -627,8 +711,197 @@ function renderSidebar($role) {
             break;
     }
     
-    echo '</div><div class="sidebar-section">';
-    echo '<a href="../../api/logout.php" class="sidebar-item text-danger"><i class="fas fa-power-off"></i> Logout</a>';
+    // ----- DYNAMIC SPECIAL ACCESS LINKS -----
+    if ($role !== 'super_admin' && $role !== 'admin' && function_exists('get_user_accessible_modules')) {
+        $accessible = get_user_accessible_modules();
+        if (!empty($accessible) && is_array($accessible) && !in_array('*', $accessible)) {
+                                                            $dynamicModules = [
+                'dashboard' => ['link' => BASE_URL . 'pages/admin/dashboard.php', 'icon' => 'fa-tachometer-alt', 'label' => 'SuperAdmin Dashboard'],
+                'users' => ['link' => BASE_URL . 'pages/admin/users.php', 'icon' => 'fa-users', 'label' => 'User Management'],
+                'contractors' => ['link' => BASE_URL . 'pages/admin/contractor_control.php', 'icon' => 'fa-building', 'label' => 'Contractor Management'],
+                'workmen' => ['link' => BASE_URL . 'pages/admin/worker_management.php', 'icon' => 'fa-hard-hat', 'label' => 'Workmen Management'],
+                'documents' => ['link' => BASE_URL . 'pages/admin/documents_monitor.php', 'icon' => 'fa-folder-open', 'label' => 'Document Monitor'],
+                'training' => ['link' => BASE_URL . 'pages/admin/training_monitor.php', 'icon' => 'fa-graduation-cap', 'label' => 'Training Monitor'],
+                'gate_pass' => ['link' => BASE_URL . 'pages/admin/gatepass_monitor.php', 'icon' => 'fa-id-card', 'label' => 'Gate Pass Monitor'],
+                'safety' => ['link' => BASE_URL . 'pages/safety/dashboard.php', 'icon' => 'fa-shield-check', 'label' => 'Safety Desk'],
+                'compliance' => ['link' => BASE_URL . 'pages/admin/compliance_dashboard.php', 'icon' => 'fa-balance-scale', 'label' => 'Compliance Dashboard'],
+                'attendance' => ['link' => BASE_URL . 'pages/admin/attendance_dashboard.php', 'icon' => 'fa-calendar-check', 'label' => 'Attendance Dashboard'],
+                'reports' => ['link' => BASE_URL . 'pages/admin/reports.php', 'icon' => 'fa-chart-bar', 'label' => 'Reports'],
+                'noc' => ['link' => BASE_URL . 'pages/welfare/noc_approvals.php', 'icon' => 'fa-exchange-alt', 'label' => 'NOC Approvals'],
+                'sap' => ['link' => BASE_URL . 'pages/admin/sap_sync_logs.php', 'icon' => 'fa-sync', 'label' => 'SAP Logs'],
+                'settings' => ['link' => BASE_URL . 'pages/admin/settings.php', 'icon' => 'fa-cog', 'label' => 'Settings'],
+                'blocking' => ['link' => BASE_URL . 'pages/welfare/blocking_control.php', 'icon' => 'fa-ban', 'label' => 'Blocking Control'],
+                'audit_logs' => ['link' => BASE_URL . 'pages/admin/audit_logs.php', 'icon' => 'fa-history', 'label' => 'Audit Logs'],
+                'adm___dash_link_' => ['link' => BASE_URL . 'pages/admin/.$dash_link.', 'icon' => 'fa-tachometer-alt', 'label' => 'Dashboard'],
+                'adm_dashboard' => ['link' => BASE_URL . 'pages/admin/dashboard.php', 'icon' => 'fa-tachometer-alt', 'label' => 'Dashboard'],
+                'adm_users' => ['link' => BASE_URL . 'pages/admin/users.php', 'icon' => 'fa-users-cog', 'label' => 'User Management'],
+                'adm_roles' => ['link' => BASE_URL . 'pages/admin/roles.php', 'icon' => 'fa-user-shield', 'label' => 'Role Control'],
+                'adm_permissions' => ['link' => BASE_URL . 'pages/admin/permissions.php', 'icon' => 'fa-key', 'label' => 'Permissions'],
+                'adm_workflow_monitor' => ['link' => BASE_URL . 'pages/admin/workflow_monitor.php', 'icon' => 'fa-eye', 'label' => 'Workflow Monitoring'],
+                'adm_workflow_control' => ['link' => BASE_URL . 'pages/admin/workflow_control.php', 'icon' => 'fa-gamepad', 'label' => 'Workflow Control'],
+                'adm_documents_monitor' => ['link' => BASE_URL . 'pages/admin/documents_monitor.php', 'icon' => 'fa-file-invoice', 'label' => 'Document Flow'],
+                'adm_training_monitor' => ['link' => BASE_URL . 'pages/admin/training_monitor.php', 'icon' => 'fa-graduation-cap', 'label' => 'Training Flow'],
+                'adm_gatepass_monitor' => ['link' => BASE_URL . 'pages/admin/gatepass_monitor.php', 'icon' => 'fa-id-card', 'label' => 'Gate Pass Flow'],
+                'adm_sap_sync_logs' => ['link' => BASE_URL . 'pages/admin/sap_sync_logs.php', 'icon' => 'fa-sync', 'label' => 'SAP Sync Logs'],
+                'wor_worker_management' => ['link' => BASE_URL . 'pages/admin/worker_management.php', 'icon' => 'fa-user-clock', 'label' => 'Worker Lifecycle'],
+                'con_contractor_control' => ['link' => BASE_URL . 'pages/admin/contractor_control.php', 'icon' => 'fa-building-circle-exclamation', 'label' => 'Contractor Control'],
+                'exe_execution_management' => ['link' => BASE_URL . 'pages/admin/execution_management.php', 'icon' => 'fa-link', 'label' => 'Execution Mapping'],
+                'adm_compliance_dashboard' => ['link' => BASE_URL . 'pages/admin/compliance_dashboard.php', 'icon' => 'fa-shield-check', 'label' => 'Compliance Dashboard'],
+                'adm_attendance_dashboard' => ['link' => BASE_URL . 'pages/admin/attendance_dashboard.php', 'icon' => 'fa-calendar-check', 'label' => 'Attendance Dashboard'],
+                'adm_biometric_dashboard' => ['link' => BASE_URL . 'pages/admin/biometric_dashboard.php', 'icon' => 'fa-fingerprint', 'label' => 'Biometric Governance'],
+                'adm_pass_limits' => ['link' => BASE_URL . 'pages/admin/pass_limits.php', 'icon' => 'fa-sliders-h', 'label' => 'Pass Category Limit'],
+                'wel_certified_wages' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/welfare/certified_wages.php', 'icon' => 'fa-indian-rupee-sign', 'label' => 'Certified Wage Rate'],
+                'wel_labour_license_threshold' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/welfare/labour_license_threshold.php', 'icon' => 'fa-scale-balanced', 'label' => 'Labour License Threshold'],
+                'wel_temporary_pass_validity' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/welfare/temporary_pass_validity.php', 'icon' => 'fa-calendar-day', 'label' => 'Temporary Pass Validity'],
+                'wel_age_range_mapping' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/welfare/age_range_mapping.php', 'icon' => 'fa-user-clock', 'label' => 'Age Range Mapping'],
+                'wel_gate_pass_document_master' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/welfare/gate_pass_document_master.php', 'icon' => 'fa-file-shield', 'label' => 'Gate Pass Document Master'],
+                'wel_payment_gateway' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/welfare/payment_gateway.php', 'icon' => 'fa-credit-card', 'label' => 'Payment Gateway / QR'],
+                'adm_master_data' => ['link' => BASE_URL . 'pages/admin/master_data.php', 'icon' => 'fa-database', 'label' => 'Master Data'],
+                'wel_muster_roll_monitor' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/welfare/muster_roll_monitor.php', 'icon' => 'fa-file-invoice', 'label' => 'Muster Roll Verification'],
+                'wel_check_esi_compliance' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/welfare/check_esi_compliance.php', 'icon' => 'fa-shield-check', 'label' => 'Check ESI Compliance'],
+                'wel_check_epf_compliance' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/welfare/check_epf_compliance.php', 'icon' => 'fa-shield-check', 'label' => 'Check EPF Compliance'],
+                'adm_invoices' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/payments/invoices.php', 'icon' => 'fa-file-invoice-dollar', 'label' => 'Payment Governance'],
+                'adm_request' => ['link' => BASE_URL . 'pages/admin/.BASE_URL.pages/temporary/request.php', 'icon' => 'fa-user-clock', 'label' => 'Temp Workforce Pass'],
+                'adm_policy_monitor' => ['link' => BASE_URL . 'pages/admin/policy_monitor.php', 'icon' => 'fa-microchip', 'label' => 'Policy Engine'],
+                'adm_notifications_logs' => ['link' => BASE_URL . 'pages/admin/notifications_logs.php', 'icon' => 'fa-bell-slash', 'label' => 'Notifications Logs'],
+                'adm_alerts_dashboard' => ['link' => BASE_URL . 'pages/admin/alerts_dashboard.php', 'icon' => 'fa-exclamation-triangle', 'label' => 'Alerts Dashboard'],
+                'adm_system_health' => ['link' => BASE_URL . 'pages/admin/system_health.php', 'icon' => 'fa-heartbeat', 'label' => 'System Health'],
+                'adm_audit_logs' => ['link' => BASE_URL . 'pages/admin/audit_logs.php', 'icon' => 'fa-history', 'label' => 'Audit Logs'],
+                'adm_reports' => ['link' => BASE_URL . 'pages/admin/reports.php', 'icon' => 'fa-file-medical-alt', 'label' => 'Reports'],
+                'adm_data_export' => ['link' => BASE_URL . 'pages/admin/data_export.php', 'icon' => 'fa-download', 'label' => 'Data Export'],
+                'adm_settings' => ['link' => BASE_URL . 'pages/admin/settings.php', 'icon' => 'fa-cog', 'label' => 'Settings'],
+                'wel_admin_dashboard' => ['link' => BASE_URL . 'pages/welfare/admin_dashboard.php', 'icon' => 'fa-tachometer-alt', 'label' => 'Admin Home'],
+                'adm_create_user' => ['link' => BASE_URL . 'pages/admin/create_user.php', 'icon' => 'fa-user-plus', 'label' => 'Create User'],
+                'wel_pass_limits' => ['link' => BASE_URL . 'pages/welfare/pass_limits.php', 'icon' => 'fa-sliders-h', 'label' => 'Pass Category Limit'],
+                'wel_education_correction' => ['link' => BASE_URL . 'pages/welfare/education_correction.php', 'icon' => 'fa-graduation-cap', 'label' => 'Education Job Profile'],
+                'wel_nationality_master' => ['link' => BASE_URL . 'pages/welfare/nationality_master.php', 'icon' => 'fa-globe', 'label' => 'Nationality Masters'],
+                'wel_training_type_master' => ['link' => BASE_URL . 'pages/welfare/training_type_master.php', 'icon' => 'fa-graduation-cap', 'label' => 'Training Type Master'],
+                'wel_training_venue_master' => ['link' => BASE_URL . 'pages/welfare/training_venue_master.php', 'icon' => 'fa-location-dot', 'label' => 'Training Venue Master'],
+                'wel_temp_pass_control' => ['link' => BASE_URL . 'pages/welfare/temp_pass_control.php', 'icon' => 'fa-clock', 'label' => 'Temp Pass Control'],
+                'wel_entity_directory' => ['link' => BASE_URL . 'pages/welfare/entity_directory.php', 'icon' => 'fa-address-book', 'label' => 'Contractor / Customer Data'],
+                'wel_approve_3a' => ['link' => BASE_URL . 'pages/welfare/approve_3a.php', 'icon' => 'fa-file-contract', 'label' => 'Contractor Info Verification'],
+                'wel_enrollment_monitor' => ['link' => BASE_URL . 'pages/welfare/enrollment_monitor.php', 'icon' => 'fa-users-viewfinder', 'label' => 'Worker Monitor'],
+                'wel_training_monitor' => ['link' => BASE_URL . 'pages/welfare/training_monitor.php', 'icon' => 'fa-graduation-cap', 'label' => 'Training Monitor'],
+                'wel_gatepass_monitor' => ['link' => BASE_URL . 'pages/welfare/gatepass_monitor.php', 'icon' => 'fa-id-card-clip', 'label' => 'Gate Pass Monitor'],
+                'wel_acc_tracking' => ['link' => BASE_URL . 'pages/welfare/acc_tracking.php', 'icon' => 'fa-fingerprint', 'label' => 'ACC Monitor'],
+                'wel_productivity_dashboard' => ['link' => BASE_URL . 'pages/welfare/productivity_dashboard.php', 'icon' => 'fa-chart-line', 'label' => 'Productivity Dashboard'],
+                'wel_esi_contribution_monitor' => ['link' => BASE_URL . 'pages/welfare/esi_contribution_monitor.php', 'icon' => 'fa-hand-holding-dollar', 'label' => 'ESI Contribution Monitor'],
+                'wel_lwf_compliance_checking' => ['link' => BASE_URL . 'pages/welfare/lwf_compliance_checking.php', 'icon' => 'fa-clipboard-check', 'label' => 'LWF Compliance Checking'],
+                'wel_lwf_master' => ['link' => BASE_URL . 'pages/welfare/lwf_master.php', 'icon' => 'fa-sliders-h', 'label' => 'LWF Rate Master'],
+                'wel_compliance_monitor' => ['link' => BASE_URL . 'pages/welfare/compliance_monitor.php', 'icon' => 'fa-shield-check', 'label' => 'Compliance Monitor'],
+                'wel_blocking_control' => ['link' => BASE_URL . 'pages/welfare/blocking_control.php', 'icon' => 'fa-building-circle-exclamation', 'label' => 'Contractor Control'],
+                'wor_worker_block' => ['link' => BASE_URL . 'pages/welfare/worker_block.php', 'icon' => 'fa-user-slash', 'label' => 'Worker Blocking'],
+                'wel_noc_approvals' => ['link' => BASE_URL . 'pages/welfare/noc_approvals.php', 'icon' => 'fa-exchange-alt', 'label' => 'NOC Approvals'],
+                'wel_verification_history' => ['link' => BASE_URL . 'pages/welfare/verification_history.php', 'icon' => 'fa-history', 'label' => 'Contractor History'],
+                'wel_reports' => ['link' => BASE_URL . 'pages/welfare/reports.php', 'icon' => 'fa-file-invoice', 'label' => 'Reports'],
+                'wel_sap_logs' => ['link' => BASE_URL . 'pages/welfare/sap_logs.php', 'icon' => 'fa-sync', 'label' => 'SAP Integration'],
+                'con_approve_contractors' => ['link' => BASE_URL . 'pages/welfare/approve_contractors.php', 'icon' => 'fa-building-circle-check', 'label' => 'Pending Customer Approval'],
+                'wel_verify_documents' => ['link' => BASE_URL . 'pages/welfare/verify_documents.php', 'icon' => 'fa-file-shield', 'label' => 'Document Verification'],
+                'wel_issue_temp_pass' => ['link' => BASE_URL . 'pages/welfare/issue_temp_pass.php', 'icon' => 'fa-clock', 'label' => 'Temporary Pass Issue'],
+                'wel_acc_generation' => ['link' => BASE_URL . 'pages/welfare/acc_generation.php', 'icon' => 'fa-fingerprint', 'label' => 'Permanent ACC Approval'],
+                'wel_acc_return_queue' => ['link' => BASE_URL . 'pages/welfare/acc_return_queue.php', 'icon' => 'fa-undo', 'label' => 'Relieving Management'],
+                'wel_monthly_compliance_approvals' => ['link' => BASE_URL . 'pages/welfare/monthly_compliance_approvals.php', 'icon' => 'fa-certificate', 'label' => 'Monthly Compliance Approvals'],
+                'wel_esic_wage_limit' => ['link' => BASE_URL . 'pages/welfare/esic_wage_limit.php', 'icon' => 'fa-cog', 'label' => 'ESIC Wage Limit'],
+                'wel_attendance_monitor' => ['link' => BASE_URL . 'pages/welfare/attendance_monitor.php', 'icon' => 'fa-calendar-check', 'label' => 'Attendance Monitor'],
+                'con_annexure_2a' => ['link' => BASE_URL . 'pages/contractor/annexure-2a.php', 'icon' => 'fa-file-invoice', 'label' => 'CLMS Enrolment Request'],
+                'con_enrolment_4a_type_contractor' => ['link' => BASE_URL . 'pages/contractor/enrolment-4a.php?type=contractor', 'icon' => 'fa-user-check', 'label' => 'Contractor'],
+                'con_enrolment_4a_type_representative' => ['link' => BASE_URL . 'pages/contractor/enrolment-4a.php?type=representative', 'icon' => 'fa-user-tie', 'label' => 'Representative'],
+                'con_enrolment_4a_type_supervisor' => ['link' => BASE_URL . 'pages/contractor/enrolment-4a.php?type=supervisor', 'icon' => 'fa-user-shield', 'label' => 'Supervisor'],
+                'con_enrolment_4a_type_workmen' => ['link' => BASE_URL . 'pages/contractor/enrolment-4a.php?type=workmen', 'icon' => 'fa-users', 'label' => 'Workmen'],
+                'con_welfare_actions' => ['link' => BASE_URL . 'pages/contractor/welfare-actions.php', 'icon' => 'fa-clock-rotate-left', 'label' => 'Welfare Action History'],
+                'con_dashboard' => ['link' => BASE_URL . 'pages/contractor/dashboard.php', 'icon' => 'fa-tachometer-alt', 'label' => 'Dashboard'],
+                'con_profile' => ['link' => BASE_URL . 'pages/contractor/profile.php', 'icon' => 'fa-id-card', 'label' => 'Basic Details'],
+                'con_training_request' => ['link' => BASE_URL . 'pages/contractor/training_request.php', 'icon' => 'fa-graduation-cap', 'label' => 'Safety Training Request'],
+                'con_payment' => ['link' => BASE_URL . 'pages/contractor/payment.php', 'icon' => 'fa-credit-card', 'label' => 'Pending Fee Payment'],
+                'saf_book_safety_training' => ['link' => BASE_URL . 'pages/contractor/book_safety_training.php', 'icon' => 'fa-calendar-check', 'label' => 'Book Safety Training'],
+                'con_gatepass_6a' => ['link' => BASE_URL . 'pages/contractor/gatepass-6a.php', 'icon' => 'fa-id-badge', 'label' => 'Gate Pass'],
+                'con_gatepass_reupload' => ['link' => BASE_URL . 'pages/contractor/gatepass-reupload.php', 'icon' => 'fa-file-circle-exclamation', 'label' => 'Re-upload Gate Pass Docs'],
+                'con_pass_status' => ['link' => BASE_URL . 'pages/contractor/pass_status.php', 'icon' => 'fa-id-card', 'label' => 'ACC Card'],
+                'wor_block_unblock' => ['link' => BASE_URL . 'pages/worker/block_unblock.php', 'icon' => 'fa-user-slash', 'label' => 'Worker Blocking'],
+                'con_muster_roll' => ['link' => BASE_URL . 'pages/contractor/muster_roll.php', 'icon' => 'fa-file-invoice', 'label' => 'Muster Roll'],
+                'con_esi_contribution' => ['link' => BASE_URL . 'pages/contractor/esi_contribution.php', 'icon' => 'fa-hand-holding-dollar', 'label' => 'ESI Contribution'],
+                'con_esi_ecr_pf_upload' => ['link' => BASE_URL . 'pages/contractor/esi_ecr_pf_upload.php', 'icon' => 'fa-file-upload', 'label' => 'ESI ECR & PF Contribution Upload'],
+                'con_esi_compliance_check' => ['link' => BASE_URL . 'pages/contractor/esi_compliance_check.php', 'icon' => 'fa-shield-check', 'label' => 'ESI Compliance Status'],
+                'con_epf_compliance' => ['link' => BASE_URL . 'pages/contractor/epf_compliance.php', 'icon' => 'fa-file-invoice-dollar', 'label' => 'EPF Compliance'],
+                'con_lwf_compliance' => ['link' => BASE_URL . 'pages/contractor/lwf_compliance.php', 'icon' => 'fa-balance-scale', 'label' => 'LWF Compliance'],
+                'con_monthly_compliance_certificate' => ['link' => BASE_URL . 'pages/contractor/monthly_compliance_certificate.php', 'icon' => 'fa-certificate', 'label' => 'Monthly Compliance Cert'],
+                'con_lwf_rate_view' => ['link' => BASE_URL . 'pages/contractor/lwf_rate_view.php', 'icon' => 'fa-indian-rupee-sign', 'label' => 'LWF Rate & Status'],
+                'con_attendance' => ['link' => BASE_URL . 'pages/contractor/attendance.php', 'icon' => 'fa-calendar-check', 'label' => 'Attendance'],
+                'con_noc_management' => ['link' => BASE_URL . 'pages/contractor/noc_management.php', 'icon' => 'fa-exchange-alt', 'label' => 'NOC Management'],
+                'con_compliance' => ['link' => BASE_URL . 'pages/contractor/compliance.php', 'icon' => 'fa-shield-check', 'label' => 'Compliance Monitor'],
+                'con_documents' => ['link' => BASE_URL . 'pages/contractor/documents.php', 'icon' => 'fa-folder-open', 'label' => 'Documents'],
+                'con_reports' => ['link' => BASE_URL . 'pages/contractor/reports.php', 'icon' => 'fa-chart-bar', 'label' => 'Reports'],
+                'fro_dashboard' => ['link' => BASE_URL . 'pages/frontline/dashboard.php', 'icon' => 'fa-tachometer-alt', 'label' => 'Dashboard'],
+                'fro_entry_validation' => ['link' => BASE_URL . 'pages/frontline/entry_validation.php', 'icon' => 'fa-sign-in-alt', 'label' => 'Gate Entry Validation'],
+                'fro_exit_validation' => ['link' => BASE_URL . 'pages/frontline/exit_validation.php', 'icon' => 'fa-sign-out-alt', 'label' => 'Gate Exit Validation'],
+                'fro_active_pass' => ['link' => BASE_URL . 'pages/frontline/active_pass.php', 'icon' => 'fa-id-badge', 'label' => 'Active Pass List'],
+                'wor_blocked_workers' => ['link' => BASE_URL . 'pages/frontline/blocked_workers.php', 'icon' => 'fa-user-slash', 'label' => 'Blocked Workers'],
+                'fro_expired_pass' => ['link' => BASE_URL . 'pages/frontline/expired_pass.php', 'icon' => 'fa-exclamation-triangle', 'label' => 'Expired Pass Alerts'],
+                'fro_logs' => ['link' => BASE_URL . 'pages/frontline/logs.php', 'icon' => 'fa-history', 'label' => 'Entry/Exit Logs'],
+                'fro_manual_override' => ['link' => BASE_URL . 'pages/frontline/manual_override.php', 'icon' => 'fa-unlock-alt', 'label' => 'Manual Override'],
+                'fro_reports' => ['link' => BASE_URL . 'pages/frontline/reports.php', 'icon' => 'fa-chart-line', 'label' => 'Reports'],
+                'adm_pass_issuer_dashboard' => ['link' => BASE_URL . 'pages/admin/pass_issuer_dashboard.php', 'icon' => 'fa-tachometer-alt', 'label' => 'Dashboard'],
+                'adm_verify_documents' => ['link' => BASE_URL . 'pages/admin/verify_documents.php', 'icon' => 'fa-file-shield', 'label' => 'Verify Documents'],
+                'adm_pending_requests' => ['link' => BASE_URL . 'pages/admin/pending_requests.php', 'icon' => 'fa-list-ul', 'label' => 'Pending Pass Requests'],
+                'adm_issue_temp_pass' => ['link' => BASE_URL . 'pages/admin/issue_temp_pass.php', 'icon' => 'fa-id-badge', 'label' => 'Temporary Pass Issue'],
+                'adm_acc_generation' => ['link' => BASE_URL . 'pages/admin/acc_generation.php', 'icon' => 'fa-microchip', 'label' => 'ACC Number Generation'],
+                'adm_issue_acc_pass' => ['link' => BASE_URL . 'pages/admin/issue_acc_pass.php', 'icon' => 'fa-id-card-clip', 'label' => 'Permanent Pass (ACC)'],
+                'adm_pass_status' => ['link' => BASE_URL . 'pages/admin/pass_status.php', 'icon' => 'fa-satellite-dish', 'label' => 'Pass Status Tracking'],
+                'adm_reupload_cases' => ['link' => BASE_URL . 'pages/admin/reupload_cases.php', 'icon' => 'fa-upload', 'label' => 'Rejected / Re-upload'],
+                'adm_pass_validity' => ['link' => BASE_URL . 'pages/admin/pass_validity.php', 'icon' => 'fa-calendar-check', 'label' => 'Pass Validity Management'],
+                'cus_annexure_3a' => ['link' => BASE_URL . 'pages/customer/annexure-3a.php', 'icon' => 'fa-file-contract', 'label' => 'Contractor Info'],
+                'cus_welfare_actions' => ['link' => BASE_URL . 'pages/customer/welfare-actions.php', 'icon' => 'fa-clock-rotate-left', 'label' => 'Welfare Action History'],
+                'cus_dashboard' => ['link' => BASE_URL . 'pages/customer/dashboard.php', 'icon' => 'fa-tachometer-alt', 'label' => 'Dashboard'],
+                'cus_profile' => ['link' => BASE_URL . 'pages/customer/profile.php', 'icon' => 'fa-id-card', 'label' => 'Basic Details'],
+                'con_enrolment_4a_type_retraining' => ['link' => BASE_URL . 'pages/contractor/enrolment-4a.php?type=retraining', 'icon' => 'fa-arrows-rotate', 'label' => 'Re-Training Workmen'],
+                'saf_dashboard' => ['link' => BASE_URL . 'pages/safety/dashboard.php', 'icon' => 'fa-tachometer-alt', 'label' => 'Dashboard'],
+                'saf_enrollment_approval' => ['link' => BASE_URL . 'pages/safety/enrollment_approval.php', 'icon' => 'fa-user-check', 'label' => 'Enrollment Approval Inbox'],
+                'saf_training_class_master' => ['link' => BASE_URL . 'pages/safety/training_class_master.php', 'icon' => 'fa-calendar-plus', 'label' => 'Training Batch Creation'],
+                'saf_training_requests' => ['link' => BASE_URL . 'pages/safety/training_requests.php', 'icon' => 'fa-envelope-open-text', 'label' => 'Training Requests'],
+                'saf_training_schedule' => ['link' => BASE_URL . 'pages/safety/training_schedule.php', 'icon' => 'fa-calendar-alt', 'label' => 'Training Schedule'],
+                'saf_upcoming_sessions' => ['link' => BASE_URL . 'pages/safety/upcoming_sessions.php', 'icon' => 'fa-clock', 'label' => 'Upcoming Sessions'],
+                'saf_conduct_results' => ['link' => BASE_URL . 'pages/safety/conduct_results.php', 'icon' => 'fa-users-cog', 'label' => 'Conduct & Results'],
+                'saf_training_status' => ['link' => BASE_URL . 'pages/safety/training_status.php', 'icon' => 'fa-user-check', 'label' => 'Training Status'],
+                'saf_training_location_master' => ['link' => BASE_URL . 'pages/safety/training_location_master.php', 'icon' => 'fa-location-dot', 'label' => 'Location Master'],
+                'saf_instructor_master' => ['link' => BASE_URL . 'pages/safety/instructor_master.php', 'icon' => 'fa-person-chalkboard', 'label' => 'Instructor Master'],
+                'saf_safety_training_type_master' => ['link' => BASE_URL . 'pages/safety/safety_training_type_master.php', 'icon' => 'fa-list-check', 'label' => 'Training Type Master'],
+                'saf_training_fee_master' => ['link' => BASE_URL . 'pages/safety/training_fee_master.php', 'icon' => 'fa-indian-rupee-sign', 'label' => 'Training Fee Master'],
+                'saf_training_language_master' => ['link' => BASE_URL . 'pages/safety/training_language_master.php', 'icon' => 'fa-language', 'label' => 'Language Master'],
+                'saf_pending_training' => ['link' => BASE_URL . 'pages/safety/pending_training.php', 'icon' => 'fa-hourglass-half', 'label' => 'Pending Workers'],
+                'saf_retraining' => ['link' => BASE_URL . 'pages/safety/retraining.php', 'icon' => 'fa-redo', 'label' => 'Re-Training Eligibility'],
+                'saf_retraining_requests' => ['link' => BASE_URL . 'pages/safety/retraining_requests.php', 'icon' => 'fa-tasks', 'label' => 'Re-Training Inbox'],
+                'saf_training_batch_report' => ['link' => BASE_URL . 'pages/safety/training_batch_report.php', 'icon' => 'fa-file-lines', 'label' => 'Batch Reports'],
+                'saf_reports' => ['link' => BASE_URL . 'pages/safety/reports.php', 'icon' => 'fa-chart-bar', 'label' => 'Training Details'],
+                'exe_dashboard' => ['link' => BASE_URL . 'pages/execution/dashboard.php', 'icon' => 'fa-tachometer-alt', 'label' => 'Command Center'],
+                'exe_training_attendance' => ['link' => BASE_URL . 'pages/execution/training_attendance.php', 'icon' => 'fa-file-signature', 'label' => 'Workmen Enrollment Approval'],
+                'exe_contractors' => ['link' => BASE_URL . 'pages/execution/contractors.php', 'icon' => 'fa-building', 'label' => 'Assigned Contractors'],
+                'exe_work_orders' => ['link' => BASE_URL . 'pages/execution/work_orders.php', 'icon' => 'fa-handshake', 'label' => 'Work Order Tracking'],
+                'exe_deployments' => ['link' => BASE_URL . 'pages/execution/deployments.php', 'icon' => 'fa-users-viewfinder', 'label' => 'Deployment Monitoring'],
+                'exe_attendance' => ['link' => BASE_URL . 'pages/execution/attendance.php', 'icon' => 'fa-calendar-check', 'label' => 'Attendance Monitoring'],
+                'exe_attendance_exceptions' => ['link' => BASE_URL . 'pages/execution/attendance_exceptions.php', 'icon' => 'fa-triangle-exclamation', 'label' => 'System Exceptions'],
+                'exe_observations' => ['link' => BASE_URL . 'pages/execution/observations.php', 'icon' => 'fa-edit', 'label' => 'Field Observations'],
+                'exe_escalations' => ['link' => BASE_URL . 'pages/execution/escalations.php', 'icon' => 'fa-bullhorn', 'label' => 'Escalation Management'],
+                'exe_productivity' => ['link' => BASE_URL . 'pages/execution/productivity.php', 'icon' => 'fa-chart-line', 'label' => 'Productivity Center'],
+                'exe_reports' => ['link' => BASE_URL . 'pages/execution/reports.php', 'icon' => 'fa-file-invoice', 'label' => 'Reports & Exports'],
+            ];
+            $specialLinks = [];
+            foreach ($accessible as $mod) {
+                if (isset($dynamicModules[$mod])) {
+                    $m = $dynamicModules[$mod];
+                    // Prevent rendering if the user already has this link (rough check)
+                    $specialLinks[] = '<a href="'.$m['link'].'" class="sidebar-item" style="background:rgba(99,102,241,0.05); border-left:3px solid #6366f1;"><i class="fas '.$m['icon'].' text-primary"></i> '.$m['label'].'</a>';
+                }
+            }
+            if (!empty($specialLinks)) {
+                echo '</div><div class="sidebar-section"><div class="sidebar-section-label" style="color:#6366f1;"><i class="fas fa-star"></i> Granted Access</div>';
+                echo implode('', array_unique($specialLinks));
+            }
+        }
+    }
+    // ----------------------------------------
+    
+    echo '</div><div class="sidebar-section" style="margin-top:auto;">';
+    echo '<a href="' . BASE_URL . 'api/logout.php" class="sidebar-item text-danger"><i class="fas fa-power-off"></i> Logout</a>';
     echo '</div>';
 }
 ?>

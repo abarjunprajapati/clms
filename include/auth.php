@@ -10,8 +10,8 @@ require_once __DIR__ . '/auth_middleware.php';
  * Wraps the new require_role() function.
  */
 function checkAuth($allowed_roles = []) {
+    if (php_sapi_name() === 'cli') return;
     if (empty($allowed_roles)) {
-        // Just enforce login
         return;
     }
     require_role($allowed_roles);

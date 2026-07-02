@@ -4,9 +4,28 @@ require_once __DIR__ . '/../../include/config.php';
 
 checkAuth(['safety_user', 'super_admin']);
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: ../../pages/safety/retraining.php?error=" . urlencode("Invalid request method"));
+function requestRetrainingWantsJson() {
+    $accept = strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? ''));
+    $requestedWith = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? ''));
+    return strpos($accept, 'application/json') !== false || $requestedWith === 'xmlhttprequest';
+}
+
+function requestRetrainingRespond($success, $message) {
+    if (requestRetrainingWantsJson()) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => (bool)$success,
+            $success ? 'message' : 'error' => $message,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    header('Location: ../../pages/safety/retraining.php?' . ($success ? 'success=' : 'error=') . urlencode($message));
     exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    requestRetrainingRespond(false, 'Invalid request method');
 }
 
 function requestRetrainingColumnExists($conn, $table, $column) {
@@ -18,8 +37,7 @@ function requestRetrainingColumnExists($conn, $table, $column) {
 $workman_id = intval($_POST['workman_id'] ?? 0);
 
 if (!$workman_id) {
-    header("Location: ../../pages/safety/retraining.php?error=Invalid worker");
-    exit;
+    requestRetrainingRespond(false, 'Invalid worker');
 }
 
 $resultTable = mysqli_query($conn, "SHOW TABLES LIKE 'training_results'");
@@ -37,12 +55,10 @@ if ($resultTable && mysqli_num_rows($resultTable) > 0) {
     $firstDate = $attempt['first_training_date'] ?? null;
     $days = $firstDate ? floor((strtotime(date('Y-m-d')) - strtotime($firstDate)) / 86400) : 0;
     if ($attempts >= 3) {
-        header("Location: ../../pages/safety/retraining.php?error=" . urlencode("Maximum Attempt Reached"));
-        exit;
+        requestRetrainingRespond(false, 'Maximum Attempt Reached');
     }
     if ($firstDate && $days > 30) {
-        header("Location: ../../pages/safety/retraining.php?error=" . urlencode("Time period exceeded 30 days"));
-        exit;
+        requestRetrainingRespond(false, 'Time period exceeded 30 days');
     }
 }
 
@@ -61,8 +77,7 @@ if (requestRetrainingColumnExists($conn, 'workmen', 'updated_at')) {
 }
 
 if (!$setParts) {
-    header("Location: ../../pages/safety/retraining.php?error=Training status columns not found");
-    exit;
+    requestRetrainingRespond(false, 'Training status columns not found');
 }
 
 $sql = "UPDATE workmen SET " . implode(', ', $setParts) . " WHERE id=?";
@@ -78,8 +93,7 @@ if (db_execute($conn, $sql, 'i', [$workman_id])) {
         );
     }
     
-    header("Location: ../../pages/safety/retraining.php?success=Worker status reset to pending");
+    requestRetrainingRespond(true, 'Worker status reset to pending');
 } else {
-    header("Location: ../../pages/safety/retraining.php?error=" . mysqli_error($conn));
+    requestRetrainingRespond(false, mysqli_error($conn));
 }
-

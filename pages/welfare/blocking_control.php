@@ -27,9 +27,9 @@ function renderContent() {
         <button class="tab-btn active" onclick="switchTab('active')">
             <i class="fas fa-check-circle"></i> Active Firms <span class="badge badge-success"><?= $activeCount ?></span>
         </button>
-        <button class="tab-btn" onclick="switchTab('worker_blocking')">
+        <!-- <button class="tab-btn" onclick="switchTab('worker_blocking')">
             <i class="fas fa-user-slash"></i> Worker Blocking <span class="badge badge-warning">Rep/Sup/Workman</span>
-        </button>
+        </button> -->
         <button class="tab-btn" onclick="switchTab('blocked')">
             <i class="fas fa-ban"></i> Blocked Firms <span class="badge badge-danger"><?= $blockedCount ?></span>
         </button>
@@ -82,7 +82,8 @@ function renderContent() {
         </div>
     </div>
 
-    <!-- WORKER BLOCKING TAB -->
+    <!-- WORKER BLOCKING TAB (DEPRECATED - MOVED TO CONTRACTOR DASHBOARD) -->
+    <!-- 
     <div id="tab-worker_blocking" class="tab-content" style="display:none;">
         <div class="card glass mb-4">
             <div class="card-header"><div class="card-title">Block Individuals (Rep / Sup / Workman)</div></div>
@@ -99,7 +100,8 @@ function renderContent() {
                 <div id="workerSearchResult" class="mt-4"></div>
             </div>
         </div>
-    </div>
+    </div> 
+    -->
 
     <!-- BLOCKED CONTRACTORS TAB -->
     <div id="tab-blocked" class="tab-content" style="display:none;">

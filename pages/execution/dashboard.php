@@ -546,7 +546,7 @@ function renderContent() {
 
     <script>
     async function reviewTraining(workmanId, decision) {
-        const title = decision === 'approved' ? 'Approve training attendance?' : 'Reject training attendance?';
+        const title = decision === 'approved' ? 'Recommend for Safety Training?' : 'Reject training attendance?';
         const prompt = await Swal.fire({
             icon: decision === 'approved' ? 'question' : 'warning',
             title,

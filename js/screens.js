@@ -80,7 +80,7 @@ async function renderDashboard(role) {
       <!-- Stats (Dynamic from DB) -->
       <div class="stats-grid">
         <div class="stat-card"><div class="stat-icon blue"><i class="fas fa-file-alt"></i></div><div><div class="stat-value">${stats.totalApplications || 0}</div><div class="stat-label">Total Applications</div></div></div>
-        <div class="stat-card"><div class="stat-icon amber"><div class="fas fa-clock"></i></div><div><div class="stat-value">${stats.pending || 0}</div><div class="stat-label">Pending</div></div></div>
+        <div class="stat-card"><div class="stat-icon amber"><i class="fas fa-clock"></i></div><div><div class="stat-value">${stats.pending || 0}</div><div class="stat-label">Pending</div></div></div>
         <div class="stat-card"><div class="stat-icon green"><i class="fas fa-check"></i></div><div><div class="stat-value">${stats.approved || 0}</div><div class="stat-label">Approved</div></div></div>
         <div class="stat-card"><div class="stat-icon red"><i class="fas fa-times"></i></div><div><div class="stat-value">${stats.rejected || 0}</div><div class="stat-label">Rejected</div></div></div>
       </div>
@@ -2208,7 +2208,7 @@ function renderWorkmenTableLegacy() {
         </span>
       </td>
       <td class="actions">
-        <button class="btn btn-info btn-sm" onclick="showEnrolForm('workman', ${JSON.stringify(w).replace(/"/g, '"')})"><i class="fas fa-edit"></i></button>
+        <button class="btn btn-info btn-sm" onclick="showEnrolForm('workman', ${JSON.stringify(w).replace(/"/g, '&quot;')})"><i class="fas fa-edit"></i></button>
         <button class="btn btn-danger btn-sm" onclick="deletePerson('${w.id || ''}', 'workman')"><i class="fas fa-trash"></i></button>
       </td>
     </tr>
@@ -2297,7 +2297,7 @@ function renderSupervisorTableLegacy2() {
         </span>
       </td>
       <td class="actions">
-        <button class="btn btn-info btn-sm" onclick="showEnrolForm('supervisor', ${JSON.stringify(s).replace(/"/g, '"')})"><i class="fas fa-edit"></i></button>
+        <button class="btn btn-info btn-sm" onclick="showEnrolForm('supervisor', ${JSON.stringify(s).replace(/"/g, '&quot;')})"><i class="fas fa-edit"></i></button>
         <button class="btn btn-danger btn-sm" onclick="deletePerson('${s.id || ''}', 'supervisor')"><i class="fas fa-trash"></i></button>
       </td>
     </tr>

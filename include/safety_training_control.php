@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/training_venue_master.php';
 require_once __DIR__ . '/training_type_master.php';
+require_once __DIR__ . '/training_flow.php';
 
 function clms_safety_table_exists($conn, $table) {
     $safe = mysqli_real_escape_string($conn, $table);
@@ -24,6 +25,170 @@ function clms_safety_ensure_column($conn, $table, $column, $definition) {
     @mysqli_query($conn, "ALTER TABLE `$safeTable` ADD COLUMN `$safeColumn` $definition");
 }
 
+function clms_safety_schedule_email_value($value, $width) {
+    $value = preg_replace('/\s+/', ' ', trim((string)$value));
+    if ($value === '') $value = '-';
+    if (strlen($value) > $width) {
+        $value = substr($value, 0, max(0, $width - 3)) . '...';
+    }
+    return str_pad($value, $width);
+}
+
+function clms_safety_schedule_email_line(array $columns) {
+    $parts = array();
+    foreach ($columns as $column) {
+        $parts[] = clms_safety_schedule_email_value($column[0], (int)$column[1]);
+    }
+    return implode(' | ', $parts);
+}
+
+function clms_safety_send_batch_schedule_emails($conn, array $batch, array $workers, $finalTime) {
+    if (empty($workers)) {
+        return array('attempted' => 0, 'sent' => 0, 'failed' => 0);
+    }
+
+    if (!function_exists('sendEmailNotification')) {
+        $helperPath = dirname(__DIR__) . '/api/helpers.php';
+        if (file_exists($helperPath)) {
+            require_once $helperPath;
+        }
+    }
+    if (!function_exists('sendEmailNotification')) {
+        error_log('[SAFETY_SCHEDULE_EMAIL] sendEmailNotification helper unavailable');
+        return array('attempted' => 0, 'sent' => 0, 'failed' => 0);
+    }
+
+    $byContractor = array();
+    foreach ($workers as $worker) {
+        $contractorId = (int)($worker['contractor_id'] ?? 0);
+        if ($contractorId <= 0) continue;
+        if (!isset($byContractor[$contractorId])) $byContractor[$contractorId] = array();
+        $byContractor[$contractorId][] = $worker;
+    }
+
+    $summary = array('attempted' => 0, 'sent' => 0, 'failed' => 0);
+    $trainingDate = !empty($batch['training_date']) ? date('d M Y', strtotime($batch['training_date'])) : '-';
+    $timeText = substr((string)$finalTime, 0, 5);
+    $sessionText = strtoupper((string)($batch['session_name'] ?? ''));
+    $shiftText = $sessionText === 'AN' ? 'AN / Evening' : 'FN / Morning';
+
+    foreach ($byContractor as $contractorId => $contractorWorkers) {
+        $contractor = db_single(
+            $conn,
+            "SELECT c.id, c.contractor_name, c.vendor_name, c.vendor_code,
+                    c.email AS contractor_email, c.email_address,
+                    u.email AS user_email, u.name AS user_name,
+                    svm.email_address AS sap_email_address,
+                    svm.vendor_name AS sap_vendor_name
+             FROM contractors c
+             LEFT JOIN users u ON u.id = c.user_id OR u.contractor_id = c.vendor_code
+             LEFT JOIN sap_vendor_master svm ON TRIM(svm.vendor_code) = TRIM(c.vendor_code)
+             WHERE c.id = ? OR TRIM(c.vendor_code) = TRIM(?)
+             LIMIT 1",
+            'is',
+            array($contractorId, (string)$contractorId)
+        );
+        if (!$contractor && clms_safety_table_exists($conn, 'sap_vendor_master')) {
+            $contractor = db_single(
+                $conn,
+                "SELECT NULL AS id, vendor_name AS contractor_name, vendor_name,
+                        vendor_code, NULL AS contractor_email, NULL AS email_address,
+                        NULL AS user_email, NULL AS user_name,
+                        email_address AS sap_email_address,
+                        vendor_name AS sap_vendor_name
+                 FROM sap_vendor_master
+                 WHERE TRIM(vendor_code) = TRIM(?)
+                 LIMIT 1",
+                's',
+                array((string)$contractorId)
+            );
+        }
+        if (!$contractor) {
+            error_log('[SAFETY_SCHEDULE_EMAIL] Contractor lookup failed for contractor_id/vendor_code=' . $contractorId);
+            continue;
+        }
+
+        $recipientEmail = '';
+        foreach (array($contractor['sap_email_address'] ?? '', $contractor['contractor_email'] ?? '', $contractor['email_address'] ?? '', $contractor['user_email'] ?? '') as $candidate) {
+            $candidate = trim((string)$candidate);
+            if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
+                $recipientEmail = $candidate;
+                break;
+            }
+        }
+        if ($recipientEmail === '') {
+            error_log('[SAFETY_SCHEDULE_EMAIL] No valid email for contractor_id/vendor_code=' . $contractorId);
+            continue;
+        }
+
+        $contractorName = trim((string)(($contractor['contractor_name'] ?? '') ?: (($contractor['vendor_name'] ?? '') ?: (($contractor['sap_vendor_name'] ?? '') ?: (($contractor['user_name'] ?? '') ?: 'Contractor')))));
+        $vendorCode = trim((string)($contractor['vendor_code'] ?? ''));
+        $h = function($value) {
+            return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+        };
+
+        $rowsHtml = '';
+        $serial = 1;
+        foreach ($contractorWorkers as $worker) {
+            $rowsHtml .= '<tr>'
+                . '<td style="padding:8px 10px;border:1px solid #d9e2ec;text-align:center;">' . $h($serial++) . '</td>'
+                . '<td style="padding:8px 10px;border:1px solid #d9e2ec;white-space:nowrap;">' . $h($worker['temp_id'] ?? '-') . '</td>'
+                . '<td style="padding:8px 10px;border:1px solid #d9e2ec;">' . $h($worker['name'] ?? '-') . '</td>'
+                . '<td style="padding:8px 10px;border:1px solid #d9e2ec;white-space:nowrap;">' . $h($worker['aadhaar'] ?? '-') . '</td>'
+                . '<td style="padding:8px 10px;border:1px solid #d9e2ec;">' . $h($worker['department'] ?? '-') . '</td>'
+                . '<td style="padding:8px 10px;border:1px solid #d9e2ec;">' . $h($worker['trade'] ?? '-') . '</td>'
+                . '<td style="padding:8px 10px;border:1px solid #d9e2ec;text-align:center;font-weight:700;white-space:nowrap;">' . $h($worker['token_number'] ?? '-') . '</td>'
+                . '<td style="padding:8px 10px;border:1px solid #d9e2ec;text-align:center;">' . $h($worker['attempt_no'] ?? '-') . '</td>'
+                . '</tr>';
+        }
+
+        $subject = 'CLMS: Safety Training Batch Scheduled - ' . ($batch['batch_number'] ?? 'Batch');
+        $message = '<!doctype html><html><body style="margin:0;padding:0;background:#f6f8fb;font-family:Arial,Helvetica,sans-serif;color:#172033;">'
+            . '<div style="max-width:980px;margin:0 auto;padding:20px;">'
+            . '<div style="background:#ffffff;border:1px solid #e1e7ef;border-radius:8px;padding:20px;">'
+            . '<p style="margin:0 0 14px 0;">Dear <strong>' . $h($contractorName) . '</strong>,</p>'
+            . '<p style="margin:0 0 18px 0;">Safety training has been finalized/scheduled for the following workmen.</p>'
+            . '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px 0;width:100%;max-width:720px;">'
+            . '<tr><td style="padding:5px 0;font-weight:700;width:150px;">Batch No</td><td style="padding:5px 0;">' . $h($batch['batch_number'] ?? '-') . '</td></tr>'
+            . '<tr><td style="padding:5px 0;font-weight:700;">Training Date</td><td style="padding:5px 0;">' . $h($trainingDate) . '</td></tr>'
+            . '<tr><td style="padding:5px 0;font-weight:700;">Session</td><td style="padding:5px 0;">' . $h($shiftText) . '</td></tr>'
+            . '<tr><td style="padding:5px 0;font-weight:700;">Time</td><td style="padding:5px 0;">' . $h($timeText !== '' ? $timeText : '-') . '</td></tr>'
+            . '<tr><td style="padding:5px 0;font-weight:700;">Venue</td><td style="padding:5px 0;">' . $h(($batch['venue_name'] ?? '') ?: '-') . '</td></tr>'
+            . '<tr><td style="padding:5px 0;font-weight:700;">Training Type</td><td style="padding:5px 0;">' . $h(($batch['training_type'] ?? '') ?: '-') . '</td></tr>'
+            . '<tr><td style="padding:5px 0;font-weight:700;">Trainer</td><td style="padding:5px 0;">' . $h(($batch['instructor_name'] ?? '') ?: '-') . '</td></tr>'
+            . ($vendorCode !== '' ? '<tr><td style="padding:5px 0;font-weight:700;">Vendor Code</td><td style="padding:5px 0;">' . $h($vendorCode) . '</td></tr>' : '')
+            . '</table>'
+            . '<div style="font-weight:700;margin:0 0 8px 0;">Workmen Details</div>'
+            . '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:13px;">'
+            . '<thead><tr style="background:#eef4ff;color:#0f2f5f;">'
+            . '<th style="padding:9px 10px;border:1px solid #cbd8ea;text-align:center;">S.No</th>'
+            . '<th style="padding:9px 10px;border:1px solid #cbd8ea;text-align:left;">Temp ID</th>'
+            . '<th style="padding:9px 10px;border:1px solid #cbd8ea;text-align:left;">Name</th>'
+            . '<th style="padding:9px 10px;border:1px solid #cbd8ea;text-align:left;">Aadhaar</th>'
+            . '<th style="padding:9px 10px;border:1px solid #cbd8ea;text-align:left;">Department</th>'
+            . '<th style="padding:9px 10px;border:1px solid #cbd8ea;text-align:left;">Trade</th>'
+            . '<th style="padding:9px 10px;border:1px solid #cbd8ea;text-align:center;">Token</th>'
+            . '<th style="padding:9px 10px;border:1px solid #cbd8ea;text-align:center;">Attempt</th>'
+            . '</tr></thead><tbody>' . $rowsHtml . '</tbody></table>'
+            . '<p style="margin:18px 0 0 0;">Regards,<br>CLMS</p>'
+            . '</div></div></body></html>';
+        $summary['attempted']++;
+        try {
+            $result = sendEmailNotification($recipientEmail, $subject, $message, 'training_batch_scheduled', $contractorName);
+            if (!empty($result['success'])) {
+                $summary['sent']++;
+            } else {
+                $summary['failed']++;
+                error_log('[SAFETY_SCHEDULE_EMAIL] ' . ($result['message'] ?? 'Email send failed'));
+            }
+        } catch (Throwable $emailError) {
+            $summary['failed']++;
+            error_log('[SAFETY_SCHEDULE_EMAIL] ' . $emailError->getMessage());
+        }
+    }
+
+    return $summary;
+}
 function clms_safety_ensure_index($conn, $table, $indexName, $sql) {
     if (!clms_safety_table_exists($conn, $table)) return;
     $safeTable = str_replace('`', '``', $table);
@@ -82,9 +247,27 @@ function clms_safety_expire_master_rows($conn) {
         @db_execute($conn, "UPDATE master_training_types SET status = 'inactive' WHERE LOWER(COALESCE(status, '')) = 'active' AND to_date < ?", 's', array($today));
     }
     if (clms_safety_table_exists($conn, 'training_class_batches')) {
+        // 1. Expire past-date batches
         @db_execute($conn, "UPDATE training_class_batches SET status = 'inactive', updated_at = NOW() WHERE training_date < ? AND LOWER(COALESCE(status, '')) IN ('draft', 'open', 'scheduled', 'active')", 's', array($today));
+
+        // 2. Expire today's batches where session time has already passed:
+        //    - If time_to is set and is less than current time â†’ expired
+        //    - If time_to is NULL and session_name is 'FN' (Forenoon) and current time > 13:00 â†’ expired
+        //    - If time_to is NULL and session_name is 'AN' (Afternoon/Evening) and current time > 18:00 â†’ expired
+        @mysqli_query($conn, "
+            UPDATE training_class_batches
+            SET status = 'inactive', updated_at = NOW()
+            WHERE training_date = CURDATE()
+              AND LOWER(COALESCE(status, '')) IN ('draft', 'open', 'scheduled', 'active')
+              AND (
+                  (time_to IS NOT NULL AND time_to < CURTIME())
+                  OR (time_to IS NULL AND UPPER(COALESCE(session_name, 'FN')) = 'FN' AND CURTIME() > '13:00:00')
+                  OR (time_to IS NULL AND UPPER(COALESCE(session_name, 'FN')) = 'AN' AND CURTIME() > '18:00:00')
+              )
+        ");
     }
 }
+
 
 function clms_safety_ensure_master_tables($conn) {
     mysqli_query($conn, "CREATE TABLE IF NOT EXISTS safety_instructor_masters (
@@ -147,6 +330,7 @@ function clms_safety_ensure_control_schema($conn) {
     @mysqli_query($conn, "UPDATE training_venue_masters SET venue_code = CONCAT('LOC', LPAD(id, 3, '0')) WHERE COALESCE(TRIM(venue_code), '') = ''");
     clms_safety_ensure_index($conn, 'training_venue_masters', 'uq_training_venue_code', "ALTER TABLE training_venue_masters ADD UNIQUE KEY uq_training_venue_code (venue_code)");
     clms_safety_ensure_column($conn, 'workmen', 'safety_language', 'VARCHAR(50) NULL');
+    clms_safety_ensure_column($conn, 'workmen', 'training_booking_language', 'VARCHAR(50) NULL');
     clms_safety_ensure_column($conn, 'workmen', 'training_status', "VARCHAR(50) DEFAULT 'pending'");
     clms_safety_ensure_column($conn, 'workmen', 'safety_training_status', "VARCHAR(50) DEFAULT 'PENDING_TRAINING'");
     clms_safety_ensure_column($conn, 'workmen', 'eligibility_status', "VARCHAR(50) DEFAULT 'NOT ELIGIBLE'");
@@ -480,6 +664,7 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
     $contractorName = clms_safety_contractors_name_sql($conn, 'c');
     $contractorCode = clms_safety_contractors_code_sql($conn, 'c');
     $workerCreatedExpr = clms_safety_column_exists($conn, 'workmen', 'created_at') ? 'w.created_at' : 'tr.created_at';
+    $attempts30Expr = clms_training_attempts_30_sql('w.id');
 
     return db_fetch_all($conn, "
         SELECT
@@ -492,22 +677,46 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
             w.name,
             w.aadhaar,
             w.temp_id,
-            w.safety_language,
+            w.department,
+            w.trade,
+            w.work_order_no,
+            COALESCE(NULLIF(TRIM(w.training_booking_language), ''), NULLIF(TRIM(w.safety_language), ''), ?) AS safety_language,
             w.contractor_id,
             $contractorCode AS contractor_code,
             $contractorName AS contractor_name,
+            COALESCE(tr.contractor_confirmed, 0) AS contractor_confirmed,
             COALESCE(tbw.ticked, 0) AS ticked,
             tbw.token_number,
             tbw.training_token,
-            COALESCE(tbw.attempt_no,
-                (
-                    SELECT COUNT(*)
-                    FROM training_results r
-                    WHERE r.workman_id = w.id
-                      AND r.created_at >= DATE_SUB(?, INTERVAL 30 DAY)
-                ) + 1
-            ) AS attempt_no,
-            tbw.status AS batch_worker_status
+            COALESCE(tbw.attempt_no, $attempts30Expr + 1) AS attempt_no,
+            tbw.status AS batch_worker_status,
+            EXISTS (
+                SELECT 1
+                FROM training_session_workers tsw
+                WHERE tsw.training_request_id = tr.id
+                  AND (
+                      LOWER(COALESCE(tsw.attendance_status, 'pending')) NOT IN ('pending', '')
+                      OR LOWER(COALESCE(tsw.result, 'pending')) NOT IN ('pending', '')
+                  )
+            ) AS training_started,
+            CASE
+                WHEN COALESCE(tbw.ticked, 0) = 1
+                 AND (
+                    LOWER(COALESCE(tbw.status, '')) IN ('scheduled', 'completed')
+                    OR LOWER(COALESCE(tr.status, '')) IN ('contractor_confirmed', 'passed', 'failed', 'training_passed', 'training_failed')
+                    OR COALESCE(tr.contractor_confirmed, 0) = 1
+                    OR EXISTS (
+                        SELECT 1
+                        FROM training_session_workers tsw_lock
+                        WHERE tsw_lock.training_request_id = tr.id
+                          AND (
+                              LOWER(COALESCE(tsw_lock.attendance_status, 'pending')) NOT IN ('pending', '')
+                              OR LOWER(COALESCE(tsw_lock.result, 'pending')) NOT IN ('pending', '')
+                          )
+                    )
+                 )
+                THEN 1 ELSE 0
+            END AS locked_for_schedule
         FROM training_requests tr
         JOIN workmen w ON w.id = tr.workman_id
         LEFT JOIN contractors c ON c.id = COALESCE(tr.contractor_id, w.contractor_id)
@@ -515,7 +724,8 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
         WHERE (
               (
                   tr.id = ?
-                  AND LOWER(TRIM(COALESCE(NULLIF(TRIM(w.safety_language), ''), ?))) = LOWER(TRIM(?))
+                  AND LOWER(TRIM(COALESCE(NULLIF(TRIM(w.training_booking_language), ''), TRIM(w.safety_language), ?))) = LOWER(TRIM(?))
+                  AND (tbw.id IS NOT NULL OR LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved')
               )
               OR (
                   (
@@ -524,21 +734,18 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
                   )
                   AND (
                       tbw.id IS NOT NULL
-                      OR LOWER(TRIM(COALESCE(NULLIF(TRIM(w.safety_language), ''), ?))) = LOWER(TRIM(?))
+                      OR LOWER(TRIM(COALESCE(NULLIF(TRIM(w.training_booking_language), ''), TRIM(w.safety_language), ?))) = LOWER(TRIM(?))
                   )
-              )
-          )
-          AND (
-              tr.id = ?
-              OR NOT (
-                  COALESCE(tbw.ticked, 0) = 1
-                  AND LOWER(COALESCE(tbw.status, '')) = 'scheduled'
+                  AND (
+                      LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
+                      OR (tbw.id IS NOT NULL AND LOWER(COALESCE(tbw.status, 'draft')) IN ('scheduled', 'completed', 'finalized'))
+                  )
               )
           )
           AND NOT EXISTS (
               SELECT 1
               FROM training_batch_workers used
-              WHERE used.training_request_id = tr.id
+              WHERE used.workman_id = tr.workman_id
                 AND used.batch_id <> ?
                 AND used.ticked = 1
                 AND LOWER(COALESCE(used.status, 'scheduled')) IN ('draft', 'scheduled', 'completed')
@@ -552,9 +759,42 @@ function clms_safety_batch_candidates($conn, $batchId, $forceRequestId = 0) {
               )
           )
         ORDER BY COALESCE(DATE($workerCreatedExpr), tr.requested_date, DATE(tr.created_at)) ASC, tr.id ASC
-    ", 'siissssii', array($batch['training_date'], $batchId, (int)$forceRequestId, $batch['language_name'], $batch['language_name'], $batch['language_name'], $batch['language_name'], (int)$forceRequestId, $batchId));
+    ", 'siissssi', array($batch['language_name'], $batchId, (int)$forceRequestId, $batch['language_name'], $batch['language_name'], $batch['language_name'], $batch['language_name'], $batchId));
 }
 
+function clms_safety_batch_existing_rows($conn, $batchId) {
+    return db_fetch_all(
+        $conn,
+        "SELECT tbw.training_request_id, tbw.workman_id, COALESCE(tbw.ticked, 0) AS ticked,
+                COALESCE(tbw.status, '') AS batch_worker_status,
+                COALESCE(tr.status, '') AS request_status,
+                COALESCE(tr.contractor_confirmed, 0) AS contractor_confirmed,
+                EXISTS (
+                    SELECT 1
+                    FROM training_session_workers tsw
+                    WHERE tsw.training_request_id = tbw.training_request_id
+                      AND (
+                          LOWER(COALESCE(tsw.attendance_status, 'pending')) NOT IN ('pending', '')
+                          OR LOWER(COALESCE(tsw.result, 'pending')) NOT IN ('pending', '')
+                      )
+                ) AS training_started
+         FROM training_batch_workers tbw
+         LEFT JOIN training_requests tr ON tr.id = tbw.training_request_id
+         WHERE tbw.batch_id = ?",
+        'i',
+        array((int)$batchId)
+    );
+}
+
+function clms_safety_batch_row_locked($row) {
+    if ((int)($row['ticked'] ?? 0) !== 1) return false;
+    $requestStatus = strtolower((string)($row['request_status'] ?? ''));
+    $batchStatus = strtolower((string)($row['batch_worker_status'] ?? ''));
+    return in_array($batchStatus, array('scheduled', 'completed'), true)
+        || in_array($requestStatus, array('contractor_confirmed', 'passed', 'failed', 'training_passed', 'training_failed'), true)
+        || (int)($row['contractor_confirmed'] ?? 0) === 1
+        || (int)($row['training_started'] ?? 0) === 1;
+}
 function clms_safety_active_rows($rows) {
     $out = array();
     $today = date('Y-m-d');
@@ -665,24 +905,18 @@ function clms_safety_reschedule_batch($conn, $batchId, array $data, $userId = 0)
     $batch = db_single($conn, "SELECT * FROM training_class_batches WHERE id = ? LIMIT 1", 'i', array((int)$batchId));
     if (!$batch) throw new RuntimeException('Invalid batch selection.');
 
-    $startedCount = db_count(
+    $lockedSessionCount = db_count(
         $conn,
         "SELECT COUNT(*)
-         FROM training_batch_workers tbw
-         JOIN training_session_workers tsw ON tsw.training_request_id = tbw.training_request_id
-         WHERE tbw.batch_id = ?
-           AND tbw.ticked = 1
-           AND (
-               LOWER(COALESCE(tsw.attendance_status, 'pending')) NOT IN ('pending', '')
-               OR LOWER(COALESCE(tsw.result, 'pending')) NOT IN ('pending', '')
-           )",
-        'i',
-        array((int)$batchId)
+         FROM training_schedule ts
+         WHERE ts.batch_number = ?
+           AND LOWER(COALESCE(ts.session_status, 'open')) IN ('completed', 'locked')",
+        's',
+        array((string)$batch['batch_number'])
     );
-    if ($startedCount > 0) {
-        throw new RuntimeException('Training attendance/result has already started for this batch. It cannot be rescheduled.');
+    if ($lockedSessionCount > 0) {
+        throw new RuntimeException('This training session is already completed/locked. It cannot be rescheduled.');
     }
-
     $trainingDate = trim((string)($data['reschedule_date'] ?? $batch['training_date']));
     $venueId = (int)($data['reschedule_venue_id'] ?? ($batch['venue_id'] ?? 0));
     $sessionName = strtoupper(trim((string)($data['reschedule_session_name'] ?? $batch['session_name'] ?? 'FN')));
@@ -770,6 +1004,22 @@ function clms_safety_reschedule_batch($conn, $batchId, array $data, $userId = 0)
 
         db_execute(
             $conn,
+            "UPDATE training_session_workers tsw
+             JOIN training_batch_workers tbw ON tbw.training_request_id = tsw.training_request_id
+             SET tsw.attendance_status = 'pending',
+                 tsw.result = 'pending',
+                 tsw.theory_score = 0,
+                 tsw.practical_score = 0,
+                 tsw.total_score = 0,
+                 tsw.valid_till = NULL,
+                 tsw.remarks = NULL
+             WHERE tbw.batch_id = ? AND tbw.ticked = 1",
+            'i',
+            array((int)$batchId)
+        );
+
+        db_execute(
+            $conn,
             "UPDATE training_requests tr
              JOIN training_batch_workers tbw ON tbw.training_request_id = tr.id
              SET tr.training_type = ?, tr.scheduled_date = ?, tr.scheduled_shift = ?, tr.scheduled_venue = ?,
@@ -819,6 +1069,7 @@ function clms_safety_add_requests_to_batch($conn, $batchId, array $requestIds, $
         throw new RuntimeException('Maximum seat limit exceeded. Only ' . max(0, $capacity - $existingSelected) . ' seat(s) are available in this batch.');
     }
 
+    $attempts30ForBatchExpr = clms_training_attempts_30_sql('tr.workman_id', '?');
     $conn->begin_transaction();
     try {
         $added = 0;
@@ -835,12 +1086,7 @@ function clms_safety_add_requests_to_batch($conn, $batchId, array $requestIds, $
                               AND used.ticked = 1
                               AND LOWER(COALESCE(used.status, 'scheduled')) IN ('scheduled', 'completed')
                         ) AS used_elsewhere,
-                        (
-                            SELECT COUNT(*)
-                            FROM training_results r
-                            WHERE r.workman_id = tr.workman_id
-                              AND r.created_at >= DATE_SUB(?, INTERVAL 30 DAY)
-                        ) + 1 AS attempt_no
+                        $attempts30ForBatchExpr + 1 AS attempt_no
                  FROM training_requests tr
                  JOIN workmen w ON w.id = tr.workman_id
                  LEFT JOIN training_batch_workers tbw_same ON tbw_same.batch_id = ? AND tbw_same.training_request_id = tr.id
@@ -890,14 +1136,7 @@ function clms_safety_schedule_batch($conn, $batchId, $selectedRequestIds, $userI
 
     $capacityInfo = clms_safety_batch_capacity_summary($conn, $batch);
     $capacity = (int)$capacityInfo['total'];
-    $selectedRequestIds = array_values(array_unique(array_map('intval', (array)$selectedRequestIds)));
-    $selectedRequestIds = array_filter($selectedRequestIds, function($id) { return $id > 0; });
-    if (count($selectedRequestIds) > $capacity) {
-        throw new RuntimeException('Maximum seat limit exceeded.');
-    }
-    if (!$selectedRequestIds) {
-        throw new RuntimeException('Please select at least one worker to schedule.');
-    }
+    $selectedRequestIds = array_values(array_unique(array_filter(array_map('intval', (array)$selectedRequestIds), function($id) { return $id > 0; })));
 
     $candidates = clms_safety_batch_candidates($conn, $batchId, (int)$forceRequestId);
     $candidateMap = array();
@@ -908,8 +1147,45 @@ function clms_safety_schedule_batch($conn, $batchId, $selectedRequestIds, $userI
     $finalTime = $batch['time_from'] ?: ($batch['session_name'] === 'AN' ? '14:00:00' : '09:00:00');
     $shift = $batch['session_name'] === 'AN' ? 'evening' : 'morning';
 
+    $scheduledEmailWorkers = array();
+
     $conn->begin_transaction();
     try {
+        $selectedMap = array();
+        foreach ($selectedRequestIds as $selectedId) {
+            $selectedMap[(int)$selectedId] = true;
+        }
+
+        $lockedRequestIds = array();
+        $existingRows = clms_safety_batch_existing_rows($conn, $batchId);
+        foreach ($existingRows as $existing) {
+            $existingRequestId = (int)$existing['training_request_id'];
+            if (clms_safety_batch_row_locked($existing)) {
+                $lockedRequestIds[$existingRequestId] = true;
+            }
+        }
+
+        $newSelectedRequestIds = array();
+        foreach ($selectedRequestIds as $requestId) {
+            $requestId = (int)$requestId;
+            if (isset($lockedRequestIds[$requestId])) {
+                continue;
+            }
+            $newSelectedRequestIds[] = $requestId;
+        }
+        $newSelectedRequestIds = array_values(array_unique($newSelectedRequestIds));
+
+        if (!$newSelectedRequestIds) {
+            if (count($lockedRequestIds) > 0) {
+                throw new RuntimeException('This batch is already finalized. Select newly added workers before finalizing again.');
+            }
+            throw new RuntimeException('Please select at least one worker to schedule.');
+        }
+
+        if ((count($lockedRequestIds) + count($newSelectedRequestIds)) > $capacity) {
+            throw new RuntimeException('Maximum seat limit exceeded. Finalized workers are already part of this batch.');
+        }
+
         $session = db_single($conn, "SELECT id FROM training_schedule WHERE batch_number = ? LIMIT 1", 's', array($batch['batch_number']));
         if (!$session) {
             db_execute(
@@ -932,73 +1208,41 @@ function clms_safety_schedule_batch($conn, $batchId, $selectedRequestIds, $userI
             );
         }
 
-        $selectedMap = array();
-        foreach ($selectedRequestIds as $selectedId) {
-            $selectedMap[(int)$selectedId] = true;
-        }
-
-        $existingRows = db_fetch_all(
-            $conn,
-            "SELECT tbw.training_request_id, tbw.workman_id,
-                    COALESCE(tr.status, '') AS request_status,
-                    COALESCE(tr.contractor_confirmed, 0) AS contractor_confirmed,
-                    EXISTS (
-                        SELECT 1
-                        FROM training_session_workers tsw
-                        WHERE tsw.training_request_id = tbw.training_request_id
-                          AND (
-                              LOWER(COALESCE(tsw.attendance_status, 'pending')) NOT IN ('pending', '')
-                              OR LOWER(COALESCE(tsw.result, 'pending')) NOT IN ('pending', '')
-                          )
-                    ) AS training_started
-             FROM training_batch_workers tbw
-             LEFT JOIN training_requests tr ON tr.id = tbw.training_request_id
-             WHERE tbw.batch_id = ?",
-            'i',
-            array($batchId)
-        );
-
         foreach ($existingRows as $existing) {
             $existingRequestId = (int)$existing['training_request_id'];
-            $isLocked = strtolower((string)$existing['request_status']) === 'contractor_confirmed'
-                || (int)$existing['contractor_confirmed'] === 1
-                || (int)$existing['training_started'] === 1;
-
-            if ($isLocked && !isset($selectedMap[$existingRequestId])) {
-                throw new RuntimeException('Already confirmed/started workers cannot be removed from this batch. Keep them selected and create another batch if seats are full.');
+            if (isset($lockedRequestIds[$existingRequestId]) || isset($selectedMap[$existingRequestId])) {
+                continue;
             }
 
-            if (!$isLocked && !isset($selectedMap[$existingRequestId])) {
-                db_execute(
-                    $conn,
-                    "UPDATE training_batch_workers SET ticked = 0, token_number = NULL, training_token = NULL, status = 'waiting' WHERE batch_id = ? AND training_request_id = ?",
-                    'ii',
-                    array($batchId, $existingRequestId)
-                );
-                db_execute($conn, "DELETE FROM training_session_workers WHERE training_request_id = ?", 'i', array($existingRequestId));
-                db_execute(
-                    $conn,
-                    "UPDATE training_requests
-                     SET status = 'pending_safety',
-                         contractor_confirmed = 0,
-                         scheduled_session_id = NULL,
-                         batch_number = NULL,
-                         updated_at = NOW()
-                     WHERE id = ? AND status IN ('scheduled', 'pending', 'welfare_pending', 'pending_safety', 'contractor_confirmed')",
-                    'i',
-                    array($existingRequestId)
-                );
-                db_execute(
-                    $conn,
-                    "UPDATE workmen SET training_status = 'pending', safety_training_status = 'PENDING_TRAINING' WHERE id = ?",
-                    'i',
-                    array((int)$existing['workman_id'])
-                );
-            }
+            db_execute(
+                $conn,
+                "UPDATE training_batch_workers SET ticked = 0, token_number = NULL, training_token = NULL, status = 'waiting' WHERE batch_id = ? AND training_request_id = ?",
+                'ii',
+                array($batchId, $existingRequestId)
+            );
+            db_execute($conn, "DELETE FROM training_session_workers WHERE training_request_id = ?", 'i', array($existingRequestId));
+            db_execute(
+                $conn,
+                "UPDATE training_requests
+                 SET status = 'pending_safety',
+                     contractor_confirmed = 0,
+                     scheduled_session_id = NULL,
+                     batch_number = NULL,
+                     updated_at = NOW()
+                 WHERE id = ? AND status IN ('scheduled', 'pending', 'welfare_pending', 'pending_safety', 'contractor_confirmed')",
+                'i',
+                array($existingRequestId)
+            );
+            db_execute(
+                $conn,
+                "UPDATE workmen SET training_status = 'pending', safety_training_status = 'PENDING_TRAINING' WHERE id = ?",
+                'i',
+                array((int)$existing['workman_id'])
+            );
         }
 
-        $counter = 1;
-        foreach ($selectedRequestIds as $requestId) {
+        $counter = count($lockedRequestIds) + 1;
+        foreach ($newSelectedRequestIds as $requestId) {
             if (!isset($candidateMap[$requestId])) {
                 throw new RuntimeException('One selected worker is not eligible for this batch language.');
             }
@@ -1008,63 +1252,87 @@ function clms_safety_schedule_batch($conn, $batchId, $selectedRequestIds, $userI
                 throw new RuntimeException(($candidate['name'] ?? 'Worker') . ' has reached maximum 3 attempts. Please apply for training again.');
             }
 
-            $token = clms_safety_generate_unique_token_number($conn);
-            $trainingToken = clms_safety_generate_training_token($batch['training_date'], $counter);
+            $completedAttempt = db_single(
+                $conn,
+                "SELECT tr.id, tr.status,
+                        EXISTS (
+                            SELECT 1
+                            FROM training_session_workers tsw_done
+                            WHERE tsw_done.training_request_id = tr.id
+                              AND LOWER(COALESCE(tsw_done.result, 'pending')) IN ('pass', 'passed', 'fail', 'failed')
+                        ) AS has_session_result,
+                        EXISTS (
+                            SELECT 1
+                            FROM training_results trr_done
+                            WHERE trr_done.training_request_id = tr.id
+                              AND LOWER(COALESCE(trr_done.result, '')) IN ('pass', 'passed', 'fail', 'failed')
+                        ) AS has_result_row
+                 FROM training_requests tr
+                 WHERE tr.id = ?
+                 LIMIT 1",
+                'i',
+                array((int)$requestId)
+            );
+            $requestAlreadyCompleted = $completedAttempt && (
+                in_array(strtolower((string)($completedAttempt['status'] ?? '')), array('passed', 'pass', 'failed', 'fail', 'absent', 'training_passed', 'training_failed'), true)
+                || (int)($completedAttempt['has_session_result'] ?? 0) === 1
+                || (int)($completedAttempt['has_result_row'] ?? 0) === 1
+            );
+            if ($requestAlreadyCompleted) {
+                $newRemarks = 'Re-training attempt ' . $attemptNo . ' of 3 scheduled after previous training result.';
+                $created = db_execute(
+                    $conn,
+                    "INSERT INTO training_requests
+                        (workman_id, contractor_id, training_type, requested_date, preferred_date, preferred_shift, remarks, source, requested_by, status, created_at, updated_at)
+                     VALUES (?, ?, ?, CURDATE(), ?, ?, ?, 'safety_retest', ?, 'pending_safety', NOW(), NOW())",
+                    'iissssi',
+                    array((int)$candidate['workman_id'], (int)$candidate['contractor_id'], $batch['training_type'], $batch['training_date'], $shift, $newRemarks, (int)$userId)
+                );
+                if (!$created) {
+                    throw new RuntimeException('Could not create a fresh training request for re-test. Please try again.');
+                }
+                $requestId = (int)mysqli_insert_id($conn);
+            }
+
+            $token = !empty($candidate['token_number']) ? (string)$candidate['token_number'] : clms_safety_generate_unique_token_number($conn);
+            $trainingToken = !empty($candidate['training_token']) ? (string)$candidate['training_token'] : clms_safety_generate_training_token($batch['training_date'], $counter);
             db_execute(
                 $conn,
                 "INSERT INTO training_batch_workers (batch_id, training_request_id, workman_id, ticked, token_number, training_token, attempt_no, status, scheduled_at, created_at)
                  VALUES (?, ?, ?, 1, ?, ?, ?, 'scheduled', NOW(), NOW())
-                 ON DUPLICATE KEY UPDATE training_request_id = VALUES(training_request_id), ticked = 1, token_number = VALUES(token_number), training_token = VALUES(training_token), attempt_no = VALUES(attempt_no), status = 'scheduled', scheduled_at = NOW()",
+                 ON DUPLICATE KEY UPDATE training_request_id = VALUES(training_request_id), ticked = 1, token_number = VALUES(token_number), training_token = VALUES(training_token), attempt_no = VALUES(attempt_no), status = 'scheduled', scheduled_at = COALESCE(training_batch_workers.scheduled_at, NOW())",
                 'iiissi',
                 array($batchId, $requestId, (int)$candidate['workman_id'], $token, $trainingToken, $attemptNo)
             );
-            $currentReq = db_single($conn, "SELECT status, contractor_confirmed FROM training_requests WHERE id = ? LIMIT 1", 'i', array($requestId));
-            $isConfirmed = $currentReq && (strtolower((string)$currentReq['status']) === 'contractor_confirmed' || (int)($currentReq['contractor_confirmed'] ?? 0) === 1);
-            if ($isConfirmed) {
-                db_execute(
-                    $conn,
-                    "UPDATE training_requests
-                     SET training_type = ?, scheduled_date = ?, scheduled_shift = ?, scheduled_venue = ?, scheduled_time = ?,
-                         batch_number = ?, instructor = ?, contractor_confirmed = 1, scheduled_by = ?, scheduled_session_id = ?,
-                         status = 'contractor_confirmed', updated_at = NOW()
-                     WHERE id = ?",
-                    'sssssssiii',
-                    array($batch['training_type'], $batch['training_date'], $shift, $batch['venue_name'], $finalTime, $batch['batch_number'], $batch['instructor_name'] ?? '', $userId, $sessionId, $requestId)
-                );
-                db_execute(
-                    $conn,
-                    "INSERT INTO training_session_workers (session_id, workman_id, training_request_id, attendance_status, result, created_at)
-                     VALUES (?, ?, ?, 'pending', 'pending', NOW())
-                     ON DUPLICATE KEY UPDATE session_id = VALUES(session_id)",
-                    'iii',
-                    array($sessionId, (int)$candidate['workman_id'], $requestId)
-                );
-            } else {
-                db_execute(
-                    $conn,
-                    "UPDATE training_requests
-                     SET training_type = ?, scheduled_date = ?, scheduled_shift = ?, scheduled_venue = ?, scheduled_time = ?,
-                         batch_number = ?, instructor = ?, contractor_confirmed = 0, scheduled_by = ?, scheduled_session_id = ?,
-                         status = 'scheduled', updated_at = NOW()
-                     WHERE id = ?",
-                    'sssssssiii',
-                    array($batch['training_type'], $batch['training_date'], $shift, $batch['venue_name'], $finalTime, $batch['batch_number'], $batch['instructor_name'] ?? '', $userId, $sessionId, $requestId)
-                );
-                db_execute(
-                    $conn,
-                    "INSERT INTO training_session_workers (session_id, workman_id, training_request_id, attendance_status, result, created_at)
-                     VALUES (?, ?, ?, 'pending', 'pending', NOW())
-                     ON DUPLICATE KEY UPDATE session_id = VALUES(session_id)",
-                    'iii',
-                    array($sessionId, (int)$candidate['workman_id'], $requestId)
-                );
-            }
+            db_execute(
+                $conn,
+                "UPDATE training_requests
+                 SET training_type = ?, scheduled_date = ?, scheduled_shift = ?, scheduled_venue = ?, scheduled_time = ?,
+                     batch_number = ?, instructor = ?, contractor_confirmed = 1, scheduled_by = ?, scheduled_session_id = ?,
+                     status = 'contractor_confirmed', updated_at = NOW()
+                 WHERE id = ?",
+                'sssssssiii',
+                array($batch['training_type'], $batch['training_date'], $shift, $batch['venue_name'], $finalTime, $batch['batch_number'], $batch['instructor_name'] ?? '', $userId, $sessionId, $requestId)
+            );
+            db_execute(
+                $conn,
+                "INSERT INTO training_session_workers (session_id, workman_id, training_request_id, attendance_status, result, created_at)
+                 VALUES (?, ?, ?, 'pending', 'pending', NOW())
+                 ON DUPLICATE KEY UPDATE session_id = VALUES(session_id)",
+                'iii',
+                array($sessionId, (int)$candidate['workman_id'], $requestId)
+            );
             db_execute(
                 $conn,
                 "UPDATE workmen SET training_status = 'scheduled', safety_training_status = 'TRAINING_SCHEDULED' WHERE id = ?",
                 'i',
                 array((int)$candidate['workman_id'])
             );
+            $candidate['training_request_id'] = $requestId;
+            $candidate['token_number'] = $token;
+            $candidate['training_token'] = $trainingToken;
+            $candidate['attempt_no'] = $attemptNo;
+            $scheduledEmailWorkers[] = $candidate;
             $counter++;
         }
 
@@ -1083,7 +1351,8 @@ function clms_safety_schedule_batch($conn, $batchId, $selectedRequestIds, $userI
         );
         db_execute($conn, "UPDATE training_class_batches SET status = 'scheduled', updated_at = NOW() WHERE id = ?", 'i', array($batchId));
         $conn->commit();
-        return array('batch_number' => $batch['batch_number'], 'scheduled' => count($selectedRequestIds), 'session_id' => $sessionId);
+        $emailSummary = clms_safety_send_batch_schedule_emails($conn, $batch, $scheduledEmailWorkers, $finalTime);
+        return array('batch_number' => $batch['batch_number'], 'scheduled' => count($newSelectedRequestIds), 'session_id' => $sessionId, 'email' => $emailSummary);
     } catch (Throwable $e) {
         $conn->rollback();
         throw $e;
@@ -1111,10 +1380,48 @@ function clms_safety_save_batch_selection($conn, $batchId, $selectedRequestIds, 
 
     $conn->begin_transaction();
     try {
-        db_execute($conn, "UPDATE training_batch_workers SET ticked = 0, status = 'waiting', token_number = NULL, training_token = NULL WHERE batch_id = ?", 'i', array($batchId));
+        $selectedMap = array();
+        foreach ($selectedRequestIds as $selectedId) {
+            $selectedMap[(int)$selectedId] = true;
+        }
+
+        $lockedRequestIds = array();
+        $existingRows = clms_safety_batch_existing_rows($conn, $batchId);
+        foreach ($existingRows as $existing) {
+            $existingRequestId = (int)$existing['training_request_id'];
+            $isLocked = clms_safety_batch_row_locked($existing);
+
+            if ($isLocked) {
+                $lockedRequestIds[$existingRequestId] = true;
+                if (!isset($selectedMap[$existingRequestId])) {
+                    $selectedMap[$existingRequestId] = true;
+                    $selectedRequestIds[] = $existingRequestId;
+                }
+                continue;
+            }
+
+            if (!isset($selectedMap[$existingRequestId])) {
+                db_execute(
+                    $conn,
+                    "UPDATE training_batch_workers SET ticked = 0, status = 'waiting', token_number = NULL, training_token = NULL WHERE batch_id = ? AND training_request_id = ?",
+                    'ii',
+                    array($batchId, $existingRequestId)
+                );
+            }
+        }
+
+        $selectedRequestIds = array_values(array_unique(array_filter(array_map('intval', $selectedRequestIds), function($id) { return $id > 0; })));
+        if (count($selectedRequestIds) > $capacity) {
+            throw new RuntimeException('Maximum seat limit exceeded. Finalized workers are already part of this batch.');
+        }
 
         $counter = 1;
         foreach ($selectedRequestIds as $requestId) {
+            $requestId = (int)$requestId;
+            if (isset($lockedRequestIds[$requestId])) {
+                $counter++;
+                continue;
+            }
             if (!isset($candidateMap[$requestId])) {
                 throw new RuntimeException('One selected worker is not eligible for this batch language.');
             }
@@ -1123,8 +1430,8 @@ function clms_safety_save_batch_selection($conn, $batchId, $selectedRequestIds, 
             if ($attemptNo > 3) {
                 throw new RuntimeException(($candidate['name'] ?? 'Worker') . ' has reached maximum 3 attempts. Please apply for training again.');
             }
-            $token = clms_safety_generate_unique_token_number($conn);
-            $trainingToken = clms_safety_generate_training_token($batch['training_date'], $counter);
+            $token = !empty($candidate['token_number']) ? (string)$candidate['token_number'] : clms_safety_generate_unique_token_number($conn);
+            $trainingToken = !empty($candidate['training_token']) ? (string)$candidate['training_token'] : clms_safety_generate_training_token($batch['training_date'], $counter);
             db_execute(
                 $conn,
                 "INSERT INTO training_batch_workers (batch_id, training_request_id, workman_id, ticked, token_number, training_token, attempt_no, status, created_at)
@@ -1136,7 +1443,8 @@ function clms_safety_save_batch_selection($conn, $batchId, $selectedRequestIds, 
             $counter++;
         }
 
-        db_execute($conn, "UPDATE training_class_batches SET status = 'draft', updated_at = NOW() WHERE id = ?", 'i', array($batchId));
+        $batchStatus = count($lockedRequestIds) > 0 ? 'scheduled' : 'draft';
+        db_execute($conn, "UPDATE training_class_batches SET status = ?, updated_at = NOW() WHERE id = ?", 'si', array($batchStatus, $batchId));
         $conn->commit();
         return array('batch_number' => $batch['batch_number'], 'selected' => count($selectedRequestIds));
     } catch (Throwable $e) {

@@ -299,13 +299,23 @@ try {
         $workerNameExpr = safetyResultsColumnExists($conn, 'workmen', 'name') ? 'w.name' : "CONCAT('Worker #', w.id)";
         $workerTradeExpr = safetyResultsColumnExists($conn, 'workmen', 'trade') ? 'w.trade' : "''";
         $workerAppExpr = safetyResultsColumnExists($conn, 'workmen', 'application_no') ? 'w.application_no' : "''";
+        
+        $workerCurrent = db_single($conn, "SELECT training_status FROM workmen WHERE id=?", 'i', [$workman_id]);
+        $alreadyPassed = false;
+        if ($workerCurrent) {
+            $currStatus = strtolower(trim((string)$workerCurrent['training_status']));
+            if (in_array($currStatus, ['training_passed', 'pass', 'passed', 'qualified', 'completed'])) {
+                $alreadyPassed = true;
+            }
+        }
+
         $mapping = db_single(
             $conn,
             "SELECT tsw.attendance_status, tsw.training_request_id, $workerNameExpr AS name, $workerTradeExpr AS trade, $workerAppExpr AS application_no
              FROM training_session_workers tsw
              JOIN training_requests tr ON tr.id = tsw.training_request_id
              JOIN workmen w ON w.id = tsw.workman_id
-             WHERE tsw.session_id=? AND tsw.workman_id=? AND tr.status = 'contractor_confirmed'",
+             WHERE tsw.session_id=? AND tsw.workman_id=?",
             'ii',
             [$session_id, $workman_id]
         );
@@ -332,24 +342,27 @@ try {
             $final_status = ($res == 'pass') ? 'training_passed' : 'training_failed';
             $safetyStatus = ($res == 'pass') ? 'TRAINING_PASSED' : 'TRAINING_FAILED';
             $eligibility = ($res == 'pass') ? 'ELIGIBLE' : 'NOT ELIGIBLE';
-            safetyResultsUpdateExistingColumns(
-                $conn,
-                'workmen',
-                [
-                    'training_status' => ['value' => $final_status, 'type' => 's'],
-                    'eligibility_status' => ['value' => $eligibility, 'type' => 's'],
-                    'training_valid_till' => ['value' => $valid, 'type' => 's'],
-                    'safety_training_status' => ['value' => $safetyStatus, 'type' => 's'],
-                    'updated_at' => ['raw' => 'NOW()'],
-                ],
-                'id = ?',
-                'i',
-                [$workman_id]
-            );
+            
+            if ($res === 'pass' || !$alreadyPassed) {
+                safetyResultsUpdateExistingColumns(
+                    $conn,
+                    'workmen',
+                    [
+                        'training_status' => ['value' => $final_status, 'type' => 's'],
+                        'eligibility_status' => ['value' => $eligibility, 'type' => 's'],
+                        'training_valid_till' => ['value' => $valid, 'type' => 's'],
+                        'safety_training_status' => ['value' => $safetyStatus, 'type' => 's'],
+                        'updated_at' => ['raw' => 'NOW()'],
+                    ],
+                    'id = ?',
+                    'i',
+                    [$workman_id]
+                );
+            }
             
             // Sync with training_requests status
             $req_status = ($res == 'pass') ? 'passed' : 'failed';
-            db_execute($conn, "UPDATE training_requests SET status = ?, conduct_remarks = ?, updated_at = NOW() WHERE id = ? AND status = 'contractor_confirmed'", 'ssi', [$req_status, $rem, (int)$mapping['training_request_id']]);
+            db_execute($conn, "UPDATE training_requests SET status = ?, conduct_remarks = ?, updated_at = NOW() WHERE id = ? AND status IN ('contractor_confirmed', 'passed', 'failed')", 'ssi', [$req_status, $rem, (int)$mapping['training_request_id']]);
 
             $existingResult = db_single(
                 $conn,
@@ -407,24 +420,27 @@ try {
         } else {
             // If absent, result is automatically failed
             db_execute($conn, "UPDATE training_session_workers SET result='fail', theory_score=0, practical_score=0, total_score=0, pass_mark=?, remarks='Marked Fail due to Absence' WHERE session_id=? AND workman_id=?", 'iii', [$passMark, $session_id, $workman_id]);
-            safetyResultsUpdateExistingColumns(
-                $conn,
-                'workmen',
-                [
-                    'training_status' => ['value' => 'training_failed', 'type' => 's'],
-                    'eligibility_status' => ['value' => 'NOT ELIGIBLE', 'type' => 's'],
-                    'training_valid_till' => ['raw' => 'NULL'],
-                    'safety_training_status' => ['value' => 'TRAINING_FAILED', 'type' => 's'],
-                    'updated_at' => ['raw' => 'NOW()'],
-                ],
-                'id = ?',
-                'i',
-                [$workman_id]
-            );
+            
+            if (!$alreadyPassed) {
+                safetyResultsUpdateExistingColumns(
+                    $conn,
+                    'workmen',
+                    [
+                        'training_status' => ['value' => 'training_failed', 'type' => 's'],
+                        'eligibility_status' => ['value' => 'NOT ELIGIBLE', 'type' => 's'],
+                        'training_valid_till' => ['raw' => 'NULL'],
+                        'safety_training_status' => ['value' => 'TRAINING_FAILED', 'type' => 's'],
+                        'updated_at' => ['raw' => 'NOW()'],
+                    ],
+                    'id = ?',
+                    'i',
+                    [$workman_id]
+                );
+            }
             
             // Sync with training_requests status
             if ($mapping && !empty($mapping['training_request_id'])) {
-                db_execute($conn, "UPDATE training_requests SET status = 'failed', conduct_remarks = 'Absent in session', updated_at = NOW() WHERE id = ? AND status = 'contractor_confirmed'", 'i', [(int)$mapping['training_request_id']]);
+                db_execute($conn, "UPDATE training_requests SET status = 'failed', conduct_remarks = 'Absent in session', updated_at = NOW() WHERE id = ? AND status IN ('contractor_confirmed', 'passed', 'failed')", 'i', [(int)$mapping['training_request_id']]);
             }
         }
     }

@@ -79,12 +79,17 @@ function requestGatePassDocs($conn, $workmanId, $requestId) {
 
     if ($requestId && documentColumnExists($conn, 'gate_pass_request_id')) {
         $linked = $conn->query("
-            SELECT document_type, file_path, COALESCE(status, 'pending') AS status
-            FROM documents
-            WHERE workman_id = $workmanId
-              AND gate_pass_request_id = $requestId
-              AND " . gatePassDocMatchSql($gatePassDocTypesSql) . "
-            ORDER BY id DESC
+            SELECT d.document_type, d.file_path, COALESCE(d.status, 'pending') AS status
+            FROM documents d
+            JOIN (
+                SELECT document_type, MAX(id) AS latest_id
+                FROM documents
+                WHERE workman_id = $workmanId
+                  AND gate_pass_request_id = $requestId
+                  AND " . gatePassDocMatchSql($gatePassDocTypesSql) . "
+                GROUP BY document_type
+            ) latest_docs ON latest_docs.latest_id = d.id
+            ORDER BY d.id DESC
         ");
         while ($linked && ($row = $linked->fetch_assoc())) {
             $docs[] = $row;

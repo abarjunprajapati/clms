@@ -74,6 +74,7 @@ function renderContent() {
         <table class="validity-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>Workman</th>
               <th>Contractor</th>
               <th>Current Validity</th>
@@ -82,7 +83,7 @@ function renderContent() {
             </tr>
           </thead>
           <tbody>
-            <?php foreach($expiring as $e): 
+            <?php $sno = 1; foreach($expiring as $e): 
                 $is_temp = ($e['status'] === 'temporary_issued');
                 $expiry_date = $e['expiry_date'];
                 if (!$expiry_date) continue;
@@ -90,6 +91,7 @@ function renderContent() {
                 $threshold = $is_temp ? 3 : 7;
             ?>
             <tr>
+              <td><?= $sno++ ?></td>
               <td>
                 <div style="font-weight:600"><?= htmlspecialchars($e['name']) ?></div>
                 <div style="font-size:11px; opacity:0.6"><?= htmlspecialchars($e['acc_number'] ?: 'Temporary') ?></div>

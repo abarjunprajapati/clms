@@ -84,7 +84,14 @@ function sendResponse($success, $data = [], $message = "Success", $debug = null,
         header('Content-Type: application/json; charset=utf-8');
     }
     
-    echo json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $encoded = json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if ($encoded === false) {
+        $errorMsg = json_last_error_msg();
+        // Fallback to minimal JSON to prevent empty responses on encoding failures
+        echo '{"success":false,"message":"JSON Encoding Error: ' . addslashes($errorMsg) . '","data":[]}';
+    } else {
+        echo $encoded;
+    }
     exit;
 }
 
@@ -246,7 +253,7 @@ function smtpDataBody($data) {
     return implode("\r\n", $lines);
 }
 
-function sendEmailViaSmtp($to, $subject, $message, $from, $fromName) {
+function sendEmailViaSmtp($to, $subject, $message, $from, $fromName, $isHtml = false) {
     global $conn;
 
     $host = notificationEnv('EMAIL_SMTP_HOST', notificationSetting($conn ?? null, 'email_smtp_host', defined('EMAIL_SMTP_HOST') ? EMAIL_SMTP_HOST : ''));
@@ -296,7 +303,7 @@ function sendEmailViaSmtp($to, $subject, $message, $from, $fromName) {
             'To: <' . $to . '>',
             'Subject: ' . emailHeaderEncode($subject),
             'MIME-Version: 1.0',
-            'Content-Type: text/plain; charset=UTF-8',
+            'Content-Type: ' . ($isHtml ? 'text/html' : 'text/plain') . '; charset=UTF-8',
             'Content-Transfer-Encoding: 8bit'
         ];
         fwrite($socket, implode("\r\n", $headers) . "\r\n\r\n" . smtpDataBody($message) . "\r\n.\r\n");
@@ -476,14 +483,15 @@ function sendEmailNotification($to, $subject, $message, $type = 'general', $reci
     $from = notificationEnv('EMAIL_FROM', notificationSetting($conn ?? null, 'email_from', defined('EMAIL_FROM') ? EMAIL_FROM : 'no-reply@clms.local'));
     $fromName = notificationEnv('EMAIL_FROM_NAME', notificationSetting($conn ?? null, 'email_from_name', defined('EMAIL_FROM_NAME') ? EMAIL_FROM_NAME : 'CLMS'));
     $mailer = strtolower(trim(notificationEnv('EMAIL_MAILER', notificationSetting($conn ?? null, 'email_mailer', defined('EMAIL_MAILER') ? EMAIL_MAILER : 'smtp'))));
+    $isHtml = preg_match('/<\s*(?:!doctype|html|body|table|div|p|br|strong|span|tr|td|th)\b/i', (string)$message) === 1;
 
     if ($mailer === 'smtp') {
-        $result = sendEmailViaSmtp($to, $subject, $message, $from, $fromName);
+        $result = sendEmailViaSmtp($to, $subject, $message, $from, $fromName, $isHtml);
         if (!$result['success']) {
             // Resilient fallback to PHP mail()
             $headers = [
                 'MIME-Version: 1.0',
-                'Content-Type: text/plain; charset=UTF-8',
+                'Content-Type: ' . ($isHtml ? 'text/html' : 'text/plain') . '; charset=UTF-8',
                 'From: ' . sprintf('%s <%s>', $fromName, $from)
             ];
             $ok = @mail($to, $subject, $message, implode("\r\n", $headers));
@@ -497,7 +505,7 @@ function sendEmailNotification($to, $subject, $message, $type = 'general', $reci
 
     $headers = [
         'MIME-Version: 1.0',
-        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Type: ' . ($isHtml ? 'text/html' : 'text/plain') . '; charset=UTF-8',
         'From: ' . sprintf('%s <%s>', $fromName, $from)
     ];
 

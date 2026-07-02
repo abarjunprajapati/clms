@@ -286,11 +286,15 @@ $work_awarding_department = clean($_POST['work_awarding_department'] ?? '');
 $epf_registered = clean($_POST['epf_registered'] ?? 'NO');
 $epf_code = ($epf_registered === 'YES') ? clean($_POST['epf_code'] ?? '') : '';
 $epf_account_no = '';
-$epf_reason = clean($_POST['epf_non_registration_reason'] ?? '');
+$epf_reason_type = clean($_POST['epf_non_registration_reason_type'] ?? '');
+$epf_reason = ($epf_reason_type === 'Others') ? clean($_POST['epf_non_registration_reason_other'] ?? '') : $epf_reason_type;
+if (empty($epf_reason)) $epf_reason = clean($_POST['epf_non_registration_reason'] ?? '');
 
 $esi_registered = clean($_POST['esi_registered'] ?? 'NO');
 $esi_code = ($esi_registered === 'YES') ? clean($_POST['esi_code'] ?? '') : '';
-$esi_reason = clean($_POST['esi_non_registration_reason'] ?? '');
+$esi_reason_type = clean($_POST['esi_non_registration_reason_type'] ?? '');
+$esi_reason = ($esi_reason_type === 'Others') ? clean($_POST['esi_non_registration_reason_other'] ?? '') : $esi_reason_type;
+if (empty($esi_reason)) $esi_reason = clean($_POST['esi_non_registration_reason'] ?? '');
 
 $wage_declaration = clean($_POST['wage_declaration'] ?? '');
 $wage_category = clean($_POST['wage_category'] ?? ''); // Saved for compatibility
@@ -669,9 +673,9 @@ if (!empty($ecp_number)) {
 // 7. Sync with welfare application table (annexure2a)
 $app_id = "APP-" . str_pad($user_id, 5, '0', STR_PAD_LEFT);
 db_execute($conn, "UPDATE contractors SET application_no = ? WHERE id = ?", 'si', [$app_id, $contractor_id]);
-$check_app = db_single($conn, "SELECT id FROM annexure2a WHERE contractor_id = ?", 'i', [$contractor_id]);
+$check_app = db_single($conn, "SELECT id, workflow_status FROM annexure2a WHERE contractor_id = ? ORDER BY id DESC LIMIT 1", 'i', [$contractor_id]);
 
-if ($limited_existing_edit && $request_action !== 'draft') {
+if ($check_app && $check_app['workflow_status'] !== 'draft' && $request_action !== 'draft') {
     $wf_status = 'resubmitted';
 } else {
     $wf_status = ($status === 'pending') ? 'submitted' : 'draft';
@@ -687,7 +691,7 @@ if ($check_app) {
             workers_ecp=?, workers_proposed_to_be_engaged=?, worker_category=?, 
             license_no=?, license_issued=?, issued_date=?, expiry_date=?, 
             klwf_registration_no=?, labour_license_appl_no=?, labour_identification_no=?, contact_person=?, remarks=?,
-            workflow_status=?, submitted_at = IF(? = 'submitted', NOW(), submitted_at), updated_at=NOW() WHERE contractor_id=?",
+            workflow_status=?, submitted_at = IF(? IN ('submitted', 'resubmitted'), NOW(), submitted_at), updated_at=NOW() WHERE contractor_id=?",
         'ssssssssssssssssssssiissssssssssssi', 
         [
             $vendor_name, $mobile, $vendor_mob2, $email, $address,
@@ -767,8 +771,8 @@ if (isset($_POST['selected_sales'])) {
     db_execute($conn, "UPDATE contractors SET sales_order_number = ? WHERE id = ?", 'si', [$sos_str, $contractor_id]);
 }
 
-if (in_array($status, ['pending', 'resubmitted'], true)) {
-    annexure2a_send_submission_email($vendor_code, $vendor_name, $app_id, $status);
+if (in_array($wf_status, ['submitted', 'resubmitted'], true)) {
+    annexure2a_send_submission_email($vendor_code, $vendor_name, $app_id, $wf_status);
 }
 
 $message = 'Contractor Registration Submitted Successfully';

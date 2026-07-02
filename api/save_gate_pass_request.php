@@ -145,14 +145,44 @@ try {
             'ii',
             [$contractorId, $workmanId]
         );
-        if ($existing && strtolower((string)$existing['status']) !== 'draft') {
+        if ($existing && !in_array(strtolower((string)$existing['status']), ['draft', 'reupload_required'], true)) {
             throw new Exception('An active Gate Pass request already exists for this employee.');
         }
+        $existing_id = $existing ? (int)$existing['id'] : 0;
+        
+        // Fetch the LATEST document of each type for this workman, 
+        // regardless of request ID, so past approvals are respected.
+        $docsResult = mysqli_query($conn, "
+            SELECT d.document_type, d.file_path, d.status 
+            FROM documents d
+            JOIN (
+                SELECT document_type, MAX(id) as max_id 
+                FROM documents 
+                WHERE workman_id = $workmanId 
+                GROUP BY document_type
+            ) latest ON latest.max_id = d.id
+        ");
+        
+        $uploaded_docs = [];
+        if ($docsResult) {
+            $docTypesToKey = array_flip(clms_get_gate_pass_document_type_map($conn, false));
+            while ($d = mysqli_fetch_assoc($docsResult)) {
+                $key = $docTypesToKey[$d['document_type']] ?? null;
+                if ($key) {
+                    $uploaded_docs[$key] = [
+                        'file_path' => $d['file_path'],
+                        'status' => $d['status']
+                    ];
+                }
+            }
+        }
+
         if ($existing) {
             apiSuccess([
-                'request_id' => (int)$existing['id'],
+                'request_id' => $existing_id,
                 'request_no' => $existing['request_no'],
                 'workman_id' => $workmanId,
+                'uploaded_docs' => $uploaded_docs
             ], 'Gate Pass document upload is ready.');
         }
 
@@ -178,6 +208,7 @@ try {
             'request_id' => $requestId,
             'request_no' => $requestNo,
             'workman_id' => $workmanId,
+            'uploaded_docs' => $uploaded_docs
         ], 'Gate Pass document upload is ready.');
     }
 
@@ -197,7 +228,7 @@ try {
         'iii',
         [$requestId, $contractorId, $workmanId]
     );
-    if (!$draftRequest || strtolower((string)$draftRequest['status']) !== 'draft') {
+    if (!$draftRequest || !in_array(strtolower((string)$draftRequest['status']), ['draft', 'reupload_required'], true)) {
         throw new Exception('Gate Pass draft not found or already submitted.');
     }
 
@@ -236,7 +267,7 @@ try {
     if ($action === 'save_draft') {
         db_execute(
             $conn,
-            "UPDATE gate_pass_requests SET updated_at = NOW() WHERE id = ? AND contractor_id = ? AND status = 'draft'",
+            "UPDATE gate_pass_requests SET updated_at = NOW() WHERE id = ? AND contractor_id = ? AND status IN ('draft', 'reupload_required')",
             'ii',
             [$requestId, $contractorId]
         );
@@ -252,7 +283,7 @@ try {
         $conn,
         "UPDATE gate_pass_requests
          SET status = 'pending', from_date = ?, to_date = ?, updated_at = NOW()
-         WHERE id = ? AND contractor_id = ? AND status = 'draft'",
+         WHERE id = ? AND contractor_id = ? AND status IN ('draft', 'reupload_required')",
         'ssii',
         [$validFrom, $validTo, $requestId, $contractorId]
     );

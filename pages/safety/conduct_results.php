@@ -79,6 +79,13 @@ function renderContent() {
         $workerStatsSelect = "COALESCE(sws.assigned_count, 0) AS assigned_count, COALESCE(sws.present_count, 0) AS present_count, COALESCE(sws.result_done_count, 0) AS result_done_count";
     }
 
+    $activeBatchJoin = '';
+    if (conductResultsTableExists($conn, 'training_class_batches')) {
+        $activeBatchJoin = "INNER JOIN training_class_batches tcb
+                ON tcb.batch_number = ts.batch_number
+               AND LOWER(COALESCE(tcb.status, '')) IN ('open', 'scheduled', 'active')";
+    }
+
     $sessions = db_fetch_all($conn, "
         SELECT
             ts.id,
@@ -92,6 +99,7 @@ function renderContent() {
             $enrolledExpr AS enrolled_count,
             $workerStatsSelect
         FROM training_schedule ts
+        $activeBatchJoin
         $workerStatsJoin
         WHERE LOWER(COALESCE($statusExpr, 'open')) <> 'cancelled'
         ORDER BY $dateExpr DESC, $timeExpr DESC

@@ -80,6 +80,7 @@ function renderContent() {
         <table class="data-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>Workman</th>
               <th>Contractor</th>
               <th>Request No</th>
@@ -91,8 +92,9 @@ function renderContent() {
             </tr>
           </thead>
           <tbody>
-            <?php foreach($rejected as $r): ?>
+            <?php $sno = 1; foreach($rejected as $r): ?>
             <tr>
+              <td><?= $sno++ ?></td>
               <td>
                 <div style="font-weight:600"><?= htmlspecialchars($r['worker_name']) ?></div>
                 <div style="font-size:11px; opacity:0.6">
@@ -128,7 +130,7 @@ function renderContent() {
             </tr>
             <?php endforeach; ?>
             <?php if(empty($rejected)): ?>
-            <tr><td colspan="8" class="text-center" style="padding:40px;">No rejected document records currently active.</td></tr>
+            <tr><td colspan="9" class="text-center" style="padding:40px;">No rejected document records currently active.</td></tr>
             <?php endif; ?>
           </tbody>
         </table>

@@ -15,6 +15,13 @@ try {
     }
 
     [$month, $year, $monthYear] = complianceMonthParts($monthYear);
+
+    // Check if muster roll is approved (verified)
+    $mrStatus = db_single($conn, "SELECT status FROM muster_rolls WHERE contractor_id = ? AND month_year = ? LIMIT 1", 'is', [$contractorId, $monthYear]);
+    if (!$mrStatus || $mrStatus['status'] !== 'verified') {
+        throw new Exception("Muster Roll for this wage month ($monthYear) is not approved. Please get it verified first.");
+    }
+
     $start = $monthYear . '-01';
     $end = date('Y-m-t', strtotime($start));
 

@@ -1,5 +1,6 @@
-<?php
-include 'include/config.php';
-$cols = db_fetch_all($conn, "SHOW COLUMNS FROM workmen");
-print_r(array_column($cols, 'Field'));
-?>
+<?php 
+require 'include/config.php'; 
+$res = mysqli_query($conn, 'SHOW COLUMNS FROM contractors'); 
+while($row = mysqli_fetch_assoc($res)) { 
+  echo $row['Field'] . "\n"; 
+}

@@ -4,8 +4,12 @@ checkAuth(['contractor', 'customer']);
 include '../../include/config.php';
 include '../../include/customer_portal_context.php';
 include '../../include/layout.php';
-require_once '../../include/payment_flow.php';
-require_once '../../include/training_type_master.php';
+require_once __DIR__ . '/../../include/training_flow.php';
+require_once __DIR__ . '/../../include/payment_flow.php';
+require_once __DIR__ . '/../../include/training_type_master.php';
+
+// One-time fix to repair statuses that were wrongly set to pending
+@mysqli_query($conn, "UPDATE training_requests SET status='pending_safety' WHERE status='pending' AND source='contractor_re_enroll'");
 
 $role = $_SESSION['role'];
 $name = $_SESSION['name'] ?? 'Contractor';
@@ -101,7 +105,6 @@ function renderContent() {
 
     $contractor = db_single($conn, "SELECT id, contractor_name FROM contractors WHERE user_id = ?", 'i', [$user_id]);
     $c_id = $contractor['id'] ?? null;
-    repairPrematureTrainingConfirmations($conn, $c_id);
     $paymentRequests = $c_id ? db_fetch_all(
         $conn,
         "SELECT * FROM training_payment_requests WHERE contractor_id = ? ORDER BY id DESC",
@@ -167,11 +170,11 @@ function renderContent() {
                 SELECT sw1.*
                 FROM training_session_workers sw1
                 INNER JOIN (
-                    SELECT workman_id, MAX(id) AS max_id
+                    SELECT training_request_id, MAX(id) AS max_id
                     FROM training_session_workers
-                    GROUP BY workman_id
+                    GROUP BY training_request_id
                 ) sw2 ON sw2.max_id = sw1.id
-            ) sr ON sr.workman_id = tr.workman_id
+            ) sr ON sr.training_request_id = tr.id
         ";
     } elseif (contractorTrainingTableExists($conn, 'training_results')) {
         $latestResultExpr = contractorTrainingColumnExists($conn, 'training_results', 'result') ? 'lr.result' : 'NULL';
@@ -225,8 +228,21 @@ function renderContent() {
          ORDER BY tr.created_at DESC",
         'i', [$c_id]) : [];
 
-    // Count pending confirmations (badge alert)
-    $need_confirm = array_filter($my_requests, function($r) { return $r['status'] === 'scheduled'; });
+    // Build per-workman attempt history (all past requests, ordered oldest→newest)
+    $attemptHistoryMap = [];
+    if ($c_id) {
+        $allRequests = db_fetch_all($conn,
+            "SELECT tr.workman_id, tr.id, tr.batch_number, tr.scheduled_date, tr.status,
+                    tr.scheduled_session_id
+             FROM training_requests tr
+             WHERE tr.contractor_id = ?
+             ORDER BY tr.id ASC",
+            'i', [$c_id]);
+        foreach ($allRequests as $ar) {
+            $wid = (int)$ar['workman_id'];
+            $attemptHistoryMap[$wid][] = $ar;
+        }
+    }
     ?>
 
     <div class="content-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
@@ -234,11 +250,6 @@ function renderContent() {
         <h2 class="page-title"><i class="fas fa-graduation-cap" style="color:#8b5cf6;margin-right:10px;"></i> Safety Training Request</h2>
       </div>
       <div style="display:flex; gap:10px; align-items:center;">
-        <?php if (!empty($need_confirm)): ?>
-          <span class="badge badge-warning" style="font-size:13px; padding:8px 14px; animation: pulse 2s infinite; margin: 0;">
-            <i class="fas fa-bell"></i> <?= count($need_confirm) ?> Schedule(s) Need Confirmation
-          </span>
-        <?php endif; ?>
         <a class="btn btn-outline" href="training_payments.php">
           <i class="fas fa-history"></i> Safety Payments History
         </a>
@@ -271,6 +282,66 @@ function renderContent() {
             </button>
           </div>
           <input type="hidden" id="confirmRequestId" value="">
+        </div>
+      </div>
+    </div>
+
+    <!-- Re-request Modal -->
+    <div id="reRequestModal" class="modal-backdrop hidden">
+      <div class="modal-content glass" style="max-width:520px; padding:0;">
+        <div class="modal-header" style="padding:20px; border-bottom:1px solid rgba(255,255,255,0.1);">
+          <h3><i class="fas fa-redo" style="color:#f59e0b;"></i> Re-Training Request</h3>
+          <button class="btn-close" onclick="closeReRequestModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:24px;">
+          <div id="reRequestWorkerInfo" style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.3); border-radius:12px; padding:14px; margin-bottom:18px; font-size:13px;"></div>
+          <div class="form-group">
+            <label class="form-label required">Training Type</label>
+            <select class="form-control" id="reReqTrainingType">
+              <?php foreach ($trainingTypes as $tt): ?>
+                <option value="<?= htmlspecialchars($tt['type_name'], ENT_QUOTES) ?>"><?= htmlspecialchars($tt['type_name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+            <div class="form-group">
+              <label class="form-label required">Preferred Date</label>
+              <input type="date" class="form-control" id="reReqDate" min="<?= date('Y-m-d', strtotime('+1 day')) ?>">
+            </div>
+            <div class="form-group">
+              <label class="form-label required">Preferred Shift</label>
+              <div style="display:flex; gap:10px; margin-top:6px;">
+                <label class="shift-option" style="flex:1;">
+                  <input type="radio" name="reReqShift" value="morning" checked>
+                  <div class="shift-card">
+                    <i class="fas fa-sun" style="color:#f59e0b;"></i>
+                    <strong>Morning</strong>
+                    <small>FN</small>
+                  </div>
+                </label>
+                <label class="shift-option" style="flex:1;">
+                  <input type="radio" name="reReqShift" value="evening">
+                  <div class="shift-card">
+                    <i class="fas fa-moon" style="color:#818cf8;"></i>
+                    <strong>Evening</strong>
+                    <small>AN</small>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Remarks (optional)</label>
+            <textarea class="form-control" id="reReqRemarks" rows="2" placeholder="Any specific notes for re-training..."></textarea>
+          </div>
+          <div style="margin-top:20px; display:flex; gap:12px; justify-content:flex-end;">
+            <button class="btn btn-outline" onclick="closeReRequestModal()">Cancel</button>
+            <button class="btn btn-warning" id="submitReReqBtn" onclick="submitReRequest()">
+              <i class="fas fa-redo"></i> Submit Re-Training Request
+            </button>
+          </div>
+          <input type="hidden" id="reReqWorkmanId" value="">
+          <input type="hidden" id="reReqWorkerName" value="">
         </div>
       </div>
     </div>
@@ -357,7 +428,11 @@ function renderContent() {
                     </a>
                   </div>
                 <?php else: ?>
-                  <span class="badge badge-gray">Not Generated</span>
+                  <?php if (($r['source'] ?? '') === 'contractor_re_enroll'): ?>
+                    <span class="badge badge-gray">N/A (Retraining)</span>
+                  <?php else: ?>
+                    <span class="badge badge-gray">Not Generated</span>
+                  <?php endif; ?>
                 <?php endif; ?>
               </td>
               <td>
@@ -366,8 +441,30 @@ function renderContent() {
                 <span class="badge badge-gray" style="font-size:10px;"><?= ucfirst($r['preferred_shift']) ?></span>
                 <?php endif; ?>
               </td>
+              <?php
+                // Determine attempt number for this workman
+                $wAttempts = $attemptHistoryMap[(int)$r['workman_id']] ?? [];
+                $attemptNumber = 0;
+                foreach ($wAttempts as $atIdx => $at) {
+                    if ((int)$at['id'] === (int)$r['id']) {
+                        $attemptNumber = $atIdx + 1;
+                        break;
+                    }
+                }
+                $totalAttempts = count($wAttempts);
+                // Previous batches (all except current)
+                $prevBatches = array_filter($wAttempts, function($at) use ($r) {
+                    return (int)$at['id'] !== (int)$r['id'] && !empty($at['batch_number']);
+                });
+              ?>
               <td>
                 <?php if ($r['scheduled_date']): ?>
+                  <?php if ($totalAttempts > 1): ?>
+                  <div style="font-size:10px; font-weight:700; color:#f59e0b; margin-bottom:3px;">
+                    <i class="fas fa-layer-group"></i>
+                    Attempt <?= $attemptNumber ?> of <?= $totalAttempts ?>
+                  </div>
+                  <?php endif; ?>
                   <div style="font-weight:700;color:var(--primary);"><?= htmlspecialchars($r['batch_number'] ?: 'Batch Pending') ?></div>
                   <div style="font-size:11px;margin-top:2px;"><strong><?= date('d M Y', strtotime($r['scheduled_date'])) ?></strong><?= !empty($r['scheduled_time']) ? ' | ' . htmlspecialchars($r['scheduled_time']) : '' ?></div>
                   <div style="font-size:11px;margin-top:2px;">
@@ -380,7 +477,28 @@ function renderContent() {
                   <?php if ($r['safety_remarks']): ?>
                   <div style="font-size:11px; color:var(--text-muted); margin-top:3px;"><i class="fas fa-comment-alt"></i> <?= htmlspecialchars($r['safety_remarks']) ?></div>
                   <?php endif; ?>
+                  <?php if (!empty($prevBatches)): ?>
+                  <div style="margin-top:5px; border-top:1px dashed rgba(255,255,255,0.15); padding-top:4px;">
+                    <div style="font-size:10px; color:var(--text-muted); font-weight:600;">Previous attempts:</div>
+                    <?php foreach (array_values($prevBatches) as $pbIdx => $pb): ?>
+                    <div style="font-size:10px; color:var(--text-muted);">
+                      Attempt <?= $pbIdx + 1 ?>:
+                      <?php if (!empty($pb['batch_number'])): ?>
+                        <span style="color:var(--primary);font-weight:600;"><?= htmlspecialchars($pb['batch_number']) ?></span>
+                      <?php else: ?>
+                        <em>No batch</em>
+                      <?php endif; ?>
+                      <span style="color:<?= in_array(strtolower($pb['status']), ['passed','completed']) ? '#10b981' : '#ef4444' ?>;">• <?= ucfirst($pb['status']) ?></span>
+                    </div>
+                    <?php endforeach; ?>
+                  </div>
+                  <?php endif; ?>
                 <?php else: ?>
+                  <?php if ($totalAttempts > 1): ?>
+                  <div style="font-size:10px; font-weight:700; color:#f59e0b; margin-bottom:3px;">
+                    <i class="fas fa-layer-group"></i> Attempt <?= $attemptNumber ?> of <?= $totalAttempts ?>
+                  </div>
+                  <?php endif; ?>
                   <span style="color:var(--text-muted); font-size:12px;">Awaiting schedule…</span>
                 <?php endif; ?>
               </td>
@@ -393,6 +511,10 @@ function renderContent() {
                         echo 'READY FOR SAFETY SCHEDULING';
                     } elseif ($viewStatus === 'welfare_rejected') {
                         echo 'WELFARE REJECTED';
+                    } elseif ($viewStatus === 'pending_safety' && ($r['source'] ?? '') === 'contractor_re_enroll') {
+                        echo 'RE-TRAINING BATCH APPROVAL PENDING';
+                    } elseif ($viewStatus === 'pending_safety') {
+                        echo 'SAFETY ENROLLMENT PENDING';
                     } else {
                         echo strtoupper(str_replace('_', ' ', $viewStatus));
                     }
@@ -418,28 +540,8 @@ function renderContent() {
                 <?php endif; ?>
               </td>
               <td>
-                <?php if ($st === 'scheduled'): ?>
-                <button class="btn btn-sm btn-primary" onclick='openConfirmModal(<?= json_encode([
-                  "id" => $r['id'],
-                  "worker" => $r['worker_name'],
-                  "trade" => $r['worker_trade'] ?? '',
-                  "temp_id" => $r['worker_temp_id'] ?? '',
-                  "training_type" => $r['training_type'] ?? '',
-                  "batch_number" => $r['batch_number'] ?? '',
-                  "date" => date('d M Y', strtotime($r['scheduled_date'])),
-                  "shift" => $r['scheduled_shift'],
-                  "venue" => $r['scheduled_venue'],
-                  "time" => $r['scheduled_time'] ?? '',
-                  "instructor" => $r['instructor'] ?? '',
-                  "remarks" => $r['safety_remarks'] ?? ''
-                ]) ?>)'>
-                  <i class="fas fa-check"></i> Confirm
-                </button>
-                <?php elseif ($st === 'contractor_confirmed'): ?>
-                <span style="font-size:11px; color:var(--success);"><i class="fas fa-check-circle"></i> Confirmed</span>
-                <?php if ($r['contractor_remarks']): ?>
-                <div style="font-size:10px; color:var(--text-muted);"><?= htmlspecialchars($r['contractor_remarks']) ?></div>
-                <?php endif; ?>
+                <?php if ($st === 'scheduled' || $st === 'contractor_confirmed'): ?>
+                <span style="font-size:11px; color:var(--primary);"><i class="fas fa-calendar-check"></i> Scheduled</span>
                 <?php elseif ($viewStatus === 'completed' || $viewStatus === 'passed'): ?>
                 <span style="font-size:11px; color:var(--success);"><i class="fas fa-trophy"></i> Passed</span>
                 <?php elseif ($viewStatus === 'welfare_pending'): ?>
@@ -449,7 +551,7 @@ function renderContent() {
                 </div>
                 <?php elseif ($st === 'welfare_rejected'): ?>
                 <a class="btn btn-sm btn-outline" href="enrolment-4a.php?type=workmen" title="Open worker enrolment for correction">
-                  <i class="fas fa-edit"></i> Correct & re-submit
+                  <i class="fas fa-edit"></i> Correct &amp; re-submit
                 </a>
                 <?php elseif ($displayStatus === 'exec_pending'): ?>
                 <div style="display:flex; flex-direction:column; gap:4px;">
@@ -462,7 +564,7 @@ function renderContent() {
                   <button class="btn btn-sm btn-danger" style="padding: 2px 5px; font-size:10px;" onclick="cancelTrainingRequest(<?= $r['id'] ?>)">Cancel Request</button>
                 </div>
                 <?php elseif ($viewStatus === 'failed' || $viewStatus === 'rejected' || $viewStatus === 'correction_required'): ?>
-                <a class="btn btn-sm btn-outline" href="enrolment-4a.php?type=retraining&edit_id=<?= (int)$r['workman_id'] ?>" title="Open worker enrolment to re-submit">
+                <a class="btn btn-sm btn-warning" href="enrolment-4a.php?type=workmen&re_enroll_worker=<?= (int)$r['workman_id'] ?>" title="Submit re-training request">
                   <i class="fas fa-redo"></i> Re-request
                 </a>
                 <?php else: ?>
@@ -470,6 +572,7 @@ function renderContent() {
                 <?php endif; ?>
               </td>
             </tr>
+
             <?php endforeach; ?>
             </tbody>
           </table>
@@ -543,8 +646,7 @@ function renderContent() {
         <strong>Training Flow:</strong>
         Submit request (choose Morning/Evening) →
         Executing Officer approval/document validation →
-        Safety Dept. schedules with date, shift & venue →
-        <strong>You confirm attendance here</strong> →
+        Safety Dept. schedules with date, shift &amp; venue →
         Safety conducts training →
         Result recorded (Pass/Fail) →
         Pass required for Gate Pass.
@@ -588,7 +690,7 @@ function renderContent() {
     </style>
 
     <script>
-    const contractorTrainingTypes = <?= json_encode(array_values(array_map(function($row) { return $row['type_name']; }, $trainingTypes)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+    const contractorTrainingTypes = <?= json_encode(array_values(array_map(function($row) { return $row['type_name']; }, $trainingTypes)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?? '[]' ?>;
 
     async function cancelTrainingRequest(requestId) {
         if (typeof Swal === 'undefined') {
@@ -626,25 +728,45 @@ function renderContent() {
             const fd = new FormData();
             fd.append('request_id', requestId);
             fd.append('reason', reason);
-
-            const res = await fetch('../../api/contractor/cancel_training_request.php', { method: 'POST', body: fd });
-            const data = await res.json();
             
-            if (data.success) {
-                if (typeof Swal !== 'undefined') {
-                    await Swal.fire('Cancelled!', data.message, 'success');
+            let token = window.CLMS_CSRF_TOKEN || document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            if (token) {
+                fd.append('csrf_token', token);
+            }
+
+            const res = await fetch('../../api/contractor/cancel_training_request.php', { 
+                method: 'POST', 
+                body: fd,
+                headers: { 'X-CSRF-TOKEN': token }
+            });
+            const textResponse = await res.text();
+            
+            try {
+                const data = JSON.parse(textResponse);
+                if (data.success) {
+                    if (typeof Swal !== 'undefined') {
+                        await Swal.fire('Cancelled!', data.message, 'success');
+                    } else {
+                        showToast(data.message, 'success');
+                    }
+                    setTimeout(() => location.reload(), typeof Swal !== 'undefined' ? 0 : 1500);
                 } else {
-                    showToast(data.message, 'success');
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire('Error', data.error || 'Failed to cancel', 'error');
+                    } else {
+                        showToast('Error: ' + (data.error || 'Failed to cancel'), 'error');
+                    }
                 }
-                setTimeout(() => location.reload(), typeof Swal !== 'undefined' ? 0 : 1500);
-            } else {
+            } catch (e) {
+                console.error("Invalid JSON. Server returned:", textResponse);
                 if (typeof Swal !== 'undefined') {
-                    Swal.fire('Error', data.error || 'Failed to cancel', 'error');
+                    Swal.fire('Error', 'Server returned invalid data. Check console.', 'error');
                 } else {
-                    showToast('Error: ' + (data.error || 'Failed to cancel'), 'error');
+                    showToast('Server returned invalid data. Check console.', 'error');
                 }
             }
         } catch (e) {
+            console.error("Fetch failed:", e);
             if (typeof Swal !== 'undefined') {
                 Swal.fire('Error', 'Network error. Please try again.', 'error');
             } else {
@@ -706,44 +828,82 @@ function renderContent() {
       btn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Training Request';
     });
 
-    async function reRequestTraining(workmanId) {
-      if (!workmanId) {
-        showToast('Invalid worker selected.', 'error');
-        return;
+    function openReRequestModal(workmanId, workerName, trainingType) {
+      document.getElementById('reReqWorkmanId').value = workmanId;
+      document.getElementById('reReqWorkerName').value = workerName;
+      // Set default training type
+      const ttSelect = document.getElementById('reReqTrainingType');
+      if (trainingType) {
+        for (let i = 0; i < ttSelect.options.length; i++) {
+          if (ttSelect.options[i].value === trainingType) {
+            ttSelect.selectedIndex = i;
+            break;
+          }
+        }
       }
-      const confirmed = window.Swal
-        ? await Swal.fire({
-            title: 'Submit re-training request?',
-            text: 'This worker will be sent back to the Safety scheduling queue.',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Submit Request'
-          })
-        : { isConfirmed: confirm('Submit re-training request for this worker?') };
-      if (!confirmed.isConfirmed) return;
+      // Reset fields
+      document.getElementById('reReqDate').value = '';
+      document.getElementById('reReqRemarks').value = '';
+      document.querySelector('input[name="reReqShift"][value="morning"]').checked = true;
+      // Show worker info
+      document.getElementById('reRequestWorkerInfo').innerHTML =
+        `<i class="fas fa-user-hard-hat" style="color:#f59e0b;"></i>
+         <strong style="margin-left:6px;">${escapeHtml(workerName)}</strong>
+         <span style="margin-left:8px; font-size:11px; color:var(--text-muted);">— Re-training after failed attempt</span>`;
+      document.getElementById('reRequestModal').classList.remove('hidden');
+    }
+
+    function closeReRequestModal() {
+      document.getElementById('reRequestModal').classList.add('hidden');
+    }
+
+    async function submitReRequest() {
+      const workmanId = parseInt(document.getElementById('reReqWorkmanId').value);
+      const trainingType = document.getElementById('reReqTrainingType').value;
+      const preferredDate = document.getElementById('reReqDate').value;
+      const preferredShift = document.querySelector('input[name="reReqShift"]:checked')?.value || 'morning';
+      const remarks = document.getElementById('reReqRemarks').value.trim() || 'Re-training requested after failed training.';
+
+      if (!workmanId) { showToast('Invalid worker.', 'error'); return; }
+      if (!preferredDate) { showToast('Please select a preferred date.', 'error'); return; }
+
+      const btn = document.getElementById('submitReReqBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
 
       try {
         const res = await fetch('../../api/submit_training_request.php', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
-            workman_ids: [workmanId],
-            training_type: contractorTrainingTypes[0] || 'Safety Induction',
-            preferred_shift: 'morning',
-            preferred_date: '',
-            remarks: 'Re-training requested after failed training.'
+            workman_ids:     [workmanId],
+            training_type:   trainingType,
+            preferred_shift: preferredShift,
+            preferred_date:  preferredDate,
+            remarks:         remarks,
+            source:          'retraining_from_status_page'
           })
         });
         const result = await res.json();
         if (result.success) {
-          showToast(result.message || 'Re-training request submitted.', 'success');
-          setTimeout(() => location.reload(), 1400);
+          showToast(result.message || 'Re-training request submitted successfully!', 'success');
+          closeReRequestModal();
+          setTimeout(() => location.reload(), 1600);
         } else {
-          showToast('Error: ' + (result.message || result.error || 'Re-request failed'), 'error');
+          showToast('Error: ' + (result.message || result.error || 'Submission failed'), 'error');
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-redo"></i> Submit Re-Training Request';
         }
       } catch (err) {
         showToast('Network error. Please try again.', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-redo"></i> Submit Re-Training Request';
       }
+    }
+
+    // Keep legacy function alias (for any other callers)
+    async function reRequestTraining(workmanId) {
+      openReRequestModal(workmanId, '', contractorTrainingTypes[0] || 'Safety Induction');
     }
 
     // Confirm training modal
