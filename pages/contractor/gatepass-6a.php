@@ -34,6 +34,8 @@ function renderContent() {
             w.training_valid_till, $safetyEnrollmentExpr AS safety_enrollment_status,
             COALESCE(w.training_status, '') AS training_status,
             COALESCE(w.safety_training_status, '') AS safety_training_status,
+            w.status AS workman_status,
+            w.temp_pass_status,
             (
                 SELECT gpr.status
                 FROM gate_pass_requests gpr
@@ -68,7 +70,25 @@ function renderContent() {
                 JOIN gate_pass_request_workers gprw ON gprw.request_id = gpr.id
                 WHERE gprw.workman_id = w.id
                   AND LOWER(COALESCE(gpr.status, 'pending')) IN ('draft','pending','submitted','reupload_required')
-            ) AS has_active_request
+            ) AS has_active_request,
+            (
+                SELECT gp.id
+                FROM gate_passes gp
+                WHERE gp.workman_id = w.id
+                  AND gp.is_temporary = 1
+                  AND gp.is_extended = 0
+                  AND LOWER(COALESCE(gp.status, '')) IN ('active', 'approved')
+                ORDER BY gp.id DESC LIMIT 1
+            ) AS extendable_temp_pass_id,
+            (
+                SELECT gp.valid_to
+                FROM gate_passes gp
+                WHERE gp.workman_id = w.id
+                  AND gp.is_temporary = 1
+                  AND gp.is_extended = 0
+                  AND LOWER(COALESCE(gp.status, '')) IN ('active', 'approved')
+                ORDER BY gp.id DESC LIMIT 1
+            ) AS extendable_temp_valid_to
          FROM workmen w
          WHERE w.contractor_id = ?
            AND LOWER($safetyEnrollmentExpr) = 'approved'
@@ -294,6 +314,17 @@ function renderContent() {
           $reqStatus    = strtolower(trim((string)($worker['gate_pass_request_status'] ?? '')));
           $hasActive    = ((int)$worker['has_active_request'] > 0);
           $activeStatus = strtolower((string)($worker['active_request_status'] ?? ''));
+          $extendableTempId = (int)($worker['extendable_temp_pass_id'] ?? 0);
+          $extendableTempValidTo = $worker['extendable_temp_valid_to'] ?? '';
+          $workmanStatus = strtolower(trim((string)($worker['workman_status'] ?? '')));
+          $tempPassStatus = (int)($worker['temp_pass_status'] ?? 0);
+
+          if ($workmanStatus === 'temporary_issued' || $workmanStatus === 'acc_generated' || $tempPassStatus === 1 || $extendableTempId > 0) {
+              $reqStatus = 'active';
+              $activeStatus = ''; // Hide continue/reupload buttons
+              $hasActive = true;
+          }
+          
           $isIssued     = in_array($reqStatus, ['issued','approved','active']);
           
           if ($reqStatus === '') $pillCls = 'ok';
@@ -337,16 +368,19 @@ function renderContent() {
               <?php endif; ?>
             </td>
             <td>
-              <?php if ($isIssued): ?>
-                <a class="btn btn-sm btn-outline" href="pass_status.php?worker_id=<?= (int)$worker['id'] ?>"><i class="fas fa-eye"></i> View</a>
-              <?php elseif ($hasActive): ?>
+              <?php if ($isIssued || $hasActive || $extendableTempId > 0): ?>
                 <div style="display:flex; gap:8px;">
-                    <?php if ($activeStatus !== 'draft'): ?>
-                        <a class="btn btn-sm btn-outline" href="pass_status.php?worker_id=<?= (int)$worker['id'] ?>"><i class="fas fa-eye"></i> View</a>
-                    <?php endif; ?>
-                    <?php if ($activeStatus === 'reupload_required' || $activeStatus === 'draft'): ?>
+                    <a class="btn btn-sm btn-outline" href="pass_status.php?worker_id=<?= (int)$worker['id'] ?>"><i class="fas fa-eye"></i> View</a>
+                    
+                    <?php if (!$isIssued && ($activeStatus === 'reupload_required' || $activeStatus === 'draft')): ?>
                         <button type="button" class="btn btn-sm btn-primary select-worker" data-worker='<?= $workerJson ?>'>
                           <i class="fas fa-upload"></i> <?= $activeStatus === 'draft' ? 'Continue' : 'Reupload' ?>
+                        </button>
+                    <?php endif; ?>
+                    
+                    <?php if ($extendableTempId > 0): ?>
+                        <button type="button" class="btn btn-sm btn-outline" style="border-color: #fcd34d; color: #b45309; white-space: nowrap;" onclick="openExtendModal(<?= $extendableTempId ?>, '<?= $extendableTempValidTo ?>')">
+                          <i class="fas fa-calendar-plus"></i> Extend
                         </button>
                     <?php endif; ?>
                 </div>
@@ -384,6 +418,34 @@ function renderContent() {
     <input type="hidden" name="request_id" id="requestId">
     <input type="hidden" name="workman_id" id="selectedWorkerId">
     <input type="hidden" name="action" value="submit">
+
+    <!-- Temporary Pass Section -->
+    <div style="margin: 20px 20px 0 20px; padding: 15px; border: 1px solid #fcd34d; background: #fffbeb; border-radius: 8px;">
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:14px;color:var(--gray-800); font-weight: bold;">
+        <input type="checkbox" id="is_temporary_pass" name="is_temporary" value="1" onchange="toggleTemporaryPass(this)" style="margin-top:3px;width:18px;height:18px" />
+        <span>Apply for Temporary Pass (Extremely urgent situations only)</span>
+      </label>
+      <div id="temporary_pass_fields" style="display:none; margin-top: 15px; border-top: 1px solid #fde68a; padding-top: 15px;">
+        <p style="font-size: 13px; color: #b45309; margin-bottom: 10px;">
+          <i class="fas fa-exclamation-triangle"></i> Temporary passes are strictly limited to a maximum of 7 days and require approval from the Welfare User.
+        </p>
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label style="display:block; font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:5px;">Executing Officer Declaration <span class="required" style="color:red">*</span></label>
+          <input class="form-control" type="file" id="executing_officer_declaration" name="executing_officer_declaration" accept=".pdf,.jpg,.jpeg,.png" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px;" />
+          <small style="color:var(--text-muted); font-size:11px;">Upload the declaration duly signed by the executing officer.</small>
+        </div>
+        <div style="display:flex; gap:15px;">
+          <div class="form-group" style="flex:1;">
+            <label style="display:block; font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:5px;">Pass From Date <span class="required" style="color:red">*</span></label>
+            <input class="form-control" type="date" id="temp_from_date" name="valid_from" value="<?= date('Y-m-d') ?>" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px;" onchange="enforceTemporaryPassLimits()" />
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label style="display:block; font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:5px;">Pass To Date (7 Days Default)</label>
+            <input class="form-control" type="date" id="temp_to_date" name="valid_to" value="<?= date('Y-m-d', strtotime('+6 days')) ?>" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:#f3f4f6;" readonly />
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="gp-docs">
       <?php foreach ($documents as $i => $doc): ?>
@@ -787,7 +849,67 @@ async function saveGatePass(action) {
   }
 }
 document.getElementById('saveGatePassDraft')?.addEventListener('click', () => saveGatePass('save_draft'));
-documentForm?.addEventListener('submit', async e => { e.preventDefault(); if (!documentForm.reportValidity()) return; saveGatePass('submit'); });
+documentForm?.addEventListener('submit', async e => { 
+    e.preventDefault(); 
+    
+    const isTemp = document.getElementById('is_temporary_pass')?.checked;
+    if (isTemp) {
+        const fileInput = document.getElementById('executing_officer_declaration');
+        if (!fileInput.files.length) {
+            fireMessage('warning', 'Validation Error', 'Executing Officer Declaration is required for Temporary Pass.');
+            return;
+        }
+        
+        const fromInput = document.getElementById('temp_from_date');
+        const toInput = document.getElementById('temp_to_date');
+        const fromDate = new Date(fromInput.value);
+        const toDate = new Date(toInput.value);
+        const diffTime = Math.abs(toDate - fromDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        if (diffDays > 7) {
+            fireMessage('warning', 'Validation Error', 'Temporary Pass validity cannot exceed 7 days.');
+            return;
+        }
+    } else if (!documentForm.reportValidity()) {
+        return;
+    }
+    saveGatePass('submit'); 
+});
+
+function toggleTemporaryPass(cb) {
+    const fields = document.getElementById('temporary_pass_fields');
+    const requiredDocs = document.querySelectorAll('.gp-doc-row[data-required="true"] .gate-doc-input');
+    
+    if (cb.checked) {
+        fields.style.display = 'block';
+        // Make standard docs non-required for temp pass
+        requiredDocs.forEach(inp => inp.removeAttribute('required'));
+    } else {
+        fields.style.display = 'none';
+        // Restore required attribute
+        requiredDocs.forEach(inp => inp.setAttribute('required', 'required'));
+    }
+    enforceTemporaryPassLimits();
+}
+
+function enforceTemporaryPassLimits() {
+    const isTemp = document.getElementById('is_temporary_pass')?.checked;
+    const fromInput = document.getElementById('temp_from_date');
+    const toInput = document.getElementById('temp_to_date');
+    
+    if (isTemp && fromInput.value) {
+        const fromDate = new Date(fromInput.value);
+        const toDate = new Date(fromDate);
+        toDate.setDate(fromDate.getDate() + 6); // Max 7 days including start date
+        
+        // Format to YYYY-MM-DD
+        const toStr = toDate.toISOString().split('T')[0];
+        
+        // Force the toDate to exactly 7 days
+        toInput.value = toStr;
+    }
+}
+
 
 document.addEventListener("DOMContentLoaded", function() {
     const initDT = function() {
@@ -807,7 +929,83 @@ document.addEventListener("DOMContentLoaded", function() {
     initDT();
 });
 </script>
+
+<!-- Extend Temp Pass Modal -->
+<div id="extendModal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+    <div class="modal-content" style="background:#fff; width:100%; max-width:500px; border-radius:12px; padding:24px; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+        <h3 style="margin-top:0; color:#b45309;"><i class="fas fa-calendar-plus"></i> Extend Temporary Pass</h3>
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:20px;">Upload GM Declaration to extend this pass continuously for 7 days.</p>
+        
+        <form id="extendForm" onsubmit="submitExtension(event)">
+          <input type="hidden" id="extend_gate_pass_id" name="gate_pass_id" value="">
+          
+          <div class="form-group" style="margin-bottom:15px;">
+            <label style="display:block; font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:5px;">Current Valid To <span class="required" style="color:red">*</span></label>
+            <input class="form-control" type="date" id="extend_current_valid_to" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px; background:#f3f4f6;" readonly />
+          </div>
+
+          <div class="form-group" style="margin-bottom: 15px;">
+            <label style="display:block; font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:5px;">GM Declaration <span class="required" style="color:red">*</span></label>
+            <input class="form-control" type="file" name="gm_declaration" accept=".pdf,.jpg,.jpeg,.png" style="width:100%; padding:8px; border:1px solid var(--border-color); border-radius:6px;" required />
+            <small style="color:var(--text-muted); font-size:11px;">Upload the declaration duly signed by the GM.</small>
+          </div>
+          
+          <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+            <button type="button" class="btn btn-outline" onclick="closeExtendModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="extendBtn">Submit Extension</button>
+          </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openExtendModal(id, currentValidTo) {
+    document.getElementById('extend_gate_pass_id').value = id;
+    if (currentValidTo) {
+        document.getElementById('extend_current_valid_to').value = currentValidTo.split(' ')[0];
+    } else {
+        document.getElementById('extend_current_valid_to').value = '';
+    }
+    document.getElementById('extendModal').style.display = 'flex';
+}
+
+function closeExtendModal() {
+    document.getElementById('extendModal').style.display = 'none';
+    document.getElementById('extendForm').reset();
+}
+
+async function submitExtension(e) {
+    e.preventDefault();
+    const btn = document.getElementById('extendBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+
+    const formData = new FormData(document.getElementById('extendForm'));
+    
+    try {
+        const res = await fetch('../../api/contractor/extend_temp_pass.php', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            alert('Temporary Pass extended successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to extend pass.'));
+            btn.disabled = false;
+            btn.innerHTML = 'Submit Extension';
+        }
+    } catch (err) {
+        alert('A network error occurred.');
+        btn.disabled = false;
+        btn.innerHTML = 'Submit Extension';
+    }
+}
+</script>
 <?php
 }
 
 renderLayout("Gate Pass Creation Request", 'renderContent', $role, $name);
+

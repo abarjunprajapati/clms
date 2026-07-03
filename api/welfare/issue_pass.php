@@ -34,15 +34,17 @@ if (!$workman_id || !in_array($pass_type, ['temporary', 'permanent'])) {
         json_response(false, null, 'Worker is blocked. Cannot issue pass.');
     }
 
-    if ($workman['pass_issuer_verified'] != 1) {
+    $tempApproved = db_single($conn, "SELECT id, application_no FROM gate_passes WHERE workman_id = ? AND is_temporary = 1 AND status = 'approved' LIMIT 1", "i", [$workman_id]);
+
+    if (!$tempApproved && $workman['pass_issuer_verified'] != 1) {
         json_response(false, null, 'Final document verification pending.');
     }
 
-    if (!welfare_issue_training_passed($workman)) {
+    if (!$tempApproved && !welfare_issue_training_passed($workman)) {
         json_response(false, null, 'Safety training is not passed. Pass cannot be issued.');
     }
 
-    if (!empty($workman['training_valid_till']) && strtotime($workman['training_valid_till']) < strtotime(date('Y-m-d'))) {
+    if (!$tempApproved && !empty($workman['training_valid_till']) && strtotime($workman['training_valid_till']) < strtotime(date('Y-m-d'))) {
         json_response(false, null, 'Safety training validity has expired. Please complete re-training before issuing pass.');
     }
 
@@ -50,21 +52,25 @@ if (!$workman_id || !in_array($pass_type, ['temporary', 'permanent'])) {
 
     try {
         if ($pass_type === 'temporary') {
-            $approvedRequest = db_single(
-                $conn,
-                "SELECT gpr.id, gpr.request_no
-                 FROM gate_pass_request_workers gprw
-                 JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
-                 WHERE gprw.workman_id = ?
-                   AND LOWER(COALESCE(gprw.status, '')) = 'approved'
-                   AND LOWER(COALESCE(gpr.status, '')) = 'approved'
-                 ORDER BY COALESCE(gpr.updated_at, gpr.created_at) DESC, gpr.id DESC
-                 LIMIT 1",
-                "i",
-                [$workman_id]
-            );
-            if (!$approvedRequest) {
-                throw new Exception("Approved gate pass request not found for this worker.");
+            if (isset($tempApproved) && $tempApproved) {
+                // Bypass normal gate pass request requirement
+            } else {
+                $approvedRequest = db_single(
+                    $conn,
+                    "SELECT gpr.id, gpr.request_no
+                     FROM gate_pass_request_workers gprw
+                     JOIN gate_pass_requests gpr ON gpr.id = gprw.request_id
+                     WHERE gprw.workman_id = ?
+                       AND LOWER(COALESCE(gprw.status, '')) = 'approved'
+                       AND LOWER(COALESCE(gpr.status, '')) = 'approved'
+                     ORDER BY COALESCE(gpr.updated_at, gpr.created_at) DESC, gpr.id DESC
+                     LIMIT 1",
+                    "i",
+                    [$workman_id]
+                );
+                if (!$approvedRequest) {
+                    throw new Exception("Approved gate pass request not found for this worker.");
+                }
             }
 
             if (!$valid_to) throw new Exception("Validity end date is required for temporary pass.");
@@ -86,10 +92,14 @@ if (!$workman_id || !in_array($pass_type, ['temporary', 'permanent'])) {
             db_execute($conn, "INSERT INTO pass_history (workman_id, pass_type, valid_from, valid_to) VALUES (?, 'temporary', ?, ?)", "iss", [$workman_id, $valid_from, $valid_to]);
             
             // Mark the gate pass request as issued so it disappears from the pending queue
-            db_execute($conn, "UPDATE gate_pass_request_workers SET status = 'issued', gatepass_no = ?, updated_at = NOW() WHERE request_id = ? AND workman_id = ? AND status = 'approved'", "sii", [$temp_pass_no, (int)$approvedRequest['id'], $workman_id]);
-            $remaining = db_count($conn, "SELECT COUNT(*) FROM gate_pass_request_workers WHERE request_id = ? AND LOWER(COALESCE(status, '')) = 'approved'", "i", [(int)$approvedRequest['id']]);
-            if ($remaining === 0) {
-                db_execute($conn, "UPDATE gate_pass_requests SET status = 'issued', updated_at = NOW() WHERE id = ?", "i", [(int)$approvedRequest['id']]);
+            if (isset($tempApproved) && $tempApproved) {
+                db_execute($conn, "UPDATE gate_passes SET status = 'active', pass_number = ? WHERE id = ?", "si", [$temp_pass_no, $tempApproved['id']]);
+            } else {
+                db_execute($conn, "UPDATE gate_pass_request_workers SET status = 'issued', gatepass_no = ?, updated_at = NOW() WHERE request_id = ? AND workman_id = ? AND status = 'approved'", "sii", [$temp_pass_no, (int)$approvedRequest['id'], $workman_id]);
+                $remaining = db_count($conn, "SELECT COUNT(*) FROM gate_pass_request_workers WHERE request_id = ? AND LOWER(COALESCE(status, '')) = 'approved'", "i", [(int)$approvedRequest['id']]);
+                if ($remaining === 0) {
+                    db_execute($conn, "UPDATE gate_pass_requests SET status = 'issued', updated_at = NOW() WHERE id = ?", "i", [(int)$approvedRequest['id']]);
+                }
             }
 
             $msg = "Temporary pass issued for " . $workman['name'] . " valid until " . $valid_to;

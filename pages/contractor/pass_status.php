@@ -71,6 +71,9 @@ function renderContent() {
             w.temp_id,
             w.status as workman_status,
             gp.pass_number,
+            gp.is_temporary,
+            gp.is_extended,
+            gp.gm_declaration_path,
             EXISTS (
                 SELECT 1
                 FROM permanent_gate_passes pgp
@@ -265,6 +268,13 @@ function renderContent() {
           <a href="../../api/welfare/download_pass.php?id=<?= $gp['worker_id'] ?>&type=<?= $ptype ?>&action=print" class="btn btn-sm btn-primary" target="_blank">
             <i class="fas fa-download"></i> Download <?= $isPerm ? 'Permanent' : 'Temporary' ?> Pass
           </a>
+          <?php if (($gp['is_temporary'] ?? 0) == 1 && ($gp['is_extended'] ?? 0) == 0): ?>
+          <button type="button" class="btn btn-sm btn-outline" style="margin-left: 8px; border-color: #fcd34d; color: #b45309;" onclick="openExtendModal(<?= $gp['id'] ?>, '<?= $gp['valid_to'] ?>')">
+            <i class="fas fa-calendar-plus"></i> Extend Temporary Pass
+          </button>
+          <?php elseif (($gp['is_temporary'] ?? 0) == 1 && ($gp['is_extended'] ?? 0) == 1): ?>
+          <span class="badge badge-info" style="margin-left: 8px;"><i class="fas fa-check"></i> Extended</span>
+          <?php endif; ?>
         </div>
         <?php endif; ?>
         <?php if ($st === 'rejected' || $st === 'reupload_required'): ?>
@@ -279,6 +289,87 @@ function renderContent() {
     <?php endforeach; ?>
     </div>
     <?php endif; ?>
+
+    <!-- Extend Temp Pass Modal -->
+    <div id="extendModal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+      <div class="modal" style="background:#fff; border-radius:12px; width:450px; max-width:90%; padding:24px;">
+        <h3 style="margin-top:0; color:#b45309;"><i class="fas fa-calendar-plus"></i> Extend Temporary Pass</h3>
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
+          Extension requires a declaration from the GM. The extension will be continuous from the current expiry date.
+        </p>
+        <form id="extendForm" onsubmit="submitExtension(event)">
+          <input type="hidden" id="extend_gate_pass_id" name="gate_pass_id" value="">
+          <div class="form-group mb-3">
+            <label class="form-label">Current Expiry Date</label>
+            <input type="text" id="current_expiry" class="form-control" readonly disabled>
+          </div>
+          <div class="form-group mb-3">
+            <label class="form-label">New Valid To Date <span class="required">*</span></label>
+            <input type="date" id="new_valid_to" name="new_valid_to" class="form-control" required>
+          </div>
+          <div class="form-group mb-4">
+            <label class="form-label">GM Declaration <span class="required">*</span></label>
+            <input type="file" id="gm_declaration" name="gm_declaration" class="form-control" accept=".pdf,.jpg,.png" required>
+            <small style="color:var(--text-muted)">Upload signed GM declaration for extension.</small>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:10px;">
+            <button type="button" class="btn btn-outline" onclick="closeExtendModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="extendBtn">Submit Extension</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="../../js/utils.js"></script>
+    <script>
+    function openExtendModal(id, currentValidTo) {
+        document.getElementById('extend_gate_pass_id').value = id;
+        document.getElementById('current_expiry').value = currentValidTo;
+        
+        // Ensure new valid_to is after currentValidTo
+        let minDate = new Date(currentValidTo);
+        minDate.setDate(minDate.getDate() + 1);
+        document.getElementById('new_valid_to').min = minDate.toISOString().split('T')[0];
+        document.getElementById('new_valid_to').value = minDate.toISOString().split('T')[0];
+        
+        document.getElementById('extendModal').style.display = 'flex';
+    }
+
+    function closeExtendModal() {
+        document.getElementById('extendModal').style.display = 'none';
+        document.getElementById('extendForm').reset();
+    }
+
+    async function submitExtension(e) {
+        e.preventDefault();
+        const btn = document.getElementById('extendBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+
+        const formData = new FormData(document.getElementById('extendForm'));
+        
+        try {
+            const res = await fetch('../../api/contractor/extend_temp_pass.php', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                alert('Temporary Pass extended successfully!');
+                location.reload();
+            } else {
+                alert('Error: ' + (data.error || 'Failed to extend pass.'));
+                btn.disabled = false;
+                btn.innerHTML = 'Submit Extension';
+            }
+        } catch (err) {
+            alert('A network error occurred.');
+            btn.disabled = false;
+            btn.innerHTML = 'Submit Extension';
+        }
+    }
+    </script>
 
     <style>
     .filter-tabs { display:flex;gap:4px;margin-bottom:20px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;padding:6px; }

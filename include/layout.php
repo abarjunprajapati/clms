@@ -515,6 +515,7 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'training_monitor.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Pass Issuance</div>';
             echo '<a href="'.$wb.'gatepass_monitor.php" class="sidebar-item"><i class="fas fa-id-card-clip"></i> Gate Pass Approval</a>';
+            echo '<a href="'.$wb.'temp_pass_approvals.php" class="sidebar-item"><i class="fas fa-clipboard-check"></i> Temporary Pass Approval</a>';
             echo '<a href="'.$wb.'issue_temp_pass.php" class="sidebar-item"><i class="fas fa-clock"></i> Temporary Pass Issue</a>';
             echo '<a href="'.$wb.'acc_generation.php" class="sidebar-item"><i class="fas fa-fingerprint"></i> Permanent ACC Approval</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Worker Lifecycle</div>';

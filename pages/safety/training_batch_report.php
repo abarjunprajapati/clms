@@ -133,14 +133,16 @@ function renderContent() {
     padding: 0 !important;
   }
   .report-head {
-    border: 1px solid aqua !important;
-    background: #fff !important;
+    border: 1px solid #ccc !important;
+    background: #e2e8f0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
     margin-bottom: 20px !important;
     padding: 12px !important;
     border-radius: 4px !important;
   }
   .report-head h3 {
-    color: aqua !important;
+    color: #111827 !important;
     margin: 0 0 10px 0 !important;
     font-size: 16px !important;
   }
@@ -152,20 +154,22 @@ function renderContent() {
   .report-meta-card {
     border: 1px solid #ccc !important;
     background: #fff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
     padding: 6px !important;
     border-radius: 3px !important;
   }
   .report-meta-card span {
     font-size: 8px !important;
-    color: #333 !important;
+    color: #475569 !important;
   }
   .report-meta-card strong {
     font-size: 11px !important;
-    color: aqua !important;
+    color: #000 !important;
   }
   .report-meta-card small {
     font-size: 8px !important;
-    color: #333 !important;
+    color: #475569 !important;
   }
   .report-table {
     width: 100% !important;
@@ -173,17 +177,18 @@ function renderContent() {
     margin-top: 15px !important;
   }
   .report-table th, .report-table td {
-    border: 1px solid aqua !important;
+    border: 1px solid #ccc !important;
     padding: 6px 8px !important;
     font-size: 10px !important;
-    color: aqua !important;
+    color: #000 !important;
     text-align: left !important;
   }
   .report-table th {
-    background: #f1f5f9 !important;
+    background: #e2e8f0 !important;
+    color: #000 !important;
     font-weight: 700 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   .signature-cell {
     min-width: 130px !important;

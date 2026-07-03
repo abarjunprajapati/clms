@@ -326,6 +326,7 @@ function renderContent() {
             GROUP BY workman_id
         ) attempts ON attempts.workman_id = w.id
         WHERE w.contractor_id = ?
+          AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
           AND LOWER(COALESCE(w.status, 'pending')) NOT IN ('deleted','removed','blocked')
           AND (
               tr.id IS NULL

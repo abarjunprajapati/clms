@@ -30,6 +30,53 @@ function renderContent() {
         <div class="content-header">
           <h2 class="page-title">Temporary Gate Pass Issue</h2>
         </div>
+
+        <!-- Pending Temporary Passes to Issue -->
+        <div class="card glass mb-4">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-clock"></i> Pending Approved Requests (Ready to Issue)</div>
+          </div>
+          <div class="card-body" style="padding:0">
+            <?php
+            $pendingTemp = db_fetch_all($conn, "
+                SELECT gp.id as gate_pass_id, w.*, c.contractor_name
+                FROM gate_passes gp
+                JOIN workmen w ON gp.workman_id = w.id
+                JOIN contractors c ON w.contractor_id = c.id
+                WHERE gp.is_temporary = 1 AND gp.status = 'approved'
+                ORDER BY gp.approved_date ASC
+            ");
+            ?>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>S.No.</th>
+                        <th>Workman Name</th>
+                        <th>Aadhaar</th>
+                        <th>Contractor</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php $sno3 = 1; foreach($pendingTemp as $pt): ?>
+                    <tr>
+                        <td><?= $sno3++ ?></td>
+                        <td><?= htmlspecialchars($pt['name']) ?></td>
+                        <td><?= htmlspecialchars($pt['aadhaar']) ?></td>
+                        <td><?= htmlspecialchars($pt['contractor_name']) ?></td>
+                        <td>
+                            <a href="issue_temp_pass.php?id=<?= $pt['id'] ?>" class="btn btn-sm btn-success"><i class="fas fa-id-card"></i> Issue</a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php if(empty($pendingTemp)): ?>
+                    <tr><td colspan="5" class="text-center" style="padding:20px;color:var(--gray-500)">No pending temporary pass requests.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+          </div>
+        </div>
+
         <div class="card glass">
           <div class="card-body">
             <form method="GET" action="issue_temp_pass.php">
@@ -185,7 +232,9 @@ function renderContent() {
         return;
     }
     
-    if ($workman['pass_issuer_verified'] != 1) {
+    $tempApproved = db_single($conn, "SELECT id FROM gate_passes WHERE workman_id = ? AND is_temporary = 1 AND status = 'approved' LIMIT 1", "i", [$workman_id]);
+
+    if (!$tempApproved && $workman['pass_issuer_verified'] != 1) {
         echo "<div class='alert alert-warning'>Documents must be verified before issuing a pass. <a href='verify_documents.php?id=$workman_id'>Verify now</a></div>";
         return;
     }
@@ -194,11 +243,13 @@ function renderContent() {
     $safetyTrainingStatus = strtolower(trim((string)($workman['safety_training_status'] ?? '')));
     $trainingPassed = in_array($trainingStatus, ['pass', 'passed', 'training_passed', 'qualified', 'completed'], true)
         || in_array($safetyTrainingStatus, ['1', 'pass', 'passed', 'training_passed', 'qualified', 'completed'], true);
-    if (!$trainingPassed) {
+    
+    // Allow if training passed OR if it's a temporary pass approved by Welfare User
+    if (!$trainingPassed && !$tempApproved) {
         echo "<div class='alert alert-warning'>Safety training must be passed before issuing a temporary gate pass.</div>";
         return;
     }
-    if (!empty($workman['training_valid_till']) && strtotime($workman['training_valid_till']) < strtotime(date('Y-m-d'))) {
+    if (!$tempApproved && !empty($workman['training_valid_till']) && strtotime($workman['training_valid_till']) < strtotime(date('Y-m-d'))) {
         echo "<div class='alert alert-warning'>Safety training validity has expired. Re-training is required before issuing a temporary gate pass.</div>";
         return;
     }
@@ -216,7 +267,7 @@ function renderContent() {
         "i",
         [$workman_id]
     );
-    if (!$approvedRequest) {
+    if (!$approvedRequest && !$tempApproved) {
         echo "<div class='alert alert-warning'>Approved gate pass request not found. Please complete document verification first.</div>";
         return;
     }

@@ -11,9 +11,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-    $input = json_decode(file_get_contents('php://input'), true);
-    if (!is_array($input)) {
-        throw new Exception('Invalid JSON input');
+    // Handle JSON or FormData input
+    if (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($input)) throw new Exception('Invalid JSON input');
+    } else {
+        $input = $_POST;
+        if (isset($input['worker_ids']) && is_string($input['worker_ids'])) {
+            $input['worker_ids'] = json_decode($input['worker_ids'], true);
+        }
     }
 
     $applicationNo = trim($input['application_id'] ?? ($_SESSION['current_application_id'] ?? ''));
@@ -32,11 +38,41 @@ try {
         throw new Exception('Please select at least one workman');
     }
 
-    $passType = strtolower(trim($input['pass_type'] ?? 'temporary')) === 'permanent' ? 'permanent' : 'temporary';
+    $isTempStr = $input['is_temporary'] ?? '0';
+    $isTemp = ($isTempStr === '1' || $isTempStr === 'true' || $isTempStr === true);
+    $passType = $isTemp ? 'temporary' : (strtolower(trim($input['pass_type'] ?? 'permanent')) === 'temporary' ? 'temporary' : 'permanent');
     $validFrom = trim($input['from_date'] ?? $input['valid_from'] ?? date('Y-m-d'));
     $validTo = trim($input['to_date'] ?? $input['valid_to'] ?? date('Y-m-d', strtotime('+30 days')));
+    
     if (strtotime($validTo) < strtotime($validFrom)) {
         throw new Exception('Invalid date range');
+    }
+    
+    if ($isTemp) {
+        $diffTime = abs(strtotime($validTo) - strtotime($validFrom));
+        $diffDays = floor($diffTime / (60 * 60 * 24)) + 1;
+        if ($diffDays > 7) {
+            throw new Exception('Temporary Pass validity cannot exceed 7 days');
+        }
+    }
+
+    $uploadPath = null;
+    if ($isTemp) {
+        if (!isset($_FILES['executing_officer_declaration']) || $_FILES['executing_officer_declaration']['error'] !== UPLOAD_ERR_OK) {
+            throw new Exception('Executing Officer Declaration file is required for Temporary Pass');
+        }
+        $file = $_FILES['executing_officer_declaration'];
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png'])) {
+            throw new Exception('Invalid file type for declaration. Only PDF/JPG/PNG allowed.');
+        }
+        $uploadDir = '../uploads/gate_passes/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+        $fileName = 'temp_decl_' . $applicationNo . '_' . time() . '.' . $ext;
+        if (!move_uploaded_file($file['tmp_name'], $uploadDir . $fileName)) {
+            throw new Exception('Failed to upload Executing Officer Declaration');
+        }
+        $uploadPath = 'uploads/gate_passes/' . $fileName;
     }
 
     $conn->begin_transaction();
@@ -54,19 +90,22 @@ try {
             continue;
         }
 
-        $training = strtolower((string)$worker['training_status']);
-        if (!in_array($training, ['pass', 'passed', 'training_passed', 'qualified', 'completed'], true) && (int)$worker['safety_training_status'] !== 1) {
-            continue;
+        // If temporary pass is requested, bypass strict training checks
+        if (!$isTemp) {
+            $training = strtolower((string)$worker['training_status']);
+            if (!in_array($training, ['pass', 'passed', 'training_passed', 'qualified', 'completed'], true) && (int)$worker['safety_training_status'] !== 1) {
+                continue;
+            }
         }
 
         db_execute(
             $conn,
             "INSERT INTO gate_passes (
-                application_no, workman_id, pass_type, request_date, valid_from, valid_to,
+                application_no, workman_id, pass_type, is_temporary, temporary_validity_start, temporary_validity_end, executing_officer_declaration_path, request_date, valid_from, valid_to,
                 safety_training_status, documents_verified, status, created_at
-             ) VALUES (?, ?, ?, CURDATE(), ?, ?, 1, 0, 'pending', NOW())",
-            'sisss',
-            [$applicationNo, $workerId, $passType, $validFrom, $validTo]
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?, 1, 0, 'pending', NOW())",
+            'sisissssss',
+            [$applicationNo, $workerId, $passType, $isTemp ? 1 : 0, $isTemp ? $validFrom : null, $isTemp ? $validTo : null, $uploadPath, $validFrom, $validTo]
         );
         $saved++;
     }

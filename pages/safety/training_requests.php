@@ -449,38 +449,25 @@ function renderContent() {
 
       <div class="tabs-content">
         <!-- 1. PENDING TAB -->
-        <div id="pending-tab" class="tab-panel active">
-           <?php if (empty($pending)): ?>
-             <div class="empty-state">
-               <i class="fas fa-check-circle"></i>
-               <p>All workers are scheduled. No pending requests.</p>
-             </div>
-           <?php else: ?>
-             <div class="request-split-links">
-               <a href="#attachment-requests"><i class="fas fa-file-circle-check"></i> Document Attached <span><?= count($pending_with_attachment) ?></span></a>
-               <a href="#eo-approved-requests"><i class="fas fa-user-check"></i> EO Online Approved <span><?= count($pending_without_attachment) ?></span></a>
-             </div>
-
-             <?php
-               $pendingSections = [
-                 [
-                   'id' => 'attachment-requests',
-                   'icon' => 'fa-file-circle-check',
-                   'title' => 'Document Attached Requests',
-                   'subtitle' => 'Workers submitted with training approval attachment. Verify the document and assign the batch.',
-                   'rows' => $pending_with_attachment,
-                   'empty' => 'No document-attached requests are pending.'
-                 ],
-                 [
-                   'id' => 'eo-approved-requests',
-                   'icon' => 'fa-user-check',
-                   'title' => 'EO Online Approved Requests',
-                   'subtitle' => 'Workers approved online by the Executing Officer without an uploaded attachment.',
-                   'rows' => $pending_without_attachment,
-                   'empty' => 'No EO online approved requests are pending.'
-                 ],
-               ];
-             ?>
+         <div id="pending-tab" class="tab-panel active">
+            <?php if (empty($pending_with_attachment)): ?>
+              <div class="empty-state">
+                <i class="fas fa-check-circle"></i>
+                <p>All workers are scheduled. No pending requests.</p>
+              </div>
+            <?php else: ?>
+              <?php
+                $pendingSections = [
+                  [
+                    'id' => 'attachment-requests',
+                    'icon' => 'fa-file-circle-check',
+                    'title' => 'Document Attached Requests',
+                    'subtitle' => 'Workers submitted with training approval attachment. Verify the document and assign the batch.',
+                    'rows' => $pending_with_attachment,
+                    'empty' => 'No document-attached requests are pending.'
+                  ]
+                ];
+              ?>
              <?php foreach ($pendingSections as $section): ?>
              <div class="request-section" id="<?= htmlspecialchars($section['id']) ?>">
                <div class="request-section-head">

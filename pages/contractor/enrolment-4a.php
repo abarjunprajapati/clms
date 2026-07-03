@@ -2,6 +2,7 @@
 require_once '../../include/auth.php';
 checkAuth(['contractor', 'customer', 'super_admin']);
 include '../../include/config.php';
+require_once '../../include/gate_pass_document_master.php';
 include '../../include/customer_portal_context.php';
 include '../../include/education_flow.php';
 include '../../include/layout.php';
@@ -61,6 +62,11 @@ function enrolment_column_exists($conn, $table, $column) {
     $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
     return $result && mysqli_num_rows($result) > 0;
 }
+
+if (!enrolment_column_exists($conn, 'workmen', 'expected_joining_date')) {
+    mysqli_query($conn, "ALTER TABLE workmen ADD COLUMN expected_joining_date DATE NULL");
+}
+
 
 function enrolment_expr($conn, $table, $column, $alias = null, $default = "''") {
     $alias = $alias ?: $column;
@@ -684,6 +690,7 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'esic_number', 'esi_no') . ",
                 '' AS bank_account,
                 '' AS ifsc,
+                " . enrolment_expr($conn, 'workmen', 'expected_joining_date', 'expected_joining_date') . ",
                 " . enrolment_expr($conn, 'workmen', 'photo', 'photo') . ",
                 " . enrolment_expr($conn, 'workmen', 'signature_doc', 'signature') . ",
                 " . enrolment_expr($conn, 'workmen', 'aadhaar_doc', 'aadhaar_doc') . ",
@@ -709,17 +716,21 @@ function renderContent() {
                 $latestTrainingResultSelect,
                 $latestTrainingResultRequestIdSelect,
                 (
-                    SELECT tr.batch_number
-                    FROM training_requests tr
-                    WHERE tr.workman_id = workmen.id
-                    ORDER BY tr.id DESC
+                    SELECT cb.batch_number
+                    FROM training_batch_workers tbw
+                    JOIN training_class_batches cb ON cb.id = tbw.batch_id
+                    WHERE tbw.workman_id = workmen.id
+                      AND tbw.ticked = 1
+                    ORDER BY tbw.id DESC
                     LIMIT 1
                 ) AS latest_training_batch,
                 (
-                    SELECT tr.scheduled_date
-                    FROM training_requests tr
-                    WHERE tr.workman_id = workmen.id
-                    ORDER BY tr.id DESC
+                    SELECT cb.training_date
+                    FROM training_batch_workers tbw
+                    JOIN training_class_batches cb ON cb.id = tbw.batch_id
+                    WHERE tbw.workman_id = workmen.id
+                      AND tbw.ticked = 1
+                    ORDER BY tbw.id DESC
                     LIMIT 1
                 ) AS latest_training_date,
                 $trainingAttempts30Select,
@@ -793,6 +804,7 @@ function renderContent() {
                 " . enrolment_expr($conn, 'workmen', 'safety_enrollment_reviewed_by', 'safety_enrollment_reviewed_by') . ",
                 " . enrolment_expr($conn, 'workmen', 'uan_number', 'pf_no') . ",
                 " . enrolment_expr($conn, 'workmen', 'esic_number', 'esi_no') . ",
+                " . enrolment_expr($conn, 'workmen', 'expected_joining_date', 'expected_joining_date') . ",
                 " . enrolment_expr($conn, 'workmen', 'photo', 'photo') . ",
                 " . enrolment_expr($conn, 'workmen', 'signature_doc', 'signature') . ",
                 " . enrolment_expr($conn, 'workmen', 'aadhaar_doc', 'aadhaar_doc') . ",
@@ -818,17 +830,21 @@ function renderContent() {
                 $latestTrainingResultSelect,
                 $latestTrainingResultRequestIdSelect,
                 (
-                    SELECT tr.batch_number
-                    FROM training_requests tr
-                    WHERE tr.workman_id = workmen.id
-                    ORDER BY tr.id DESC
+                    SELECT cb.batch_number
+                    FROM training_batch_workers tbw
+                    JOIN training_class_batches cb ON cb.id = tbw.batch_id
+                    WHERE tbw.workman_id = workmen.id
+                      AND tbw.ticked = 1
+                    ORDER BY tbw.id DESC
                     LIMIT 1
                 ) AS latest_training_batch,
                 (
-                    SELECT tr.scheduled_date
-                    FROM training_requests tr
-                    WHERE tr.workman_id = workmen.id
-                    ORDER BY tr.id DESC
+                    SELECT cb.training_date
+                    FROM training_batch_workers tbw
+                    JOIN training_class_batches cb ON cb.id = tbw.batch_id
+                    WHERE tbw.workman_id = workmen.id
+                      AND tbw.ticked = 1
+                    ORDER BY tbw.id DESC
                     LIMIT 1
                 ) AS latest_training_date,
                 $trainingAttempts30Select,
@@ -865,6 +881,28 @@ function renderContent() {
                 $autoEditWorker = $singleWorker;
             }
         }
+    }
+
+    // Fetch dynamic documents for all workers currently loaded
+    $workerIds = array_column($workers, 'id');
+    if ($autoEditWorker) {
+        $workerIds[] = (int)$autoEditWorker['id'];
+    }
+    $workerIds = array_unique(array_filter($workerIds));
+    $workerDocs = [];
+    if (!empty($workerIds)) {
+        $idsCsv = implode(',', array_map('intval', $workerIds));
+        $docRes = mysqli_query($conn, "SELECT workman_id, document_type, file_path FROM documents WHERE workman_id IN ($idsCsv)");
+        while ($docRow = mysqli_fetch_assoc($docRes)) {
+            $workerDocs[$docRow['workman_id']][$docRow['document_type']] = basename($docRow['file_path']);
+        }
+    }
+    foreach ($workers as &$w) {
+        $w['documents'] = $workerDocs[$w['id']] ?? [];
+    }
+    unset($w);
+    if ($autoEditWorker) {
+        $autoEditWorker['documents'] = $workerDocs[$autoEditWorker['id']] ?? [];
     }
     ?>
     <style>
@@ -1173,6 +1211,9 @@ function renderContent() {
                   <div>
                     <div class="fw-bold"><?= htmlspecialchars($w['name']) ?></div>
                     <small class="text-muted"><?= $w['gender'] ?> | <?= $w['dob'] ?></small>
+                    <?php if (!empty($w['expected_joining_date'])): ?>
+                      <div style="font-size: 11px; margin-top: 2px;"><span class="text-muted">Expected Join:</span> <strong><?= date('d-M-Y', strtotime($w['expected_joining_date'])) ?></strong></div>
+                    <?php endif; ?>
                   </div>
                 </div>
               </td>
@@ -1226,7 +1267,7 @@ function renderContent() {
                     <?= !empty($w['latest_training_date']) ? ' | Date: ' . htmlspecialchars(date('d-m-Y', strtotime($w['latest_training_date']))) : '' ?>
                     | Attempts left: <?= (int)$attemptsLeft ?>
                   </div>
-                  <?php if (!in_array($bookingClass, ['pass'], true) && $safetyEnrollmentStatus !== 'rejected'): ?>
+                  <?php if ($safetyEnrollmentStatus === 'approved' && !in_array($bookingClass, ['pass'], true)): ?>
                     <div style="margin-top: 4px; display:flex; flex-wrap:wrap; gap:4px;">
                       <a class="btn btn-sm btn-outline-primary" style="padding: 2px 6px; font-size: 11px;" href="<?= htmlspecialchars($bookUrl) ?>"><i class="fas fa-calendar-check"></i> <?= $bookingClass === 'fail' ? 'Book Retest' : 'Book Safety' ?></a>
                       <?php if ($bookingClass === 'fail' && $attemptsLeft > 0): ?>
@@ -1423,6 +1464,10 @@ function renderContent() {
               <div class="form-group">
                 <label class="form-label required">Aadhaar Number <span id="aadhaarStatus" class="badge-status" style="display:none; margin-left:10px;"></span></label>
                 <input type="text" class="form-control" name="aadhaar" id="aadhaarInput" maxlength="12" inputmode="numeric" autocomplete="off" required>
+              </div>
+              <div class="form-group" id="expectedJoiningDateGroup">
+                <label class="form-label required">Expected Join Date</label>
+                <input type="date" class="form-control" name="expected_joining_date" id="expectedJoiningDateInput" required min="<?= date('Y-m-d') ?>">
               </div>
               <div class="form-group">
                 <label class="form-label required">First Name</label>
@@ -1683,6 +1728,31 @@ function renderContent() {
                 <input type="file" class="form-control" name="training_approval_doc" id="trainingApprovalDocInput" accept=".pdf,application/pdf" data-max-size="5242880">
                 <small class="form-hint">PDF only, max 5 MB.</small>
               </div>
+
+              <!-- Dynamic Gate Pass Documents Section -->
+              <?php
+              $dynamicDocs = clms_get_gate_pass_document_master_rows($conn, true);
+              if (!empty($dynamicDocs) && $requestedType === 'workmen'):
+              ?>
+                <div style="grid-column: 1 / -1; margin-top: 15px; margin-bottom: 5px;">
+                  <h4 style="font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin: 0;">Additional Gate Pass Documents</h4>
+                </div>
+                <?php foreach ($dynamicDocs as $doc):
+                  $reqAttr = $doc['is_mandatory'] ? 'required' : '';
+                  $reqStar = $doc['is_mandatory'] ? '<span class="text-danger">*</span>' : '';
+                ?>
+                  <div class="doc-card">
+                    <label class="form-label <?= $doc['is_mandatory'] ? 'required' : '' ?>"><?= htmlspecialchars($doc['document_type']) ?></label>
+                    <?php if (!empty($doc['format_file_path'])): ?>
+                      <div style="margin-bottom: 5px;">
+                        <a href="<?= htmlspecialchars($doc['format_file_path']) ?>" target="_blank" class="text-primary" style="font-size: 12px; font-weight: 600;"><i class="fas fa-download"></i> Download Format</a>
+                      </div>
+                    <?php endif; ?>
+                    <input type="file" class="form-control" name="dynamic_doc_<?= htmlspecialchars($doc['upload_key']) ?>" accept=".pdf,application/pdf" data-max-size="5242880" <?= $reqAttr ?>>
+                    <small class="form-hint"><?= htmlspecialchars($doc['hint'] ?: 'PDF only, max 5 MB.') ?></small>
+                  </div>
+                <?php endforeach; ?>
+              <?php endif; ?>
             </div>
           </div>
 
@@ -1782,7 +1852,7 @@ function renderContent() {
 
     <!-- View Modal (Original Style) -->
     <div id="viewModal" class="modal-overlay hidden">
-      <div class="modal-box" style="max-width:600px;">
+      <div class="modal-box" style="max-width:850px; width:92%;">
         <div class="modal-header">
           <h3 class="modal-title">Worker Profile</h3>
           <button class="modal-close" onclick="closeViewModal()">&times;</button>
@@ -1999,6 +2069,7 @@ function renderContent() {
         const workOptions = <?= json_encode($workOptions, JSON_UNESCAPED_SLASHES) ?>;
         const requestedPassType = <?= json_encode($selectedType['pass']) ?>;
         const requestedPassLabel = <?= json_encode($selectedType['label']) ?>;
+        const dynamicDocsList = <?= json_encode($dynamicDocs ?: [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
         const prefillAadhaar = <?= json_encode($prefillAadhaar) ?>;
         const currentContractorId = <?= $c_id ? (int)$c_id : 0 ?>;
         const entryEnrollmentLocked = <?= $entryEnrollmentLocked ? 'true' : 'false' ?>;
@@ -2337,6 +2408,10 @@ function renderContent() {
           }
           form.reset();
           resetInlineSafetyPaymentState();
+          const expectedJoinInput = document.getElementById('expectedJoiningDateInput');
+          if (expectedJoinInput) {
+            expectedJoinInput.setAttribute('min', new Date().toISOString().slice(0, 10));
+          }
           document.getElementById('workerEditId').value = '';
           document.getElementById('enrollFormTitle').textContent = ' New ' + requestedPassLabel;
           setFieldValue('pass_type', requestedPassType);
@@ -3240,6 +3315,8 @@ function renderContent() {
             // deptField.style.backgroundColor = '#f1f5f9';
           }
           document.querySelectorAll('#tab-docs input[type="file"]').forEach(input => input.removeAttribute('required'));
+          const expectedJoinInput = document.getElementById('expectedJoiningDateInput');
+          if (expectedJoinInput) expectedJoinInput.removeAttribute('min');
           const existingDocumentMap = {
             photo: worker.photo,
             aadhaar_doc: worker.aadhaar_doc,
@@ -3256,6 +3333,14 @@ function renderContent() {
             const input = form.querySelector(`[name="${name}"]`);
             if (input) input.dataset.existing = fileName || '';
           });
+          if (requestedPassType === 'Workman' && typeof dynamicDocsList !== 'undefined') {
+            dynamicDocsList.forEach(doc => {
+              const name = 'dynamic_doc_' + doc.upload_key;
+              const input = form.querySelector(`[name="${name}"]`);
+              const fileName = (worker.documents && worker.documents[doc.document_type]) || '';
+              if (input) input.dataset.existing = fileName || '';
+            });
+          }
           const trainingApprovalInput = form.querySelector('[name="training_approval_doc"]');
           const rejectedByEO = String(worker.execution_training_status || '').toLowerCase() === 'rejected';
           const rejectedBySafety = String(worker.safety_enrollment_status || '').toLowerCase() === 'rejected';
@@ -3712,7 +3797,7 @@ function renderContent() {
         }
 
         function previewFiles() {
-          const fileLabels = [
+          let fileLabels = [
             ['photo', 'Photo'],
             ['aadhaar_doc', 'Aadhaar Copy'],
             ['education_doc', 'Education Certificate'],
@@ -3723,6 +3808,11 @@ function renderContent() {
             ['police_doc', 'Police Verification'],
             ['insurance_doc', 'Insurance Document']
           ];
+          if (requestedPassType === 'Workman' && typeof dynamicDocsList !== 'undefined') {
+            dynamicDocsList.forEach(doc => {
+              fileLabels.push(['dynamic_doc_' + doc.upload_key, doc.document_type]);
+            });
+          }
           const isEdit = Boolean(document.getElementById('workerEditId')?.value);
           return fileLabels.map(([name, label]) => {
             const input = form.querySelector(`[name="${name}"]`);
@@ -4148,6 +4238,7 @@ function renderContent() {
               ['Work Order Type', selectedWorkOrderSource() || '-'],
               ['Project No / WBS No', previewValue('project_name')],
               ['Date of Joining', previewValue('registration_date')],
+              ['Expected Join Date', previewValue('expected_joining_date')],
               ['Aadhaar Number', previewValue('aadhaar')],
               ['Full Name', previewValue('name')],
               ['Father Name', previewValue('father_name')]
@@ -4452,28 +4543,280 @@ function renderContent() {
         };
 
     function viewWorker(w) {
-      document.getElementById('viewContent').innerHTML = `
-        <div style="display:flex; gap:20px;">
-          <img src="../../uploads/workers/${w.photo}" style="width:120px;height:140px;object-fit:cover;border:1px solid #ddd;">
-          <div>
-            <h4 style="margin:0">${w.name}</h4>
-            <div style="color:var(--text-muted);margin-bottom:10px;">${w.gender} | DOB: ${w.dob}</div>
-            <div><strong>Temp ID:</strong> <span class="text-primary">${w.temp_id}</span></div>
-            <div><strong>Aadhaar:</strong> ${w.aadhaar}</div>
-            <div><strong>Work:</strong> ${w.nature_of_work} (${w.department})</div>
-            <div><strong>Executing Officer:</strong> ${(w.executing_officer_code || '-')} ${(w.executing_officer_name ? ' - ' + w.executing_officer_name : '')}</div>
-            <div><strong>EO Approval:</strong> ${((w.execution_training_status === 'approved' && Number(w.execution_training_reviewed_by || 0) > 0) ? 'APPROVED' : (w.execution_training_status === 'rejected' ? 'REJECTED' : 'PENDING'))}</div>
+      const getDocUrl = (path) => {
+        if (!path) return '';
+        const filename = path.split('/').pop();
+        return `../../uploads/workers/${encodeURIComponent(filename)}`;
+      };
+
+      const renderDocLink = (label, path) => {
+        if (!path) return '';
+        const url = getDocUrl(path);
+        return `
+          <div class="doc-item" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; font-size:12px; margin-bottom:6px; font-weight:600;">
+            <i class="fas fa-file-pdf text-danger" style="font-size:15px; color:#ef4444;"></i>
+            <span class="doc-label" style="flex-grow:1; margin-left:10px; font-weight:600; color:#334155;">${label}</span>
+            <a href="${url}" target="_blank" class="btn btn-xs btn-outline-primary" style="padding:2px 8px; font-size:11px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:4px; border:1px solid #3b82f6; border-radius:6px; color:#3b82f6; background:transparent;"><i class="fas fa-external-link-alt"></i> View</a>
           </div>
-        </div>
-        <hr>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px;">
-          <div><strong>State:</strong> ${w.state}</div>
-          <div><strong>District:</strong> ${w.district}</div>
-          <div><strong>Mobile:</strong> ${w.mobile}</div>
-          <div><strong>WhatsApp:</strong> ${w.whatsapp_no || 'N/A'}</div>
-          <div><strong>Emergency:</strong> ${w.emergency_contact}</div>
-          <div><strong>Blood Group:</strong> ${w.blood_group || 'N/A'}</div>
-          <div><strong>Skill:</strong> ${w.skill_category}</div>
+        `;
+      };
+
+      const photoSrc = w.photo ? `../../uploads/workers/${w.photo}` : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23cbd5e1"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+
+      let statusLabel = 'Active';
+      let statusStyle = 'background:#10b981; color:#fff;';
+      if (w.is_blocked == 1) {
+        statusLabel = `Blocked by ${w.blocked_source || 'Welfare'}`;
+        statusStyle = 'background:#ef4444; color:#fff;';
+      }
+
+      let vaultHtml = '';
+      vaultHtml += renderDocLink('Workman Photo', w.photo);
+      vaultHtml += renderDocLink('Signature', w.signature);
+      vaultHtml += renderDocLink('Aadhaar Card', w.aadhaar_doc);
+      vaultHtml += renderDocLink('Training Approval', w.training_approval_doc);
+      vaultHtml += renderDocLink('Education Cert', w.education_doc);
+      vaultHtml += renderDocLink('Bank Passbook', w.bank_doc);
+      vaultHtml += renderDocLink('Skill Certificate', w.skill_cert_doc);
+      vaultHtml += renderDocLink('Police Verification', w.police_doc);
+      vaultHtml += renderDocLink('Medical Report', w.medical_doc);
+      vaultHtml += renderDocLink('Insurance Copy', w.insurance_doc);
+
+      if (vaultHtml.trim() === '') {
+        vaultHtml = '<div style="font-size:11px; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #e2e8f0; border-radius:8px;">No core documents uploaded.</div>';
+      }
+
+      let dynamicDocsHtml = '';
+      if (w.documents && w.documents.length > 0) {
+        let count = 0;
+        w.documents.forEach(doc => {
+          const docLink = renderDocLink(doc.type, doc.file_path);
+          if (docLink) {
+            dynamicDocsHtml += docLink;
+            count++;
+          }
+        });
+        if (count === 0) {
+          dynamicDocsHtml = '<div style="font-size:11px; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #e2e8f0; border-radius:8px;">No additional dynamic documents.</div>';
+        }
+      } else {
+        dynamicDocsHtml = '<div style="font-size:11px; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #e2e8f0; border-radius:8px;">No additional dynamic documents.</div>';
+      }
+
+      const eoStatus = (w.execution_training_status || 'pending').toLowerCase();
+      const eoStatusClass = eoStatus === 'approved' ? 'status-approved' : (eoStatus === 'rejected' ? 'status-rejected' : 'status-pending');
+      const eoStatusLabel = eoStatus.toUpperCase();
+
+      const safetyStatus = (w.safety_enrollment_status || 'pending').toLowerCase();
+      const safetyStatusClass = safetyStatus === 'approved' ? 'status-approved' : (safetyStatus === 'rejected' ? 'status-rejected' : 'status-pending');
+      const safetyStatusLabel = safetyStatus.toUpperCase();
+
+      document.getElementById('viewContent').innerHTML = `
+        <style>
+          .profile-container { font-family: 'Outfit', 'Inter', sans-serif; color: #1e293b; text-align: left; }
+          .profile-header-card { display: flex; gap: 24px; background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; padding: 24px; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); align-items: center; }
+          .profile-photo { width: 100px; height: 120px; object-fit: cover; border-radius: 12px; border: 3px solid rgba(255,255,255,0.8); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+          .profile-header-info { display: flex; flex-direction: column; gap: 4px; flex-grow: 1; }
+          .profile-name { font-size: 22px; font-weight: 800; margin: 0; color: #fff; line-height: 1.2; }
+          .profile-sub { font-size: 13px; color: rgba(255,255,255,0.85); margin-bottom: 6px; }
+          .badge-container { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+          .profile-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; }
+          .badge-role { background: rgba(255,255,255,0.2); color: white; }
+          
+          .profile-body-grid { display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 20px; }
+          .profile-section-card { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+          .profile-section-title { font-size: 13px; font-weight: 800; color: #1e3a8a; border-bottom: 2px solid #eff6ff; padding-bottom: 6px; margin-top: 0; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+          
+          .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; font-size: 13px; }
+          .detail-row { display: flex; flex-direction: column; gap: 2px; }
+          .detail-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.3px; }
+          .detail-val { font-weight: 600; color: #1e293b; word-break: break-all; }
+          
+          .approval-status-box { padding: 10px 12px; border-radius: 12px; border: 1px solid; font-size: 12px; margin-bottom: 10px; }
+          .status-approved { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+          .status-pending { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+          .status-rejected { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+        </style>
+
+        <div class="profile-container">
+          <!-- Banner header -->
+          <div class="profile-header-card">
+            <img src="${photoSrc}" class="profile-photo" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;%23cbd5e1&quot;><path d=&quot;M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z&quot;/></svg>'">
+            <div class="profile-header-info">
+              <h4 class="profile-name">${w.name}</h4>
+              <div class="profile-sub">${w.gender} | DOB: ${w.dob} | Reg Date: ${w.registration_date || 'N/A'}</div>
+              <div class="badge-container">
+                <span class="profile-badge badge-role"><i class="fas fa-user-shield"></i> ${w.pass_type}</span>
+                <span class="profile-badge" style="${statusStyle}"><i class="fas fa-info-circle"></i> ${statusLabel}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Body content split -->
+          <div class="profile-body-grid">
+            <!-- Left: Details -->
+            <div>
+              <!-- 1. Personal Info -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-id-card"></i> Personal Information</h5>
+                <div class="details-grid">
+                  <div class="detail-row">
+                    <span class="detail-label">Temp ID</span>
+                    <span class="detail-val text-primary" style="font-weight:700; color:#3b82f6;">${w.temp_id}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Aadhaar Number</span>
+                    <span class="detail-val">${w.aadhaar}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Father's Name</span>
+                    <span class="detail-val">${w.father_name || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Marital Status</span>
+                    <span class="detail-val">${w.marital_status || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Nationality</span>
+                    <span class="detail-val">${w.nationality || 'Indian'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Blood Group</span>
+                    <span class="detail-val">${w.blood_group || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. Address & Contact -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-map-marker-alt"></i> Contact & Address</h5>
+                <div class="details-grid" style="grid-template-columns: 1fr;">
+                  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                    <div class="detail-row">
+                      <span class="detail-label">Mobile Number</span>
+                      <span class="detail-val">${w.mobile}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label">WhatsApp Number</span>
+                      <span class="detail-val">${w.whatsapp_no || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label">Email Address</span>
+                      <span class="detail-val">${w.email || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label">Emergency Contact</span>
+                      <span class="detail-val">${w.emergency_contact || 'N/A'}</span>
+                    </div>
+                  </div>
+                  <div class="detail-row" style="margin-top: 4px;">
+                    <span class="detail-label">Present Address</span>
+                    <span class="detail-val" style="font-weight: 500;">${w.present_address} ${w.district ? ', ' + w.district : ''} ${w.state ? ', ' + w.state : ''} ${w.pincode ? ' - ' + w.pincode : ''}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Permanent Address</span>
+                    <span class="detail-val" style="font-weight: 500;">${w.permanent_address || 'Same as Present'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. Work Order & Employment -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-briefcase"></i> Work Order & Employment</h5>
+                <div class="details-grid">
+                  <div class="detail-row">
+                    <span class="detail-label">Work Order No</span>
+                    <span class="detail-val" style="color:#1e3a8a;">${w.work_order_no || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Project Name</span>
+                    <span class="detail-val">${w.project_name || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Department</span>
+                    <span class="detail-val">${w.department}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Trade / Nature of Work</span>
+                    <span class="detail-val">${w.nature_of_work}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Skill Category</span>
+                    <span class="detail-val">${w.skill_category}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Experience</span>
+                    <span class="detail-val">${w.experience ? w.experience + ' Years' : 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">PF Number / UAN</span>
+                    <span class="detail-val">${w.pf_no || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">ESIC Number</span>
+                    <span class="detail-val">${w.esi_no || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Certified Wage Rate</span>
+                    <span class="detail-val">${w.certified_wage_rate || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Expected Join Date</span>
+                    <span class="detail-val" style="color:#10b981;">${w.expected_joining_date || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Flow Approvals + Documents -->
+            <div>
+              <!-- 4. Approvals Timeline -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-list-check"></i> Workflow Status</h5>
+                
+                <!-- Executing Officer Approval -->
+                <div style="font-weight:700; font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase;">1. Executing Officer</div>
+                <div class="approval-status-box ${eoStatusClass}">
+                  <div style="display:flex; justify-content:space-between; font-weight:700; margin-bottom:4px;">
+                    <span>STATUS:</span>
+                    <span>${eoStatusLabel}</span>
+                  </div>
+                  <div><strong>Officer:</strong> ${(w.executing_officer_code || '-')} ${(w.executing_officer_name ? ' - ' + w.executing_officer_name : '')}</div>
+                  <div style="margin-top:2px;"><strong>Remarks:</strong> ${w.execution_training_remarks || 'No remarks.'}</div>
+                </div>
+
+                <!-- Safety Department Document Verification -->
+                <div style="font-weight:700; font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase; margin-top:12px;">2. Safety Enrollment</div>
+                <div class="approval-status-box ${safetyStatusClass}">
+                  <div style="display:flex; justify-content:space-between; font-weight:700; margin-bottom:4px;">
+                    <span>STATUS:</span>
+                    <span>${safetyStatusLabel}</span>
+                  </div>
+                  <div><strong>Remarks:</strong> ${w.safety_enrollment_remarks || 'No remarks.'}</div>
+                </div>
+
+                <!-- Safety Training Info -->
+                <div style="font-weight:700; font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase; margin-top:12px;">3. Safety Training</div>
+                <div style="padding:10px 12px; background:#f1f5f9; border-radius:12px; border:1px solid #cbd5e1; font-size:12px;">
+                  <div><strong>Batch:</strong> ${w.latest_training_batch || 'Not Scheduled'}</div>
+                  <div><strong>Language:</strong> ${w.safety_language || 'N/A'}</div>
+                  <div><strong>Date:</strong> ${w.latest_training_date ? w.latest_training_date : 'N/A'}</div>
+                  <div><strong>Training Result:</strong> <strong style="text-transform:uppercase; color:${w.safety_status === 'passed' ? '#166534' : (w.safety_status === 'failed' ? '#991b1b' : '#92400e')}">${w.safety_status || 'PENDING'}</strong></div>
+                </div>
+              </div>
+
+              <!-- 5. Documents Vault -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-folder-open"></i> Documents Vault</h5>
+                <div class="doc-vault">
+                  ${vaultHtml}
+                  
+                  <div style="font-weight: 700; font-size: 11px; color: #475569; margin: 10px 0 4px 0; border-top: 1px solid #e2e8f0; padding-top: 8px; text-transform: uppercase;">Dynamic Documents</div>
+                  ${dynamicDocsHtml}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       `;
       viewModal.classList.remove('hidden');

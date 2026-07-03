@@ -111,11 +111,11 @@
         </div>
         <div class="form-group">
           <label class="form-label">Pass From Date <span class="required">*</span></label>
-          <input class="form-control" type="date" id="from_date" value="<?= date('Y-m-d') ?>" />
+          <input class="form-control" type="date" id="from_date" value="<?= date('Y-m-d') ?>" onchange="enforceTemporaryPassLimits()" />
         </div>
         <div class="form-group">
           <label class="form-label">Pass To Date <span class="required">*</span></label>
-          <input class="form-control" type="date" id="to_date" value="<?= date('Y-m-d', strtotime('+6 months')) ?>" />
+          <input class="form-control" type="date" id="to_date" value="<?= date('Y-m-d', strtotime('+6 months')) ?>" onchange="enforceTemporaryPassLimits()" />
         </div>
         <div class="form-group">
           <label class="form-label">Vehicle Entry Required?</label>
@@ -125,6 +125,24 @@
             <option>Yes – Heavy Vehicle</option>
           </select>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Temporary Pass Section -->
+  <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #fcd34d; background: #fffbeb; border-radius: 8px;">
+    <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:14px;color:var(--gray-800); font-weight: bold;">
+      <input type="checkbox" id="is_temporary_pass" onchange="toggleTemporaryPass(this)" style="margin-top:3px;width:18px;height:18px" />
+      <span>Apply for Temporary Pass (Extremely urgent situations only)</span>
+    </label>
+    <div id="temporary_pass_fields" style="display:none; margin-top: 15px; border-top: 1px solid #fde68a; padding-top: 15px;">
+      <p style="font-size: 13px; color: #b45309; margin-bottom: 10px;">
+        <i class="fas fa-exclamation-triangle"></i> Temporary passes are strictly limited to a maximum of 7 days and require approval from the Welfare User.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Executing Officer Declaration <span class="required">*</span></label>
+        <input class="form-control" type="file" id="executing_officer_declaration" accept=".pdf,.jpg,.jpeg,.png" />
+        <small style="color:var(--gray-500)">Upload the declaration duly signed by the executing officer.</small>
       </div>
     </div>
   </div>
@@ -315,17 +333,43 @@ async function submitGP() {
         return;
     }
 
+    const isTemp = document.getElementById('is_temporary_pass')?.checked;
+    const tempFile = document.getElementById('executing_officer_declaration')?.files[0];
+
+    if (isTemp && !tempFile) {
+        showToast('⚠️', 'Executing Officer Declaration is required for Temporary Pass.');
+        return;
+    }
+
+    const fromDate = new Date(document.getElementById('from_date').value);
+    const toDate = new Date(document.getElementById('to_date').value);
+    
+    if (isTemp) {
+        const diffTime = Math.abs(toDate - fromDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        if (diffDays > 7) {
+            showToast('⚠️', 'Temporary Pass validity cannot exceed 7 days.');
+            return;
+        }
+    }
+
+    const formData = new FormData();
+    formData.append('application_id', appId);
+    formData.append('worker_ids', JSON.stringify(workerIds));
+    formData.append('entry_gate', document.getElementById('entry_gate').value);
+    formData.append('work_shift', document.getElementById('work_shift').value);
+    formData.append('access_type', document.getElementById('access_type').value);
+    formData.append('from_date', document.getElementById('from_date').value);
+    formData.append('to_date', document.getElementById('to_date').value);
+    formData.append('is_temporary', isTemp ? '1' : '0');
+    if (isTemp && tempFile) {
+        formData.append('executing_officer_declaration', tempFile);
+    }
+
     const res = await window.apiFetch('submit_gate_pass.php', {
         method: 'POST',
-        body: JSON.stringify({
-            application_id: appId,
-            worker_ids: workerIds,
-            entry_gate: document.getElementById('entry_gate').value,
-            work_shift: document.getElementById('work_shift').value,
-            access_type: document.getElementById('access_type').value,
-            from_date: document.getElementById('from_date').value,
-            to_date: document.getElementById('to_date').value
-        })
+        body: formData, // Send as FormData, apiFetch needs to handle this
+        headers: { 'Accept': 'application/json' }
     });
 
     if (res.success) {
@@ -334,6 +378,35 @@ async function submitGP() {
         loadData();
     } else {
         showToast('❌', res.error || 'Submission failed');
+    }
+}
+
+function toggleTemporaryPass(cb) {
+    const fields = document.getElementById('temporary_pass_fields');
+    fields.style.display = cb.checked ? 'block' : 'none';
+    enforceTemporaryPassLimits();
+}
+
+function enforceTemporaryPassLimits() {
+    const isTemp = document.getElementById('is_temporary_pass')?.checked;
+    const fromInput = document.getElementById('from_date');
+    const toInput = document.getElementById('to_date');
+    
+    if (isTemp && fromInput.value) {
+        const fromDate = new Date(fromInput.value);
+        const maxToDate = new Date(fromDate);
+        maxToDate.setDate(fromDate.getDate() + 6); // Max 7 days including start date
+        
+        // Format to YYYY-MM-DD
+        const maxStr = maxToDate.toISOString().split('T')[0];
+        
+        // If current to_date is > max allowed, adjust it
+        if (toInput.value > maxStr) {
+            toInput.value = maxStr;
+        }
+        toInput.max = maxStr; // Set HTML max attribute
+    } else {
+        toInput.removeAttribute('max'); // Remove restriction
     }
 }
 

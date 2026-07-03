@@ -11,6 +11,18 @@ $current_page = 'noc_management';
 function renderContent() {
     global $conn, $contractor_id;
     try {
+        // --- AUTO FIX CORRUPTED NOC TRANSFERS ---
+        // If a workman's contractor_id was wrongly set to a user_id, this fixes it.
+        $conn->query("
+            UPDATE workmen w
+            JOIN noc_requests n ON n.workman_id = w.id
+            JOIN contractors c ON n.to_contractor_id = c.user_id
+            SET w.contractor_id = c.id
+            WHERE n.noc_status = 'approved_by_welfare'
+              AND w.contractor_id = c.user_id
+        ");
+        // ----------------------------------------
+        
         // Resolve the actual contractor's auto-increment ID from the database using their user_id
         $c_stmt = $conn->prepare("SELECT id FROM contractors WHERE user_id = ?");
         $c_stmt->bind_param("i", $contractor_id);

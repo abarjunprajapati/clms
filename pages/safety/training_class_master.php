@@ -153,17 +153,7 @@ function renderContent() {
           <a class="btn btn-sm btn-outline" href="training_batch_report.php?batch_id=<?= (int)$b['id'] ?>">Report</a>
           <button type="button" class="btn btn-sm btn-outline" onclick="viewRescheduleHistory(<?= (int)$b['id'] ?>, '<?= htmlspecialchars($b['batch_number']) ?>')">History</button>
           <a class="btn btn-sm btn-warning" href="reschedule_batch.php?batch_id=<?= (int)$b['id'] ?>" title="Reschedule this batch"><i class="fas fa-calendar-day"></i> Reschedule</a>
-          <button
-            class="btn btn-sm <?= $active ? 'btn-warning' : 'btn-success' ?>"
-            type="button"
-            data-batch-id="<?= (int)$b['id'] ?>"
-            data-batch-number="<?= htmlspecialchars($b['batch_number']) ?>"
-            data-is-active="<?= $active ? '1' : '0' ?>"
-            data-new-status="<?= $active ? 'inactive' : 'active' ?>"
-            data-worker-count="<?= (int)$b['total_workers'] ?>"
-            onclick="confirmStatusToggle(this)"
-            <?= !$active && $b['training_date'] < date('Y-m-d') ? 'disabled title="Previous date batch cannot be activated"' : '' ?>
-          ><?= $active ? 'Inactive' : 'Active' ?></button>
+
         </div>
       </td>
     </tr>

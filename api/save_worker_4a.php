@@ -42,6 +42,7 @@ require_once __DIR__ . '/../include/wage_settings.php';
 require_once __DIR__ . '/../include/training_flow.php';
 require_once __DIR__ . '/../include/age_range_mapping.php';
 require_once __DIR__ . '/../include/payment_flow.php';
+require_once __DIR__ . '/../include/gate_pass_document_master.php';
 require_once __DIR__ . '/api_helper.php';
 
 // include/session.php installs diagnostic handlers; restore JSON handlers for this API.
@@ -206,6 +207,10 @@ function worker4a_column_exists($conn, $table, $column) {
     $column = mysqli_real_escape_string($conn, $column);
     $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
     return $result && mysqli_num_rows($result) > 0;
+}
+
+if (!worker4a_column_exists($conn, 'workmen', 'expected_joining_date')) {
+    mysqli_query($conn, "ALTER TABLE workmen ADD COLUMN expected_joining_date DATE NULL");
 }
 
 function worker4a_contractor_select_expr($conn) {
@@ -398,6 +403,7 @@ function worker4a_ensure_schema($conn) {
         'safety_training_status' => "VARCHAR(50) DEFAULT 'PENDING_TRAINING'",
         'source' => 'VARCHAR(50) NULL',
         'temp_id' => 'VARCHAR(50) NULL',
+        'expected_joining_date' => 'DATE NULL',
         'created_at' => 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP',
     ];
     foreach ($workmenColumns as $column => $definition) {
@@ -694,25 +700,58 @@ function worker4a_ensure_training_request($conn, $workman_id, $contractor_id, $r
                 (int)$existing['id']
             ]
         );
-        return;
+        $requestId = (int)$existing['id'];
+    } else {
+        $requestId = insert_table_row($conn, 'training_requests', [
+            'workman_id' => $workman_id,
+            'contractor_id' => $contractor_id,
+            'training_type' => $data['training_type'] ?? 'Safety Induction',
+            'requested_date' => date('Y-m-d'),
+            'preferred_date' => $data['training_booking_date'] ?? null,
+            'preferred_shift' => $preferredShift,
+            'remarks' => !empty($data['training_booking_date'])
+                ? 'Safety training appointment requested during entitlement booking.'
+                : 'Auto-created after Executing Officer approval/document validation. Waiting for Safety Department approval.',
+            'source' => 'enrolment',
+            'requested_by' => $requested_by,
+            'status' => $initialStatus,
+            'created_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
     }
 
-    insert_table_row($conn, 'training_requests', [
-        'workman_id' => $workman_id,
-        'contractor_id' => $contractor_id,
-        'training_type' => $data['training_type'] ?? 'Safety Induction',
-        'requested_date' => date('Y-m-d'),
-        'preferred_date' => $data['training_booking_date'] ?? null,
-        'preferred_shift' => $preferredShift,
-        'remarks' => !empty($data['training_booking_date'])
-            ? 'Safety training appointment requested during entitlement booking.'
-            : 'Auto-created after Executing Officer approval/document validation. Waiting for Safety Department approval.',
-        'source' => 'enrolment',
-        'requested_by' => $requested_by,
-        'status' => $initialStatus,
-        'created_at' => date('Y-m-d H:i:s'),
-        'updated_at' => date('Y-m-d H:i:s'),
-    ]);
+    $bookingBatchId = (int)($data['training_booking_batch_id'] ?? 0);
+    if ($bookingBatchId > 0) {
+        $batchObj = db_single($conn, "SELECT batch_number, training_date FROM training_class_batches WHERE id = ? LIMIT 1", 'i', [$bookingBatchId]);
+        if ($batchObj) {
+            // Update training_requests with the batch details
+            db_execute(
+                $conn,
+                "UPDATE training_requests SET batch_number = ?, scheduled_date = ?, updated_at = NOW() WHERE id = ?",
+                'ssi',
+                [$batchObj['batch_number'], $batchObj['training_date'], $requestId]
+            );
+
+            // Calculate attempt number
+            $attemptsRes = db_single(
+                $conn,
+                "SELECT COUNT(*) as count FROM training_requests WHERE workman_id = ? AND status IN ('failed', 'passed')",
+                'i',
+                [$workman_id]
+            );
+            $attemptNo = max(1, (int)($attemptsRes['count'] ?? 0) + 1);
+
+            // Link in training_batch_workers as draft
+            db_execute(
+                $conn,
+                "INSERT INTO training_batch_workers (batch_id, training_request_id, workman_id, ticked, attempt_no, status, created_at)
+                 VALUES (?, ?, ?, 1, ?, 'draft', NOW())
+                 ON DUPLICATE KEY UPDATE training_request_id = VALUES(training_request_id), ticked = 1, attempt_no = VALUES(attempt_no), status = 'draft'",
+                'iiii',
+                [$bookingBatchId, $requestId, $workman_id, $attemptNo]
+            );
+        }
+    }
 }
 
 function worker4a_detect_work_order_source($conn, $contractor_id, $work_order_no, $posted_source = '') {
@@ -774,6 +813,11 @@ function worker4a_normalize_training_shift($value) {
 }
 
 worker4a_ensure_schema($conn);
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && empty($_FILES) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        $maxSize = ini_get('post_max_size') ?: 'unknown';
+        throw new Exception("Uploaded documents/photos are too large (total request size exceeds server limit of {$maxSize}). Please reduce the file sizes (e.g., upload compressed images/PDFs under 2MB each) and try again.");
+    }
 
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         throw new Exception("Only POST requests are allowed.");
@@ -857,6 +901,35 @@ worker4a_ensure_schema($conn);
         'skill_cert_doc' => ''
         ,'training_approval_doc' => ''
     ];
+
+    // Fetch active dynamic documents from master to process their uploads dynamically
+    $dynamicDocs = clms_get_gate_pass_document_master_rows($conn, true);
+    foreach ($dynamicDocs as $ddoc) {
+        $ukey = 'dynamic_doc_' . $ddoc['upload_key'];
+        $uploaded_files[$ukey] = '';
+    }
+
+    // Validate mandatory dynamic documents if this is not a draft and type is workmen
+    if ($action !== 'draft' && $enrolmentTypeForGate === 'workmen') {
+        $existingDocs = [];
+        if ($editing_worker_id > 0) {
+            $docRes = $conn->query("SELECT document_type FROM documents WHERE workman_id = $editing_worker_id");
+            while ($docRes && ($drow = $docRes->fetch_assoc())) {
+                $existingDocs[] = strtolower(trim($drow['document_type']));
+            }
+        }
+        foreach ($dynamicDocs as $ddoc) {
+            if ((int)$ddoc['is_mandatory'] === 1) {
+                $ukey = 'dynamic_doc_' . $ddoc['upload_key'];
+                $isUploaded = isset($_FILES[$ukey]) && ($_FILES[$ukey]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK;
+                $hasExisting = in_array(strtolower(trim($ddoc['document_type'])), $existingDocs, true);
+                if (!$isUploaded && !$hasExisting) {
+                    throw new Exception("Please upload the required document: " . $ddoc['document_type']);
+                }
+            }
+        }
+    }
+
     $new_uploaded_files = $uploaded_files;
     $hasUpload = false;
     foreach (array_keys($uploaded_files) as $uploadKey) {
@@ -981,6 +1054,7 @@ worker4a_ensure_schema($conn);
         'contractor_id' => $contractor_id,
         'name' => $data['name'] ?? '',
         'father_name' => $data['father_name'] ?? '',
+        'expected_joining_date' => !empty($data['expected_joining_date']) ? $data['expected_joining_date'] : null,
         'dob' => trim((string)($data['dob'] ?? '')) !== '' ? $data['dob'] : null,
         'gender' => $data['gender'] ?? '',
         'marital_status' => $data['marital_status'] ?? '',
@@ -1262,6 +1336,9 @@ worker4a_ensure_schema($conn);
                 'education_doc' => 'Education Certificate',
                 'training_approval_doc' => 'Training Attendance Approval'
             ];
+            foreach ($dynamicDocs as $ddoc) {
+                $doc_type_map['dynamic_doc_' . $ddoc['upload_key']] = $ddoc['document_type'];
+            }
 
             $documentFiles = (($existing_workman['status'] ?? '') === 'draft') ? $uploaded_files : $new_uploaded_files;
             foreach ($documentFiles as $key => $file) {

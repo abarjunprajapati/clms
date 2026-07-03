@@ -337,6 +337,12 @@ function safetyDashHandlePost($conn) {
                     WHERE tr.status IN ('pending', 'failed')
                       AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
                       AND LOWER(TRIM(COALESCE(w.safety_language, ''))) = LOWER(TRIM(?))
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM training_batch_workers tbw_active
+                          WHERE tbw_active.training_request_id = tr.id
+                            AND tbw_active.ticked = 1
+                      )
                     ORDER BY COALESCE(tr.preferred_date, tr.requested_date, DATE(tr.created_at)) ASC, tr.id ASC
                     LIMIT $capacity
                 ", 'ss', [$trainingDate, $language['language_name']]);
@@ -898,7 +904,6 @@ function renderContent() {
       <a href="training_fee_master.php" class="quick-link"><i class="fas fa-indian-rupee-sign"></i><strong>Fee Master</strong><span>Maintain PWO, PO and SO training fee amounts.</span></a>
       <a href="training_language_master.php" class="quick-link"><i class="fas fa-language"></i><strong>Language Master</strong><span>Maintain Malayalam, English, Kannada, Tamil and more.</span></a>
       <a href="training_requests.php#attachment-requests" class="quick-link"><i class="fas fa-file-alt"></i><strong>Document Attached</strong><span>Schedule workers submitted with approval attachment.</span></a>
-      <a href="training_requests.php#eo-approved-requests" class="quick-link"><i class="fas fa-user-check"></i><strong>EO Online Approved</strong><span>Schedule workers approved online without attachment.</span></a>
       <a href="training_schedule.php" class="quick-link"><i class="fas fa-calendar-alt"></i><strong>Manage Schedule</strong><span>Control postponement, advancement, cancellation and attendee updates.</span></a>
       <a href="conduct_results.php" class="quick-link"><i class="fas fa-clipboard-user"></i><strong>Attendance & Marks</strong><span>Save attendance, marks and final pass/fail results.</span></a>
       <a href="retraining.php" class="quick-link"><i class="fas fa-rotate-left"></i><strong>Re-Training</strong><span>Review failed workmen and route repeat induction requests.</span></a>

@@ -103,6 +103,15 @@ function clms_training_ensure_schema($conn) {
                     AND LOWER(COALESCE(tr_active.status, '')) IN ('pending_eo', 'pending_safety', 'welfare_pending', 'pending')
               )
         ");
+
+        @mysqli_query($conn, "
+            UPDATE training_requests tr
+            JOIN workmen w ON w.id = tr.workman_id
+            SET tr.status = 'pending_safety', tr.updated_at = NOW()
+            WHERE LOWER(COALESCE(tr.status, '')) = 'pending'
+              AND LOWER(COALESCE(w.execution_training_status, '')) = 'approved'
+              AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'pending'
+        ");
     }
 }
 

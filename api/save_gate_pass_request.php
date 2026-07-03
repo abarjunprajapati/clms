@@ -235,6 +235,57 @@ try {
     $requiredDocs = clms_get_gate_pass_document_type_map($conn, true);
     $allDocs = clms_get_gate_pass_document_type_map($conn, false);
     $optionalDocs = array_diff_key($allDocs, $requiredDocs);
+    
+    $isTemp = (int)($_POST['is_temporary'] ?? 0);
+
+    if ($isTemp === 1 && $action === 'submit') {
+        if (empty($_FILES['executing_officer_declaration']) || $_FILES['executing_officer_declaration']['error'] !== UPLOAD_ERR_OK) {
+            throw new Exception("Executing Officer Declaration is mandatory for Temporary Passes.");
+        }
+        $ext = strtolower(pathinfo($_FILES['executing_officer_declaration']['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['pdf', 'jpg', 'jpeg', 'png'], true)) {
+            throw new Exception("Invalid file type for Executing Officer Declaration.");
+        }
+        $uploadDir = __DIR__ . '/../uploads/gate_passes/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+        $fileName = 'exec_decl_' . $workmanId . '_' . time() . '.' . $ext;
+        if (!move_uploaded_file($_FILES['executing_officer_declaration']['tmp_name'], $uploadDir . $fileName)) {
+            throw new Exception("Failed to upload Executing Officer Declaration.");
+        }
+        $declPath = 'uploads/gate_passes/' . $fileName;
+
+        $diffDays = (strtotime($validTo) - strtotime($validFrom)) / (60 * 60 * 24);
+        if ($diffDays > 7) {
+            throw new Exception("Temporary pass cannot exceed 7 days.");
+        }
+
+        $tempAppNo = 'TEMP-' . date('Ymd') . '-' . random_int(1000, 9999);
+        $conn->begin_transaction();
+        
+        $stmt = $conn->prepare("INSERT INTO gate_passes (workman_id, pass_type, pass_number, valid_from, valid_to, status, is_temporary, application_no, executing_officer_declaration_path, created_at, updated_at) VALUES (?, 'temporary', '', ?, ?, 'pending', 1, ?, ?, NOW(), NOW())");
+        $stmt->bind_param("issss", $workmanId, $validFrom, $validTo, $tempAppNo, $declPath);
+        if (!$stmt->execute()) {
+            throw new Exception("Failed to save temporary pass request: " . $stmt->error);
+        }
+        
+        // Clean up the draft request
+        $conn->query("DELETE FROM gate_pass_request_workers WHERE request_id = $requestId");
+        $conn->query("DELETE FROM gate_pass_requests WHERE id = $requestId");
+        
+        require_once __DIR__ . '/../include/NotificationEngine.php';
+        NotificationEngine::sendRoleNotification(
+            $conn, 
+            'welfare', 
+            "New Temporary Gate Pass Request ($tempAppNo) pending approval.", 
+            'gatepass'
+        );
+        $conn->commit();
+
+        apiSuccess([
+            'request_no' => $tempAppNo,
+            'workman_id' => $workmanId,
+        ], 'Temporary pass requested successfully. Waiting for Welfare approval.');
+    }
 
     if ($action === 'submit') {
         foreach ($requiredDocs as $key => $name) {
