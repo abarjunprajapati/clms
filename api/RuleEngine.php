@@ -50,7 +50,7 @@ class RuleEngine {
             'reschedule_training' => ['enrolment_done', ['safety_user', 'admin']],
         ],
         'training_done' => [
-            'request_gatepass' => ['gatepass_requested', ['contractor', 'admin']],
+            'request_gatepass' => ['gatepass_requested', ['contractor', 'admin', 'welfare_user', 'pass_user', 'welfare_admin']],
         ],
         'gatepass_requested' => [
             'verify_gatepass' => ['gatepass_verified', ['welfare_user', 'welfare_admin', 'admin']],

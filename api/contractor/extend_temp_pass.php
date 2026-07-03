@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
-checkAuth(['contractor', 'customer']);
+checkAuth(['contractor', 'customer', 'welfare_user', 'pass_user', 'welfare_admin', 'super_admin']);
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../api_helper.php';
 require_once __DIR__ . '/../WorkflowEngine.php';

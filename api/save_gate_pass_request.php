@@ -69,14 +69,26 @@ function uploadAnnexure6ADoc($conn, $workmanId, $requestId, $docType, $key) {
 
 try {
     ensureGatePassDocumentSchema($conn);
-    clms_get_portal_contractor($conn);
-    $userId = (int)($_SESSION['user_id'] ?? 0);
-    $contractor = $userId ? db_single($conn, "SELECT id, application_no FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [$userId]) : null;
-    if (!$contractor) {
-        throw new Exception('Contractor registration not found');
+
+    $role = $_SESSION['role'] ?? '';
+    $is_internal_user = in_array($role, ['welfare_user', 'pass_user', 'welfare_admin', 'super_admin']);
+
+    if ($is_internal_user && isset($_POST['contractor_id']) && (int)$_POST['contractor_id'] > 0) {
+        $contractorId = (int)$_POST['contractor_id'];
+        $contractor = db_single($conn, "SELECT id, application_no FROM contractors WHERE id = ? LIMIT 1", 'i', [$contractorId]);
+        if (!$contractor) {
+            throw new Exception('Contractor not found');
+        }
+    } else {
+        clms_get_portal_contractor($conn);
+        $userId = (int)($_SESSION['user_id'] ?? 0);
+        $contractor = $userId ? db_single($conn, "SELECT id, application_no FROM contractors WHERE user_id = ? ORDER BY id DESC LIMIT 1", 'i', [$userId]) : null;
+        if (!$contractor) {
+            throw new Exception('Contractor registration not found');
+        }
+        $contractorId = (int)$contractor['id'];
     }
 
-    $contractorId = (int)$contractor['id'];
     $app = db_single($conn, "SELECT application_id FROM annexure2a WHERE contractor_id = ? ORDER BY id DESC LIMIT 1", 'i', [$contractorId]);
     $applicationNo = $contractor['application_no'] ?: ($app['application_id'] ?? ('APP-' . $contractorId));
 
