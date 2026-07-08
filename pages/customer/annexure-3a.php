@@ -1,5 +1,8 @@
 <?php
 require_once '../../include/auth.php';
+if (isset($_SESSION['role'])) {
+    $_SESSION['role'] = strtolower(trim($_SESSION['role']));
+}
 checkAuth(['customer', 'super_admin']);
 include '../../include/config.php';
 include '../../include/layout.php';
@@ -529,21 +532,6 @@ function renderContent() {
                 <i class="fas fa-file-signature me-2"></i> 2. Registration
             </a>
         </li>
-        <li class="nav-item d-none">
-            <a class="nav-link" id="insurance-tab" data-bs-toggle="tab" href="#insuranceDetails" role="tab">
-                <i class="fas fa-shield-alt me-2"></i> 3. Insurance & License
-            </a>
-        </li>
-        <li class="nav-item d-none">
-            <a class="nav-link" id="documents-tab" data-bs-toggle="tab" href="#mandatoryDocuments" role="tab">
-                <i class="fas fa-upload me-2"></i> 4. Documents
-            </a>
-        </li>
-        <li class="nav-item d-none">
-            <a class="nav-link" id="history-tab" data-bs-toggle="tab" href="#submissionHistory" role="tab">
-                <i class="fas fa-history me-2"></i> 5. History
-            </a>
-        </li>
     </ul>
 
     <form id="annexure3AForm" enctype="multipart/form-data" novalidate>
@@ -687,6 +675,7 @@ function renderContent() {
                         <div class="registration-section-header">2. Whether Registered under EPF</div>
                         <div class="registration-grid">
                             <div>
+                                <label class="form-label d-none d-md-block" style="visibility:hidden; margin-bottom: 8px;">&nbsp;</label>
                                 <div class="gov-radio-group">
                                     <?php
                                     $epfYes = $epf_selected_yes;
@@ -720,9 +709,10 @@ function renderContent() {
                     </div>
 
                     <div class="registration-card">
-                        <div class="registration-section-header">4. Whether Registered under ESI</div>
+                        <div class="registration-section-header">3. Whether Registered under ESI</div>
                         <div class="registration-grid">
                             <div>
+                                <label class="form-label d-none d-md-block" style="visibility:hidden; margin-bottom: 8px;">&nbsp;</label>
                                 <div class="gov-radio-group">
                                     <?php
                                     $esiYes = $esi_selected_yes;
@@ -758,7 +748,7 @@ function renderContent() {
                     </div>
 
                     <div class="registration-card">
-                        <div class="registration-section-header">5. Wage Declaration</div>
+                        <div class="registration-section-header">4. Wage Declaration</div>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="wage_declaration" id="wage_declaration" value="I declare to pay minimum wage as per government norms" <?= !empty($existing_data['wage_declaration']) ? 'checked' : '' ?> required <?= $disabled_attr ?>>
                             <label class="form-check-label fw-semibold" for="wage_declaration">I declare to pay minimum wage as per government norms.</label>
@@ -768,7 +758,7 @@ function renderContent() {
                     </div>
 
                     <div class="registration-card">
-                        <div class="registration-section-header">6. Employee Compensation Policy</div>
+                        <div class="registration-section-header">5. Employee Compensation Policy</div>
                         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                             <div class="gov-radio-group">
                                 <div class="form-check">
@@ -807,13 +797,13 @@ function renderContent() {
                     </div>
 
                     <div class="registration-card" id="reasonCard">
-                        <div class="registration-section-header">7. Employee Compensation Policy</div>
+                        <div class="registration-section-header">EC Policy Non-Coverage Reason</div>
                         <textarea class="form-control" name="ecp_exemption_reason" id="ecp_exemption_reason" placeholder="Enter reason for not covered under EC Policy" <?= $readonly_attr ?>><?= htmlspecialchars($ecp_reason) ?></textarea>
                         <input type="hidden" name="epf_esi_exemption_reason" id="epf_esi_exemption_reason" value="<?= htmlspecialchars($existing_data['epf_esi_exemption_reason'] ?? '') ?>">
                     </div>
 
                     <div class="registration-card">
-                        <div class="registration-section-header">8. Approximate Workforce Details</div>
+                        <div class="registration-section-header">6. Approximate Workforce Details</div>
                         <div class="registration-grid">
                             <div>
                                 <label class="form-label required">No. of Workers Proposed to be Engaged</label>
@@ -833,7 +823,7 @@ function renderContent() {
 
                     <div class="registration-card" id="section7Card">
                         <div class="registration-section-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                            <span>9. Labour License Details</span>
+                            <span>7. Labour License Details</span>
                             <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &ge; <?= $licence_threshold ?>)</span>
                         </div>
                         <div class="d-flex justify-content-end mb-3"><button type="button" class="btn btn-sm btn-reg-draft" onclick="addLicenseRow()" <?= $limited_edit_disabled_attr ?>>Add Row</button></div>
@@ -866,253 +856,38 @@ function renderContent() {
                     <div class="registration-card">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <div class="registration-section-header">10. Kerala Labour Welfare Fund Registration No</div>
+                                <div class="registration-section-header">8. Kerala Labour Welfare Fund Registration No</div>
                                 <input type="text" class="form-control" name="labour_license_appl_no" value="<?= htmlspecialchars($existing_data['labour_license_appl_no'] ?? '') ?>" <?= $readonly_attr ?>>
                             </div>
                             <div class="col-md-6">
-                                <div class="registration-section-header">11. Labour Identification Number</div>
+                                <div class="registration-section-header">9. Labour Identification Number</div>
                                 <input type="text" class="form-control" name="labour_identification_no" id="labour_identification_no" pattern="^[0-9]+$" value="<?= htmlspecialchars($existing_data['labour_identification_no'] ?? '') ?>" placeholder="Numeric digits only" <?= $readonly_attr ?>>
                                 <div class="invalid-feedback">LIN number must be numeric only.</div>
                             </div>
                         </div>
                     </div>
-                    <div class="registration-card"><div class="registration-section-header">12. Name of Contact Person <span class="text-danger">*</span></div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($existing_data['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>></div>
+                    <div class="registration-card"><div class="registration-section-header">10. Name of Contact Person <span class="text-danger">*</span></div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($existing_data['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>></div>
                     <div class="registration-card">
-                        <div class="registration-section-header">13. Mobile Number + Alternate Mobile Number</div>
+                        <div class="registration-section-header">11. Mobile Number + Alternate Mobile Number</div>
                         <div class="registration-grid">
                             <div><label class="form-label required">Mobile Number</label><input type="text" class="form-control" name="mobile" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($existing_data['mobile'] ?? '') ?>" required <?= $readonly_attr ?>></div>
                             <div><label class="form-label">Alternate Mobile Number</label><input type="text" class="form-control" name="vendor_mob2" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($existing_data['vendor_mob2'] ?? '') ?>" <?= $readonly_attr ?>></div>
                         </div>
                     </div>
-                    <div class="registration-card"><div class="registration-section-header">14. Remarks</div><textarea class="form-control" name="remarks" placeholder="Enter remarks" <?= $readonly_attr ?>><?= htmlspecialchars($existing_data['remarks'] ?? '') ?></textarea></div>
+                    <div class="registration-card"><div class="registration-section-header">12. Remarks</div><textarea class="form-control" name="remarks" placeholder="Enter remarks" <?= $readonly_attr ?>><?= htmlspecialchars($existing_data['remarks'] ?? '') ?></textarea></div>
                 </div>
 
-                <div class="registration-actions">
-                    <button type="button" class="btn btn-reg-prev px-4" onclick="showTab('contractorDetails')">Previous</button>
+                <div class="sticky-bottom-bar d-flex justify-content-center gap-3 align-items-center">
+                    <button type="button" class="btn btn-outline-secondary px-5 fw-bold rounded-pill" onclick="showTab('contractorDetails')">PREVIOUS</button>
                     <?php if ($is_locked): ?>
-                        <span class="alert alert-info mb-0 py-2 px-3">Submitted form is locked except EC Policy and Labour License add rows.</span>
+                        <span class="alert alert-info mb-0 py-2 px-3 rounded-pill" style="font-size:14px;">Submitted form is locked except EC Policy and Labour License add rows.</span>
                     <?php else: ?>
-                        <button type="button" class="btn btn-reg-draft px-4" id="saveDraftBtn" onclick="saveDraft()">Save Draft</button>
+                        <button type="button" class="btn btn-outline-primary px-5 fw-bold rounded-pill" id="saveDraftBtn" onclick="saveDraft()">SAVE DRAFT</button>
                     <?php endif; ?>
-                    <button type="submit" class="btn btn-reg-submit px-4" id="submitBtn" <?= $submit_disabled_attr ?>><?= $is_limited_update_mode ? 'Resubmit for Welfare Approval' : 'Submit Registration' ?></button>
+                    <button type="submit" class="btn btn-primary btn-submit px-5 shadow-lg rounded-pill" id="submitBtn" <?= $submit_disabled_attr ?>><?= $is_limited_update_mode ? 'RESUBMIT' : 'SUBMIT REGISTRATION' ?></button>
                 </div>
             </div>
 
-            <!-- ================= INSURANCE & LICENSE TAB ================= -->
-            <div class="tab-pane fade d-none" id="insuranceDetails" role="tabpanel">
-                <fieldset disabled>
-                <div class="row">
-                    <div class="col-lg-6">
-                        <div class="card shadow-sm mb-4 h-100">
-                            <div class="card-header bg-white py-3 border-bottom">
-                                <div class="d-flex align-items-center">
-                                    <div class="bg-info text-white rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
-                                        <i class="fas fa-shield-alt fa-sm"></i>
-                                    </div>
-                                    <h5 class="mb-0 text-info">WC Insurance Policy</h5>
-                                </div>
-                            </div>
-                            <div class="card-body p-4">
-                                <div class="row g-3">
-                                    <div class="col-md-12 mb-2">
-                                        <label class="form-label required">Policy Name</label>
-                                        <input type="text" name="insurance_policy_name" class="form-control" value="<?= htmlspecialchars($existing_data['insurance_policy_name'] ?? '') ?>" placeholder="Workmen Compensation Policy" required>
-                                    </div>
-                                    <div class="col-md-12 mb-2">
-                                        <label class="form-label required">Policy Number</label>
-                                        <input type="text" name="insurance_policy_no" class="form-control" value="<?= htmlspecialchars($existing_data['insurance_policy_no'] ?? '') ?>" required>
-                                    </div>
-                                    <div class="col-md-6 mb-2">
-                                        <label class="form-label required">Validity Date</label>
-                                        <input type="date" name="insurance_validity" id="insurance_validity" class="form-control" value="<?= htmlspecialchars($existing_data['insurance_validity'] ?? '') ?>" max="9999-12-31" required>
-                                    </div>
-                                    <div class="col-md-6 mb-2">
-                                        <label class="form-label required">Workers Covered</label>
-                                        <input type="number" name="insurance_workers_count" class="form-control" value="<?= $existing_data['insurance_workers_count'] ?? '' ?>" min="1" required>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-6">
-                        <div class="card shadow-sm mb-4 h-100">
-                            <div class="card-header bg-white py-3 border-bottom">
-                                <div class="d-flex align-items-center">
-                                    <div class="bg-danger text-white rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
-                                        <i class="fas fa-stamp fa-sm"></i>
-                                    </div>
-                                    <h5 class="mb-0 text-danger">Labour License</h5>
-                                </div>
-                            </div>
-                            <div class="card-body p-4">
-                                <div class="row g-3">
-                                    <div class="col-md-12 mb-2">
-                                        <label class="form-label required">License Number</label>
-                                        <input type="text" name="labour_license_no" class="form-control" value="<?= htmlspecialchars($existing_data['labour_license_no'] ?? '') ?>" required>
-                                    </div>
-                                    <div class="col-md-12 mb-2">
-                                        <label class="form-label required">Issued By Authority</label>
-                                        <input type="text" name="labour_license_issued_by" class="form-control" value="<?= htmlspecialchars($existing_data['labour_license_issued_by'] ?? '') ?>" placeholder="e.g. Assistant Labour Commissioner" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label required">Issue Date</label>
-                                        <input type="date" name="labour_license_issue_date" id="license_issue" class="form-control" value="<?= htmlspecialchars($existing_data['labour_license_issue_date'] ?? '') ?>" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label required">Expiry Date</label>
-                                        <input type="date" name="labour_license_expiry_date" id="license_expiry" class="form-control" value="<?= htmlspecialchars($existing_data['labour_license_expiry_date'] ?? '') ?>" required>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="text-end mb-5 gap-3 d-flex justify-content-end">
-                    <button type="button" class="btn btn-outline-secondary px-5 py-3 fw-bold rounded-pill" onclick="showTab('statutoryDetails')">PREVIOUS</button>
-                    <button type="button" class="btn btn-primary px-5 py-3 shadow-sm fw-bold rounded-pill" onclick="showTab('mandatoryDocuments')">
-                        NEXT: DOCUMENTS <i class="fas fa-arrow-right ms-2"></i>
-                    </button>
-                </div>
-                </fieldset>
-            </div>
-
-            <!-- ================= MANDATORY DOCUMENTS TAB ================= -->
-            <div class="tab-pane fade d-none" id="mandatoryDocuments" role="tabpanel">
-                <fieldset disabled>
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-dark text-white py-3">
-                        <div class="d-flex align-items-center">
-                            <div class="bg-white text-dark rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
-                                <i class="fas fa-upload fa-sm"></i>
-                            </div>
-                            <h5 class="mb-0 text-white">Compliance Document Uploads</h5>
-                        </div>
-                    </div>
-                    <div class="card-body p-4">
-                        <p class="text-muted small mb-4">Allowed formats: <strong>PDF, JPG, PNG</strong>. Max size: <strong>5MB</strong> per file.</p>
-                        <div class="row g-4">
-                            <?php
-                            $docs = [
-                                'labour_license' => 'Labour License',
-                                'insurance_policy' => 'Insurance Policy',
-                                'epf_challan' => 'EPF Challan',
-                                'esi_challan' => 'ESI Challan',
-                                'bank_details' => 'Bank Details / Cancelled Cheque',
-                                'pan' => 'PAN Card Copy',
-                                'gst' => 'GST Registration Copy',
-                                'agreement_copy' => 'Work Order / Agreement Copy'
-                            ];
-                            foreach($docs as $key => $label): 
-                                $existing_doc = null;
-                                if ($edit_id) {
-                                    $existing_doc = db_single($conn, "SELECT * FROM contractor_documents WHERE annexure3a_id = ? AND doc_type = ?", 'is', [$edit_id, $key]);
-                                }
-                            ?>
-                            <div class="col-md-4 col-xl-3">
-                                <label class="form-label <?= $existing_doc ? '' : 'required' ?>"><?= $label ?></label>
-                                <div class="upload-box" onclick="document.getElementById('file_<?= $key ?>').click()">
-                                    <input type="file" name="<?= $key ?>" id="file_<?= $key ?>" class="d-none" accept=".pdf,.jpg,.jpeg,.png" onchange="updateFileName(this, '<?= $key ?>')" <?= $existing_doc ? '' : 'required' ?>>
-                                    <i class="fas <?= $existing_doc ? 'fa-check-circle text-success' : 'fa-cloud-upload-alt' ?>"></i>
-                                    <div style="font-size:11px; color:#64748b;"><?= $existing_doc ? 'Update file' : 'Click to upload' ?></div>
-                                    <span class="file-name" id="name_<?= $key ?>"><?= $existing_doc ? basename($existing_doc['file_path']) : 'No file selected' ?></span>
-                                </div>
-                                <?php if($existing_doc): ?>
-                                    <div class="mt-2 text-center">
-                                        <a href="../../<?= $existing_doc['file_path'] ?>" target="_blank" class="btn btn-link btn-sm p-0 text-primary fw-bold" style="font-size: 11px;">Preview Current</a>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="sticky-bottom-bar d-flex justify-content-center gap-3">
-                    <button type="button" class="btn btn-outline-secondary px-5 fw-bold rounded-pill" onclick="showTab('insuranceDetails')">PREVIOUS</button>
-                    <button type="submit" class="btn btn-primary btn-submit px-5 shadow-lg rounded-pill" id="submitBtn">
-                        <i class="fas fa-paper-plane me-2"></i> <?= $edit_id ? 'UPDATE SUBMISSION' : 'SUBMIT' ?>
-                    </button>
-                </div>
-                </fieldset>
-            </div>
-
-            <!-- ================= HISTORY TAB ================= -->
-            <div class="tab-pane fade" id="submissionHistory" role="tabpanel">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-white py-3 border-bottom">
-                        <div class="d-flex align-items-center">
-                            <div class="bg-secondary text-white rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
-                                <i class="fas fa-history fa-sm"></i>
-                            </div>
-                            <h5 class="mb-0 text-secondary">Compliance Submission History</h5>
-                        </div>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0">
-                                <thead>
-                                    <tr>
-                                        <th class="ps-4">Submitted Date</th>
-                                        <th>Work Order</th>
-                                        <th>Salary Category</th>
-                                        <th>Status</th>
-                                        <th class="text-end pe-4">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php
-                                    $history = db_fetch_all($conn, "
-                                        SELECT a.*, v.vendor_name 
-                                        FROM contractor_annexure3a a
-                                        LEFT JOIN sap_vendor_master v ON v.vendor_code = a.vendor_code
-                                        WHERE a.customer_code = ? 
-                                        ORDER BY a.created_at DESC
-                                    ", 's', [$customer_code]);
-
-                                    if(empty($history)): ?>
-                                        <tr><td colspan="5" class="text-center py-5 text-muted">No submissions found.</td></tr>
-                                    <?php else:
-                                        foreach($history as $h): 
-                                        ?>
-                                        <tr>
-                                            <td class="ps-4">
-                                                <div class="fw-bold text-dark"><?= date('d M Y', strtotime($h['created_at'])) ?></div>
-                                                <small class="text-muted"><?= date('H:i', strtotime($h['created_at'])) ?></small>
-                                            </td>
-                                            <td><code><?= htmlspecialchars($h['work_order_no']) ?></code></td>
-                                            <td><span class="badge bg-light text-dark border fw-bold"><?= strtoupper($h['salary_category']) ?></span></td>
-                                            <td>
-                                                <span class="status-badge badge-<?= strtolower($h['status']) ?>">
-                                                    <?= $h['status'] ?>
-                                                </span>
-                                            </td>
-                                            <td class="text-end pe-4">
-                                                <div class="btn-group">
-                                                    <button type="button" class="btn btn-sm btn-outline-primary rounded-circle me-2" onclick="viewSubmission(<?= $h['id'] ?>)" title="View Details">
-                                                        <i class="fas fa-eye"></i>
-                                                    </button>
-                                                    <?php if(in_array($h['status'], ['pending', 'rejected', 'approved'], true)): ?>
-                                                        <a href="?edit_id=<?= $h['id'] ?>" class="btn btn-sm btn-outline-info rounded-circle" title="View">
-                                                            <i class="fas fa-edit"></i>
-                                                        </a>
-                                                        <?php if($h['status'] === 'approved'): ?>
-                                                            <a href="?edit_id=<?= $h['id'] ?>&resubmit=1" class="btn btn-sm btn-outline-warning rounded-circle ms-2" title="Resubmit EC / Labour License">
-                                                                <i class="fas fa-rotate"></i>
-                                                            </a>
-                                                        <?php endif; ?>
-                                                    <?php endif; ?>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        <?php endforeach;
-                                    endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </form>
 </div>

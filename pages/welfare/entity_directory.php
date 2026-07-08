@@ -182,22 +182,62 @@ function renderContent() {
             <h3 id="entityModalTitle"><i class="fas fa-info-circle"></i> Details</h3>
             <button class="btn-close" onclick="closeEntityModal()">&times;</button>
         </div>
-        <div class="modal-body" id="entityDetailsBody" style="padding:24px;max-height:75vh;overflow-y:auto;"></div>
+        <div class="modal-body" id="entityDetailsBody" style="padding:0;max-height:75vh;overflow-y:auto;background:#f8fafc;"></div>
     </div>
 </div>
 
 <style>
 .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.72); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; z-index:1100; }
-.modal-content { width:94%; border-radius:14px; border:1px solid rgba(255,255,255,.14); box-shadow:0 25px 50px -12px rgba(0,0,0,.45); }
-.hidden { display:none; }
-.modal-header { display:flex; align-items:center; justify-content:space-between; }
+.modal-content { width:94%; border-radius:14px; border:1px solid rgba(255,255,255,.14); box-shadow:0 25px 50px -12px rgba(0,0,0,.45); max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; }
+.modal-header { padding:20px; border-bottom:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:space-between; }
+.modal-body { overflow-y:auto; padding:0; }
 .btn-close { border:0; background:transparent; color:var(--text-muted); cursor:pointer; font-size:28px; }
-.detail-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
-.detail-section { grid-column:1 / -1; color:#6366f1; font-size:14px; font-weight:800; border-bottom:1px solid rgba(99,102,241,.2); padding:10px 0 6px; }
-.detail-item { border:1px solid rgba(148,163,184,.18); border-radius:8px; padding:12px; background:rgba(255,255,255,.04); min-height:62px; }
-.detail-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:800; margin-bottom:6px; }
-.detail-value { font-size:13px; color:var(--text-primary); word-break:break-word; }
-@media(max-width:900px){ .card-body[style*="grid-template-columns"]{grid-template-columns:1fr!important;} .detail-grid{grid-template-columns:1fr;} }
+.hidden { display:none; }
+
+.profile-container { font-family: 'Outfit', 'Inter', sans-serif; color: #1e293b; background: #f8fafc; }
+.profile-header-card {
+    display: flex; gap: 24px;
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+    color: white; padding: 24px;
+    align-items: center;
+}
+.profile-photo-placeholder {
+    width: 80px; height: 80px; border-radius: 12px;
+    border: 3px solid rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.15);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; color: rgba(255,255,255,0.7);
+    flex-shrink: 0;
+}
+.profile-header-info { display: flex; flex-direction: column; gap: 6px; flex-grow: 1; }
+.profile-name { font-size: 22px; font-weight: 800; margin: 0; color: #fff; line-height: 1.2; }
+.profile-sub { font-size: 13px; color: rgba(255,255,255,0.85); margin: 0; }
+.badge-container { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.profile-badge { font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; }
+.badge-role   { background: rgba(255,255,255,0.2); color: white; }
+.badge-active { background: #10b981; color: #fff; }
+.badge-pending{ background: #f59e0b; color: #fff; }
+.badge-rejected{ background: #ef4444; color: #fff; }
+
+.profile-body-grid { display: grid; grid-template-columns: 1fr; gap: 20px; align-items: start; padding: 24px; }
+.profile-section-card {
+    background: white; border: 1px solid #e2e8f0;
+    border-radius: 14px; margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden;
+}
+.profile-section-title {
+    font-size: 11px; font-weight: 800; color: #fff;
+    background: #1e3a8a; padding: 9px 16px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    display: flex; align-items: center; gap: 8px;
+}
+.section-body { padding: 16px 18px; }
+
+.details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 18px; }
+.detail-row { display: flex; flex-direction: column; gap: 3px; }
+.detail-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.3px; }
+.detail-val   { font-size: 13px; font-weight: 600; color: #1e293b; word-break: break-word; }
+@media(max-width:900px){ .details-grid{grid-template-columns:1fr 1fr;} }
 </style>
 
 <script>
@@ -209,9 +249,9 @@ function labelize(key) {
     return String(key).replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
-function renderDetailItem(label, value) {
+function renderDetailRow(label, value) {
     const display = value === null || value === undefined || value === '' ? '-' : value;
-    return `<div class="detail-item"><div class="detail-label">${escapeHtml(label)}</div><div class="detail-value">${escapeHtml(display)}</div></div>`;
+    return `<div class="detail-row"><span class="detail-label">${escapeHtml(label)}</span><span class="detail-val">${escapeHtml(display)}</span></div>`;
 }
 
 function viewEntityDetails(row) {
@@ -219,26 +259,60 @@ function viewEntityDetails(row) {
     const title = `${row.type === 'contractor' ? 'Contractor' : 'Customer'} Details - ${row.code || ''}`;
     document.getElementById('entityModalTitle').innerHTML = `<i class="fas fa-info-circle"></i> ${escapeHtml(title)}`;
 
-    let html = `<div class="detail-grid">`;
-    html += `<div class="detail-section">Main Information</div>`;
-    html += renderDetailItem('Type', row.type);
-    html += renderDetailItem('Code', row.code);
-    html += renderDetailItem('Name', row.name);
-    html += renderDetailItem('Status', row.status.toUpperCase());
-    html += renderDetailItem('Raw Status', row.raw_status);
-    html += renderDetailItem('Added On', row.created_at);
-
-    html += `<div class="detail-section">Contact & Address</div>`;
-    html += renderDetailItem('Mobile', row.mobile);
-    html += renderDetailItem('Email', row.email);
-    html += renderDetailItem('Address', row.address);
-
-    html += `<div class="detail-section">All Available Data</div>`;
+    const stClass = (row.status === 'approved') ? 'badge-active' : ((row.status === 'rejected') ? 'badge-rejected' : 'badge-pending');
+    
+    let html = `<div class="profile-container">
+        <div class="profile-header-card">
+            <div class="profile-photo-placeholder"><i class="fas fa-building"></i></div>
+            <div class="profile-header-info">
+                <h3 class="profile-name">${escapeHtml(row.name || 'Unknown')}</h3>
+                <p class="profile-sub">Code: ${escapeHtml(row.code || 'N/A')} &nbsp;|&nbsp; Added On: ${escapeHtml(row.created_at || 'N/A')}</p>
+                <div class="badge-container">
+                    <span class="profile-badge badge-role"><i class="fas fa-id-badge"></i> ${escapeHtml(row.type.toUpperCase())}</span>
+                    <span class="profile-badge ${stClass}"><i class="fas fa-circle"></i> ${escapeHtml(row.status.toUpperCase())}</span>
+                </div>
+            </div>
+        </div>
+        <div class="profile-body-grid">
+            <div class="profile-section-card">
+                <div class="profile-section-title"><i class="fas fa-id-card"></i> Main Information</div>
+                <div class="section-body">
+                    <div class="details-grid">
+                        ${renderDetailRow('Type', row.type)}
+                        ${renderDetailRow('Code', row.code)}
+                        ${renderDetailRow('Name', row.name)}
+                        ${renderDetailRow('Status', row.status.toUpperCase())}
+                        ${renderDetailRow('Raw Status', row.raw_status)}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="profile-section-card">
+                <div class="profile-section-title"><i class="fas fa-map-marker-alt"></i> Contact & Address</div>
+                <div class="section-body">
+                    <div class="details-grid">
+                        ${renderDetailRow('Mobile', row.mobile)}
+                        ${renderDetailRow('Email', row.email)}
+                    </div>
+                    <div class="details-grid" style="grid-template-columns:1fr; margin-top:14px;">
+                        ${renderDetailRow('Address', row.address)}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="profile-section-card">
+                <div class="profile-section-title"><i class="fas fa-database"></i> All Available Data</div>
+                <div class="section-body">
+                    <div class="details-grid">`;
     Object.keys(p).forEach(key => {
         if (['password', 'login_password', 'reset_token'].includes(key)) return;
-        html += renderDetailItem(labelize(key), p[key]);
+        html += renderDetailRow(labelize(key), p[key]);
     });
-    html += `</div>`;
+    html += `       </div>
+                </div>
+            </div>
+        </div>
+    </div>`;
 
     document.getElementById('entityDetailsBody').innerHTML = html;
     document.getElementById('entityModal').classList.remove('hidden');

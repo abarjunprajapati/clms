@@ -20,7 +20,7 @@ function renderContent() {
                COALESCE(a.contractor_name, c.contractor_name, c.vendor_name) as display_name
         FROM annexure2a a 
         JOIN contractors c ON a.contractor_id = c.id 
-        WHERE a.workflow_status IN ('submitted', 'resubmitted', 'under_review', 'pending') 
+        WHERE a.workflow_status IN ('submitted', 'resubmitted', 'under_review', 'pending', 'change_requested') 
         ORDER BY a.submitted_at DESC
     ");
     $threshold = clms_get_labour_license_threshold($conn);
@@ -205,16 +205,19 @@ function renderContent() {
 
       .modal-body { color: var(--text-primary); padding: 20px 28px; overflow-y: auto; }
       /* Details Modal white background and blue headings */
-      #detailsModal .modal-content { background: #ffffff; color: #1e293b; border: 1px solid #cbd5e1; }
-      #detailsModal h3 { color: #1e3a8a !important; }
-      #detailsModal .modal-header { border-bottom: 1px solid #cbd5e1; }
-      #detailsModal label { color: #475569 !important; }
-      #detailsModal th { color: #1e293b !important; background-color: #f1f5f9; border: 1px solid #cbd5e1; }
-      #detailsModal td { color: #334155 !important; border: 1px solid #cbd5e1; }
-      #detailsModal .form-section-card { background: #f8fafc; border: 1px solid #e2e8f0; }
-      #detailsModal .form-section-header { color: #1e3a8a !important; border-bottom: 1px solid #cbd5e1; }
-      #detailsModal .value-box { background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important; }
-      #detailsModal code { color: #0f172a !important; }
+      #detailsModal .modal-content { background: #f8fafc; color: #1e293b; border: 1px solid #cbd5e1; border-radius:14px; overflow:hidden; }
+      #detailsModal .modal-header { background: #ffffff; border-radius: 14px 14px 0 0; border-bottom: 1px solid #e2e8f0; padding: 24px; }
+      #detailsModal h3 { color: #1e3a8a !important; font-weight:800; font-size:22px; margin: 0; }
+      #detailsModal .btn-close { color: #64748b !important; opacity: 1; }
+      #detailsModal label { color: #64748b !important; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:2px; display:block; border:none; background:transparent; padding:0; }
+      #detailsModal th { color: #1e293b !important; background-color: #f1f5f9; border: 1px solid #cbd5e1; font-size:11px; text-transform:uppercase; font-weight:800; }
+      #detailsModal td { color: #334155 !important; border: 1px solid #cbd5e1; font-size:13px; font-weight:600; }
+      #detailsModal .form-section-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius:14px; box-shadow:0 1px 3px rgba(0,0,0,0.05); overflow:hidden; padding:0; margin-bottom:20px; }
+      #detailsModal .form-section-header { font-size: 11px; font-weight: 800; color: #fff !important; background: #1e3a8a; padding: 9px 16px; text-transform: uppercase; letter-spacing: 0.6px; display: flex; align-items: center; gap: 8px; border-bottom:none; margin:0; border-radius:0; }
+      #detailsModal .value-box { background: transparent !important; border: none !important; color: #1e293b !important; font-size:13px; font-weight:600; padding:0; word-break:break-word; min-height:auto; display:block; }
+      #detailsModal .form-grid { padding: 16px 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 18px; }
+      #detailsModal .form-field { display: flex; flex-direction: column; gap: 3px; }
+      #detailsModal code { color: #2563eb !important; font-weight:800; background:transparent; padding:0; font-size:14px; }
 
       .hidden { display: none !important; visibility: hidden !important; }
       .modal-header { display: flex; justify-content: space-between; align-items: center; background: rgba(255, 255, 255, 0.01); padding: 18px 24px; }
@@ -431,6 +434,99 @@ function renderContent() {
 
         let html = `<div class="form-container">`;
 
+        // Render profile update comparison if pending request exists
+        if (sel.edit_request) {
+            const fieldLabels = {
+                mobile: "Mobile Number 1",
+                vendor_mob2: "Mobile Number 2",
+                email: "Email Address",
+                address: "Office Address",
+                work_awarding_department: "Work Awarding Department",
+                epf_registered: "EPF Registered",
+                epf_code: "EPF Code",
+                esi_registered: "ESI Registered",
+                esi_code: "ESI Code",
+                epf_esi_exemption_reason: "EPF/ESI Non-Registration Reason",
+                wage_category: "Wage Category",
+                wage_declaration: "Wage Declaration",
+                ecp_covered: "EC Policy Covered",
+                ecp_number: "EC Policy Number",
+                ecp_valid_from: "EC Policy Valid From",
+                ecp_valid_to: "EC Policy Valid To",
+                workers_ecp: "Workers Under EC Policy",
+                workers_proposed_to_be_engaged: "Workers Proposed",
+                worker_category: "Category of Workmen",
+                license_no: "Labour License Number",
+                license_issued: "Labour License Issued By",
+                issued_date: "Labour License Issue Date",
+                expiry_date: "Labour License Expiry Date",
+                license_file: "Labour License Certificate File",
+                labour_license_appl_no: "Kerala Labour Welfare Fund Reg No",
+                labour_identification_no: "Labour Identification Number",
+                contact_person: "Name of Contact Person",
+                remarks: "Remarks",
+                selected_pos: "Selected POs",
+                selected_pwos: "Selected PWOs",
+                selected_sales: "Selected Sales Orders"
+            };
+
+            const orig = JSON.parse(sel.edit_request.original_data_json || '{}');
+            const req = JSON.parse(sel.edit_request.requested_data_json || '{}');
+
+            let diffHtml = '';
+            let hasDiffs = false;
+
+            for (const key in fieldLabels) {
+                let origVal = orig[key];
+                let reqVal = req[key];
+
+                let isDiff = false;
+                if (key === 'selected_pos' || key === 'selected_pwos' || key === 'selected_sales') {
+                    const a = JSON.parse(origVal || '[]');
+                    const b = JSON.parse(reqVal || '[]');
+                    isDiff = JSON.stringify(a.sort()) !== JSON.stringify(b.sort());
+                    origVal = a.join(', ') || 'None';
+                    reqVal = b.join(', ') || 'None';
+                } else if (key === 'ecp_details_json' || key === 'license_details_json') {
+                    continue;
+                } else {
+                    isDiff = String(origVal || '').trim() !== String(reqVal || '').trim();
+                }
+
+                if (isDiff) {
+                    hasDiffs = true;
+                    diffHtml += `
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                            <td style="font-weight:600;padding:10px;color:var(--text-primary);">${fieldLabels[key]}</td>
+                            <td style="color:#ef4444;text-decoration:line-through;padding:10px;">${v(origVal)}</td>
+                            <td style="color:#10b981;font-weight:600;padding:10px;">🔴 ${v(reqVal)}</td>
+                        </tr>
+                    `;
+                }
+            }
+
+            html += `
+                <div class="form-section-card" style="border: 2px solid #fbbf24; background: rgba(251, 191, 36, 0.05); margin-bottom: 24px;">
+                    <div class="form-section-header" style="color:#fbbf24; border-bottom: 1px solid rgba(251, 191, 36, 0.2);"><i class="fas fa-exclamation-triangle"></i> Profile Update Request Comparison</div>
+                    <div style="padding:16px;">
+                        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">The contractor has requested the following updates to their approved profile. Changed fields are listed below:</p>
+                        <table class="review-table" style="width:100%;border-collapse:collapse;margin-top:8px;">
+                            <thead>
+                                <tr style="border-bottom:2px solid rgba(255,255,255,0.1);">
+                                    <th style="text-align:left;padding:10px;font-weight:700;">Field Name</th>
+                                    <th style="text-align:left;padding:10px;font-weight:700;">Current Approved Value</th>
+                                    <th style="text-align:left;padding:10px;font-weight:700;">Requested Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${hasDiffs ? diffHtml : '<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text-muted);">No field differences detected (only attachments or metadata changed).</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
         // ── SECTION 1: General ──────────────────────────────────────────────────
         html += `<div class="form-section-card">
           <div class="form-section-header"><i class="fas fa-id-card"></i> Annexure 2A Application</div>
@@ -489,7 +585,7 @@ function renderContent() {
         const posStr  = sel.pos.length  ? sel.pos.map(p=>`<code>${p}</code>`).join(' ')  : ' - ';
         const pwosStr = sel.pwos.length ? sel.pwos.map(p=>`<code>${p}</code>`).join(' ') : ' - ';
         const soStr   = sel.sales.length? sel.sales.map(s=>`<code>${s}</code>`).join(' ')  : ' - ';
-        if (false) html += `<div class="form-section-card">
+        if (true) html += `<div class="form-section-card">
           <div class="form-section-header"><i class="fas fa-file-signature"></i> 4. Work Order & SAP Allocations</div>
           <div class="form-grid">
             <div class="form-field"><label>Work Order / Contract No</label><div class="value-box"><code>${v(r.contract_no||r.work_order_no||r.po_number||r.pwo_number)}</code></div></div>

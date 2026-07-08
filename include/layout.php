@@ -22,6 +22,7 @@ function renderLayout($page_title, $content_callback, $role, $name) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="csrf-token" content="<?= get_csrf_token() ?>">
+  <link rel="icon" type="image/png" href="<?= BASE_URL ?>uploads/logo/logo.png">
   <script>
     window.CLMS_BASE_URL = "<?= BASE_URL ?>";
     window.CLMS_CSRF_TOKEN = "<?= get_csrf_token() ?>";
@@ -514,7 +515,7 @@ function renderSidebar($role) {
             echo '<a href="'.$wb.'verify_documents.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Document Verification</a>';
             echo '<a href="'.$wb.'training_monitor.php" class="sidebar-item"><i class="fas fa-graduation-cap"></i> Safety Training</a>';
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Pass Issuance</div>';
-            echo '<a href="'.$wb.'gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Gate Pass Request</a>';
+            echo '<a href="'.$wb.'gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Contractor Document Upload</a>';
             echo '<a href="'.$wb.'gatepass_monitor.php" class="sidebar-item"><i class="fas fa-id-card-clip"></i> Gate Pass Approval</a>';
             echo '<a href="'.$wb.'temp_pass_approvals.php" class="sidebar-item"><i class="fas fa-clipboard-check"></i> Temporary Pass Approval</a>';
             echo '<a href="'.$wb.'issue_temp_pass.php" class="sidebar-item"><i class="fas fa-clock"></i> Temporary Pass Issue</a>';
@@ -618,7 +619,7 @@ function renderSidebar($role) {
         case 'pass_issuer':
             echo '</div><div class="sidebar-section"><div class="sidebar-section-label">Pass Issuance Desk</div>';
             echo '<a href="pass_issuer_dashboard.php" class="sidebar-item"><i class="fas fa-tachometer-alt"></i> Dashboard</a>';
-            echo '<a href="gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Gate Pass Request</a>';
+            echo '<a href="gatepass-6a.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Contractor Document Upload</a>';
             echo '<a href="verify_documents.php" class="sidebar-item"><i class="fas fa-file-shield"></i> Verify Documents</a>';
             echo '<a href="pending_requests.php" class="sidebar-item"><i class="fas fa-list-ul"></i> Pending Pass Requests</a>';
             echo '<a href="issue_temp_pass.php" class="sidebar-item"><i class="fas fa-id-badge"></i> Temporary Pass Issue</a>';

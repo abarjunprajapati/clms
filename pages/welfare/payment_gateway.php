@@ -115,6 +115,50 @@ function renderContent() {
         <?php endif; ?>
       </div>
     </section>
+    </div>
+    <section class="card glass" style="border-left:4px solid #0f766e;">
+      <div class="card-header" style="background:linear-gradient(90deg,#0f766e11,transparent);">
+        <div class="card-title" style="color:#0f766e;"><i class="fas fa-shield-alt" style="margin-right:7px;"></i>CSL Gateway Settings</div>
+      </div>
+      <div class="card-body">
+        <?php
+          $cslIpSaved  = trim((string)clms_payment_setting($conn, 'csl_source_ip', ''));
+          $cslKeyId    = trim((string)clms_payment_setting($conn, 'payment_gateway_key_id', ''));
+          $cslSecret   = trim((string)clms_payment_setting($conn, 'payment_gateway_key_secret', ''));
+        ?>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;">
+          <i class="fas fa-info-circle" style="color:#0f766e;margin-right:6px;"></i>
+          <strong>CSL Firewall Fix:</strong> Yahan wo IP enter karein jo CSL ne whitelist ki hai. Agar empty chhoda gaya toh server ka automatic IP use hoga.<br>
+          <span style="color:#64748b;margin-top:4px;display:block;">Current active IP: <strong style="color:#0f766e;"><?= $cslIpSaved ?: '<em style="color:#94a3b8;">auto-detect (not set)</em>' ?></strong></span>
+        </div>
+        <form id="cslSettingsForm">
+          <div class="form-group">
+            <label class="form-label"><i class="fas fa-network-wired" style="color:#0f766e;margin-right:5px;"></i>CSL Whitelisted Source IP</label>
+            <input class="form-control" type="text" name="csl_source_ip"
+                   value="<?= htmlspecialchars($cslIpSaved) ?>"
+                   placeholder="e.g. 103.xx.xx.xx (CSL-approved server IP)"
+                   pattern="^(\d{1,3}\.){3}\d{1,3}$"
+                   title="Enter a valid IPv4 address">
+            <div style="font-size:11px;color:#64748b;margin-top:4px;">Leave blank to auto-detect from server environment.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label"><i class="fas fa-key" style="color:#0f766e;margin-right:5px;"></i>CSL API Key ID</label>
+            <input class="form-control" type="text" name="payment_gateway_key_id"
+                   value="<?= htmlspecialchars($cslKeyId) ?>"
+                   placeholder="CSL API Key ID / App ID">
+          </div>
+          <div class="form-group">
+            <label class="form-label"><i class="fas fa-lock" style="color:#0f766e;margin-right:5px;"></i>CSL HMAC Secret Key</label>
+            <input class="form-control" type="password" name="payment_gateway_key_secret"
+                   value="<?= htmlspecialchars($cslSecret) ?>"
+                   placeholder="CSL HMAC Signing Secret">
+          </div>
+          <button class="btn btn-primary" style="width:100%;" type="submit" id="saveCslSettingsBtn">
+            <i class="fas fa-save"></i> Save CSL Settings
+          </button>
+        </form>
+      </div>
+    </section>
   </div>
 
   <section class="card glass">
@@ -252,6 +296,30 @@ async function manageQr(qrId, action) {
   }
   btn.disabled = false;
 }
+
+document.getElementById('cslSettingsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('saveCslSettingsBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+  try {
+    const formData = new FormData(e.target);
+    formData.append('csrf_token', csrfToken);
+    // Keep provider as-is (required field)
+    formData.append('payment_gateway_provider', document.querySelector('[name=payment_gateway_provider]').value || 'demo_qr');
+    const res = await fetch('../../api/welfare/update_payment_gateway.php', {
+      method: 'POST',
+      body: formData
+    });
+    const result = await res.json();
+    showToast(result.message || (result.success ? 'CSL Settings saved!' : 'Failed.'), result.success ? 'success' : 'error');
+    if (result.success) setTimeout(() => location.reload(), 900);
+  } catch (err) {
+    showToast('Unable to save CSL settings.', 'error');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-save"></i> Save CSL Settings';
+});
 
 function showToast(msg, type) {
   const t = document.createElement('div');

@@ -109,6 +109,9 @@ define('SESSION_IDLE_TIMEOUT', 30 * 60); // 30 minutes
 
 function refresh_session_activity() {
     $_SESSION['last_activity'] = time();
+    if (isset($_SESSION['role'])) {
+        $_SESSION['role'] = strtolower(trim($_SESSION['role']));
+    }
 }
 
 function is_session_timed_out() {
@@ -160,7 +163,7 @@ function initialize_session(array $user) {
     $_SESSION['user_id']        = $user['id'];
     $_SESSION['username']       = $user['username'] ?? $user['email'] ?? $user['contractor_id'] ?? $user['customer_code'];
     $_SESSION['name']           = $user['name'] ?? $_SESSION['username'];
-    $_SESSION['role']           = $user['role'];
+    $_SESSION['role']           = strtolower(trim($user['role'] ?? ''));
     $_SESSION['email']          = $user['email'] ?? '';
     $_SESSION['contractor_id']  = $user['contractor_id'] ?? null;
     $_SESSION['customer_code']  = $user['customer_code'] ?? null;

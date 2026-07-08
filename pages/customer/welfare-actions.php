@@ -1,5 +1,8 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
+if (isset($_SESSION['role'])) {
+    $_SESSION['role'] = strtolower(trim($_SESSION['role']));
+}
 checkAuth(['customer']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';

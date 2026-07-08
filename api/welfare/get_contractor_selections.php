@@ -115,6 +115,8 @@ foreach ($all_docs as $d) {
     }
 }
 
+$edit_request = db_single($conn, "SELECT * FROM contractor_edit_requests WHERE contractor_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", 'i', [$contractor_id]);
+
 $threshold = clms_get_labour_license_threshold($conn);
 
 echo json_encode([
@@ -126,6 +128,7 @@ echo json_encode([
     'sales'      => array_column($sales, 'sale_order_no'),
     'docs'       => $final_docs,
     'threshold'  => $threshold,
+    'edit_request'=> $edit_request,
 ]);
 } catch (Throwable $e) {
     if (!headers_sent()) header('Content-Type: application/json', true, 500);

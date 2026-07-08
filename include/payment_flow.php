@@ -183,7 +183,7 @@ function clms_ensure_payment_flow($conn) {
         ['training_fee_per_worker', '1000', 'payment', 'Safety fee per worker'],
         ['training_payment_gst_percent', '0', 'payment', 'GST percentage for safety induction fee'],
         ['training_payment_link_valid_hours', '72', 'payment', 'Payment link validity in hours'],
-        ['payment_gateway_provider', 'demo_qr', 'payment', 'Gateway provider name. demo_qr enables QR demo flow.'],
+        ['payment_gateway_provider', 'csl_payment', 'payment', 'Gateway provider name.'],
         ['payment_gateway_key_id', 'rzp_test_LriFkVGa9DLZEN', 'payment', 'Gateway public/key id.'],
         ['payment_gateway_key_secret', 'VHohSkxRHzqkQCsxJEd8bGan', 'payment', 'Gateway secret key. Keep server-side only.'],
         ['payment_gateway_webhook_secret', '', 'payment', 'Razorpay Webhook Secret for payload authentication'],
@@ -217,7 +217,7 @@ function clms_ensure_payment_flow($conn) {
             );
         }
     }
-    db_execute($conn, "UPDATE system_settings SET setting_value = 'demo_qr' WHERE setting_key = 'payment_gateway_provider'", '', []);
+    // Removed force reset to demo_qr so that system preserves configured provider settings (e.g. csl_payment)
     // Removed legacy development auto-reset queries that override user-saved amounts.
 
     if (clms_payment_table_exists($conn, 'workmen')) {
@@ -527,7 +527,6 @@ function clms_pending_safety_fee_workers($conn, $contractorId) {
          FROM workmen w
          WHERE w.contractor_id = ?
            AND COALESCE(w.status, '') <> 'draft'
-           AND (UPPER($workSourceExpr) = 'PWO' OR UPPER($workOrderExpr) LIKE 'PWO%')
            AND NOT EXISTS (
                 SELECT 1
                 FROM training_payment_request_workers paid_pw

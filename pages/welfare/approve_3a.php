@@ -124,22 +124,25 @@ function renderContent() {
 .modal-content { width: 100%; border-radius: 16px; border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 30px 80px rgba(0,0,0,0.6); background: rgba(6, 12, 24, 0.98); color: var(--text-primary); max-height: 90vh; display: flex; flex-direction: column; }
 .modal-body { color: var(--text-primary); padding: 20px 28px; overflow-y: auto; }
 
-/* Details Modal white background and blue headings */
-#detailsModal .modal-content { background: #ffffff !important; color: #1e293b !important; border: 1px solid #cbd5e1 !important; }
-#detailsModal h3 { color: #1e3a8a !important; }
-#detailsModal .modal-header { border-bottom: 1px solid #cbd5e1 !important; background: transparent !important; }
-#detailsModal label { color: #475569 !important; }
-#detailsModal th { color: #1e293b !important; background-color: #f1f5f9 !important; border: 1px solid #cbd5e1 !important; }
-#detailsModal td { color: #334155 !important; border: 1px solid #cbd5e1 !important; }
-#detailsModal .form-section-card { background: #f8fafc !important; border: 1px solid #e2e8f0 !important; }
-#detailsModal .form-section-header { color: #1e3a8a !important; border-bottom: 1px solid #cbd5e1 !important; }
-#detailsModal .value-box { background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important; }
-#detailsModal code { color: #0f172a !important; }
-#detailsModal .doc-card { background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important; }
+/* Details Modal professional styling matching Workmen Enrollment */
+#detailsModal .modal-content { background: #f8fafc !important; color: #1e293b !important; border: 1px solid #cbd5e1 !important; border-radius:14px; overflow:hidden; }
+#detailsModal .modal-header { background: #ffffff !important; border-radius: 14px 14px 0 0; border-bottom: 1px solid #e2e8f0 !important; padding: 24px; }
+#detailsModal h3 { color: #1e3a8a !important; font-weight:800; font-size:22px; margin: 0; }
+#detailsModal .btn-close { color: #64748b !important; opacity: 1; }
+#detailsModal label { color: #64748b !important; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:2px; display:block; border:none; background:transparent; padding:0; }
+#detailsModal th { color: #1e293b !important; background-color: #f1f5f9 !important; border: 1px solid #cbd5e1 !important; font-size:11px; text-transform:uppercase; font-weight:800; }
+#detailsModal td { color: #334155 !important; border: 1px solid #cbd5e1 !important; font-size:13px; font-weight:600; }
+#detailsModal .form-section-card { background: #ffffff !important; border: 1px solid #e2e8f0 !important; border-radius:14px; box-shadow:0 1px 3px rgba(0,0,0,0.05); overflow:hidden; padding:0; margin-bottom:20px; }
+#detailsModal .form-section-header { font-size: 11px; font-weight: 800; color: #fff !important; background: #1e3a8a !important; padding: 9px 16px; text-transform: uppercase; letter-spacing: 0.6px; display: flex; align-items: center; gap: 8px; border-bottom:none !important; margin:0; border-radius:0; }
+#detailsModal .value-box { background: transparent !important; border: none !important; color: #1e293b !important; font-size:13px; font-weight:600; padding:0; word-break:break-word; min-height:auto; display:flex; align-items:flex-start; flex-direction:column; gap:4px; }
+#detailsModal .form-grid { padding: 16px 18px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 18px; }
+#detailsModal .form-field { display: flex; flex-direction: column; gap: 3px; }
+#detailsModal code { color: #2563eb !important; font-weight:800; background:transparent; padding:0; font-size:14px; }
+#detailsModal .doc-card { background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #0f172a !important; padding:12px; }
 #detailsModal .doc-icon { color: #2563eb !important; }
-#detailsModal .doc-type { color: #475569 !important; }
-#detailsModal .doc-name { color: #0f172a !important; }
-#detailsModal .no-docs { color: #475569 !important; border: 1px dashed #cbd5e1 !important; }
+#detailsModal .doc-type { color: #475569 !important; font-weight:700; font-size:10px; }
+#detailsModal .doc-name { color: #0f172a !important; font-size:13px; font-weight:600; }
+#detailsModal .no-docs { color: #475569 !important; border: 1px dashed #cbd5e1 !important; padding:12px; }
 
 .hidden { display: none !important; visibility: hidden !important; }
 .modal-header { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.01); padding: 18px 24px; }

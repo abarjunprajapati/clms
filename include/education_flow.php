@@ -31,7 +31,7 @@ function clms_normalize_flow_skill($skill) {
     $normalized = strtolower(str_replace(['_', '-'], ' ', $value));
     $normalized = preg_replace('/\s+/', ' ', $normalized);
 
-    if ($normalized === 'semi skilled') return 'Semi-Skilled';
+    if ($normalized === 'semi skilled' || $normalized === 'semi-skilled') return 'Semi-Skilled';
     if ($normalized === 'skilled') return 'Skilled';
     if ($normalized === 'unskilled' || $normalized === 'un skilled') return 'Unskilled';
 
@@ -41,6 +41,19 @@ function clms_normalize_flow_skill($skill) {
 function clms_flow_skill_for_workmen($skill) {
     $flowSkill = clms_normalize_flow_skill($skill);
     return $flowSkill === 'Semi-Skilled' ? 'Semi Skilled' : $flowSkill;
+}
+
+function clms_get_skill_categories($conn) {
+    clms_ensure_education_flow_table($conn);
+    $rows = db_fetch_all($conn, "SELECT DISTINCT skill_category FROM education_job_profiles WHERE is_active = 1 ORDER BY skill_category");
+    $categories = ['Skilled', 'Semi-Skilled', 'Unskilled'];
+    foreach ($rows as $row) {
+        $cat = trim($row['skill_category']);
+        if ($cat !== '' && !in_array($cat, $categories, true)) {
+            $categories[] = $cat;
+        }
+    }
+    return $categories;
 }
 
 function clms_ensure_education_flow_table($conn) {
@@ -92,16 +105,15 @@ function clms_get_education_flow_rows($conn, $includeInactive = false) {
         "SELECT id, skill_category, qualification, job_profile, sort_order, is_active
          FROM education_job_profiles
          $where
-         ORDER BY FIELD(skill_category, 'Skilled', 'Semi-Skilled', 'Unskilled'), sort_order, qualification, job_profile"
+         ORDER BY sort_order, qualification, job_profile"
     );
 }
 
 function clms_get_education_flow($conn) {
-    $flow = [
-        'Skilled' => ['qualifications' => []],
-        'Semi-Skilled' => ['qualifications' => []],
-        'Unskilled' => ['qualifications' => []],
-    ];
+    $flow = [];
+    foreach (clms_get_skill_categories($conn) as $cat) {
+        $flow[$cat] = ['qualifications' => []];
+    }
 
     foreach (clms_get_education_flow_rows($conn) as $row) {
         $category = clms_normalize_flow_skill($row['skill_category'] ?? '');

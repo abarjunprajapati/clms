@@ -1,269 +1,252 @@
 <?php
 require_once __DIR__ . '/../../include/auth.php';
-checkAuth(['pass_user', 'super_admin', 'welfare_user', 'welfare_admin']);
-
+// Adding fallback lowercase role for cached session.php issues
+if (isset($_SESSION['role'])) {
+    $_SESSION['role'] = strtolower(trim($_SESSION['role']));
+}
+checkAuth(['welfare_admin', 'welfare_user', 'pass_user']);
 include __DIR__ . '/../../include/config.php';
 include __DIR__ . '/../../include/layout.php';
 
-$role = get_normalized_role();
-$name = $_SESSION['name'] ?? 'Pass Issuing Officer';
+$role = $_SESSION['role'];
+$name = $_SESSION['name'] ?? 'Welfare User';
 
 function renderContent() {
     global $conn;
-    
-    // Fetch workmen who are ready for ACC generation (Temporary Issued, No ACC)
-    $queryReady = "SELECT w.*, c.contractor_name 
-                   FROM workmen w 
-                   JOIN contractors c ON w.contractor_id = c.id 
-                   WHERE (w.status = 'temporary_issued' OR COALESCE(w.temp_pass_status, 0) = 1 OR COALESCE(w.temp_pass_no, '') != '')
-                     AND (w.acc_number IS NULL OR w.acc_number = '')
-                   ORDER BY w.updated_at ASC";
-    $ready_for_acc = db_fetch_all($conn, $queryReady);
 
-    // Fetch workmen whose ACC is generated but not yet active.
-    // Some workers can still have status "verified" after ACC creation, so use the ACC number as the source of truth.
-    $query = "SELECT w.*, c.contractor_name 
-              FROM workmen w 
-              JOIN contractors c ON w.contractor_id = c.id 
-              WHERE COALESCE(w.acc_number, '') != ''
-                AND w.status <> 'permanent_active'
-                AND COALESCE(w.biometric_status, 'pending') <> 'completed'
-              ORDER BY w.updated_at DESC";
-    $pending_biometric = db_fetch_all($conn, $query);
+    // Fixed configuration limits as per user instruction
+    $TEMP_PASS_DAYS = 15;
+    $PERM_PASS_DAYS = 90;
+
+    // Search filter for future dates
+    $search_date = $_GET['search_date'] ?? '';
+
+    // Filter strictly by verified or approved workmen as per new workflow manual
+    $where_clauses = ["w.status IN ('verified', 'approved')"]; 
     
-    // Also show recently generated ACCs
-    $recent_acc = db_fetch_all($conn, "SELECT w.*, c.contractor_name 
-                                       FROM workmen w 
-                                       JOIN contractors c ON w.contractor_id = c.id 
-                                       WHERE COALESCE(w.acc_number, '') != ''
-                                       ORDER BY w.updated_at DESC LIMIT 10");
+    if (!empty($search_date)) {
+        $where_clauses[] = "w.expected_joining_date = '" . mysqli_real_escape_string($conn, $search_date) . "'";
+    } else {
+        $where_clauses[] = "w.expected_joining_date <= CURDATE()";
+    }
+
+    $where_sql = implode(' AND ', $where_clauses);
+
+    $sql = "SELECT w.id, w.aadhaar, w.skill_category, w.expected_joining_date, 
+                   c.name as contractor_name,
+                   (SELECT COUNT(*) FROM documents d 
+                    JOIN gate_pass_document_masters gm ON d.document_type = gm.document_type
+                    WHERE d.workman_id = w.id AND gm.category = 'pcc' AND d.status = 'approved') as pcc_approved_count
+            FROM workmen w
+            LEFT JOIN contractors c ON w.contractor_id = c.id
+            WHERE $where_sql
+            ORDER BY w.expected_joining_date DESC";
+
+    $workmen = db_fetch_all($conn, $sql);
+
     ?>
-    <div class="content-header">
-      <h2 class="page-title">ACC Number Generation & Management</h2>
-      <!-- <p class="page-subtitle">Unique identification for permanent passes linked with SAP system.</p> -->
+    <style>
+        .computed-pass-to-dt { font-weight: bold; }
+        .table th, .table td { vertical-align: middle; }
+    </style>
+    
+    <div class="content-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <h2 style="margin:0;">ACC no Generation & Hiring</h2>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <form method="GET" style="display:flex; gap:10px; margin:0;">
+                <input type="date" name="search_date" class="form-control" value="<?= htmlspecialchars($search_date) ?>" title="Search by future date" style="max-width:200px;">
+                <button type="submit" class="btn btn-primary">Search</button>
+                <?php if (!empty($search_date)): ?>
+                    <a href="acc_generation.php" class="btn btn-secondary">Clear</a>
+                <?php endif; ?>
+            </form>
+        </div>
     </div>
 
-    <div class="grid grid-3">
-      <div class="col-span-2">
-      
-        <!-- Section 1: Ready For ACC Generation -->
-        <div class="card glass mb-4">
-          <div class="card-header">
-            <div class="card-title"><i class="fas fa-id-card-alt text-primary"></i> Ready For ACC Generation</div>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Workman</th>
-                  <th>Contractor</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php foreach($ready_for_acc as $rfa): ?>
-                <tr>
-                  <td><strong><?= htmlspecialchars($rfa['name']) ?></strong></td>
-                  <td><?= htmlspecialchars($rfa['contractor_name']) ?></td>
-                  <td><span class="badge badge-info">TEMP PASS ACTIVE</span></td>
-                  <td>
-                    <button onclick="generateWorkerACC(<?= $rfa['id'] ?>)" class="btn btn-sm btn-primary">
-                      <i class="fas fa-cog"></i> Generate ACC
+    <div class="card shadow-sm mt-3">
+        <div class="card-body">
+            <form id="hiringForm">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped table-hover mb-0 data-table" id="workmenTable">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Sl.No</th>
+                                <th>Contractor</th>
+                                <th>Aadhar No</th>
+                                <th>Eligible Pass Type (Temp/Perm)</th>
+                                <th>Worker Category</th>
+                                <th>Preferred Joining Dt</th>
+                                <th>Pass Till Dt</th>
+                                <th>Pass From Dt</th>
+                                <th>Pass To Dt</th>
+                                <th class="text-center">Hiring <input type="checkbox" id="selectAll" class="form-check-input ms-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($workmen)): ?>
+                                <tr>
+                                    <td colspan="10" class="text-center py-4">No workmen match the criteria.</td>
+                                </tr>
+                            <?php else: ?>
+                                <?php foreach ($workmen as $index => $w): 
+                                    // Logic for Pass Type (Permanent if PCC uploaded and verified OK)
+                                    $is_permanent = ($w['pcc_approved_count'] > 0);
+                                    $pass_type = $is_permanent ? 'Permanent Pass' : 'Temporary Pass';
+                                    $max_days = $is_permanent ? $PERM_PASS_DAYS : $TEMP_PASS_DAYS;
+                                    
+                                    // If expected joining date is not set, fallback to today
+                                    $expected_dt = $w['expected_joining_date'] ?: date('Y-m-d');
+                                    $current_dt = date('Y-m-d');
+                                    
+                                    // Joining Dt = Current Date
+                                    // Pass From Dt = Current Date
+                                    $pass_from_dt = $current_dt;
+
+                                    // Pass Till Date = Preferred Joining Dt + Limit
+                                    $pass_till_dt_timestamp = strtotime($expected_dt . " + $max_days days");
+                                    $default_pass_till_dt = date('Y-m-d', $pass_till_dt_timestamp);
+                                ?>
+                                <tr>
+                                    <td><?= $index + 1 ?></td>
+                                    <td><?= htmlspecialchars($w['contractor_name']) ?></td>
+                                    <td><?= htmlspecialchars($w['aadhaar']) ?></td>
+                                    <td><span class="badge <?= $is_permanent ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $pass_type ?></span></td>
+                                    <td><?= htmlspecialchars($w['skill_category']) ?></td>
+                                    <td><?= htmlspecialchars($w['expected_joining_date']) ?></td>
+                                    <td>
+                                        <input type="date" 
+                                               class="form-control form-control-sm pass-till-dt" 
+                                               name="workmen[<?= $w['id'] ?>][pass_till_dt]" 
+                                               value="<?= $default_pass_till_dt ?>"
+                                               data-max-dt="<?= $default_pass_till_dt ?>"
+                                               data-max-days="<?= $max_days ?>"
+                                               max="<?= $default_pass_till_dt ?>"
+                                               required>
+                                    </td>
+                                    <td>
+                                        <?= date('d/m/Y') ?>
+                                        <input type="hidden" name="workmen[<?= $w['id'] ?>][pass_from_dt]" value="<?= $pass_from_dt ?>">
+                                    </td>
+                                    <td class="computed-pass-to-dt text-primary">
+                                        <?= date('d/m/Y', $pass_till_dt_timestamp) ?>
+                                    </td>
+                                    <td class="text-center">
+                                        <input type="checkbox" class="form-check-input row-checkbox" name="workmen[<?= $w['id'] ?>][selected]" value="1" style="width:1.5rem;height:1.5rem;">
+                                        <input type="hidden" name="workmen[<?= $w['id'] ?>][aadhaar]" value="<?= htmlspecialchars($w['aadhaar']) ?>">
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="mt-4 mb-3 text-end pe-3">
+                    <button type="button" id="btnHire" class="btn btn-success btn-lg shadow-sm" <?= empty($workmen) ? 'disabled' : '' ?>>
+                        <i class="fas fa-check-circle me-2"></i> Hiring
                     </button>
-                  </td>
-                </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-          </div>
+                </div>
+            </form>
         </div>
-
-        <!-- Section 2: Awaiting Biometric -->
-        <div class="card glass">
-          <div class="card-header">
-            <div class="card-title"><i class="fas fa-fingerprint text-warning"></i> Awaiting Biometric Enrollment</div>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Workman</th>
-                  <th>ACC Number</th>
-                  <th>Contractor</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php foreach($pending_biometric as $pb): ?>
-                <tr>
-                  <td><strong><?= htmlspecialchars($pb['name']) ?></strong></td>
-                  <td><code><?= htmlspecialchars($pb['acc_number']) ?></code></td>
-                  <td><?= htmlspecialchars($pb['contractor_name']) ?></td>
-                  <td>
-                    <button onclick="issuePermanentPass(<?= $pb['id'] ?>)" class="btn btn-sm btn-success">
-                      <i class="fas fa-id-card-clip"></i> Issue Permanent Pass
-                    </button>
-                  </td>
-                </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Section 3: Recently Generated ACCs -->
-        <div class="card glass mt-4">
-          <div class="card-header">
-            <div class="card-title"><i class="fas fa-history text-info"></i> Recently Generated ACCs</div>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Workman</th>
-                  <th>ACC Number</th>
-                  <th>Date Generated</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php foreach($recent_acc as $ra): ?>
-                <tr>
-                  <td><?= htmlspecialchars($ra['name']) ?></td>
-                  <td><code><?= htmlspecialchars($ra['acc_number']) ?></code></td>
-                  <td><?= date('d M Y', strtotime($ra['updated_at'])) ?></td>
-                  <?php
-                    $isActive = $ra['status'] == 'permanent_active';
-                    $statusLabel = $isActive ? 'PERMANENT ACTIVE' : strtoupper(str_replace('_', ' ', $ra['status']));
-                  ?>
-                  <td><span class="badge badge-<?= $isActive ? 'success' : 'warning' ?>"><?= htmlspecialchars($statusLabel) ?></span></td>
-                  <td>
-                    <?php if ($isActive): ?>
-                      <a href="../../api/welfare/download_pass.php?id=<?= (int)$ra['id'] ?>&type=perm&action=download" target="_blank" class="btn btn-sm btn-outline-info">
-                        <i class="fas fa-file-download"></i> Download
-                      </a>
-                    <?php else: ?>
-                      <button onclick="issuePermanentPass(<?= (int)$ra['id'] ?>)" class="btn btn-sm btn-success">
-                        <i class="fas fa-id-card-clip"></i> Issue Permanent
-                      </button>
-                    <?php endif; ?>
-                  </td>
-                </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="card glass">
-          <div class="card-header">
-            <div class="card-title">ACC Generation Rules</div>
-          </div>
-          <div class="card-body" style="font-size:13px; line-height:1.6;">
-            <p><i class="fas fa-info-circle text-primary"></i> <strong>Format:</strong> <code>ACC-YYYY-XXXXX</code></p>
-            <p><i class="fas fa-info-circle text-primary"></i> <strong>Series:</strong> Yearly sequential increment.</p>
-            <hr style="opacity:0.1; margin:12px 0;">
-            <p><strong>Step-by-Step Flow:</strong></p>
-            <ul style="padding-left:20px; opacity:0.8;">
-              <li>Final document verification.</li>
-              <li>Temporary pass issuance.</li>
-              <li>ACC number generation.</li>
-              <li>Biometric enrollment.</li>
-              <li>Pass activation.</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="alert alert-info mt-4">
-          <i class="fas fa-sync"></i> ACC numbers are automatically synchronized with the SAP system once activated.
-        </div>
-      </div>
     </div>
 
+    <!-- API Actions as per exact notes -->
     <script>
-      async function parsePassApiResponse(res, fallbackMessage) {
-        const raw = await res.text();
-        let result = {};
-        try {
-          result = raw ? JSON.parse(raw) : {};
-        } catch (parseError) {
-          result = { success: false, message: raw ? raw.replace(/<[^>]*>/g, ' ').trim() : 'Server returned an empty response.' };
+    document.addEventListener('DOMContentLoaded', function() {
+        // Select All checkboxes
+        const selectAll = document.getElementById('selectAll');
+        const rowCheckboxes = document.querySelectorAll('.row-checkbox');
+        
+        if(selectAll) {
+            selectAll.addEventListener('change', function() {
+                rowCheckboxes.forEach(cb => cb.checked = selectAll.checked);
+            });
         }
-        if (!res.ok && !result.message) result.message = fallbackMessage;
-        return result;
-      }
 
-      function issuePermanentPass(id) {
-        Swal.fire({
-          title: 'Confirm',
-          text: 'Issue permanent pass and activate ACC for this workman?',
-          icon: 'warning',
-          showCancelButton: true,
-          confirmButtonColor: '#1e3a8a',
-          cancelButtonColor: '#d33',
-          confirmButtonText: 'Yes, Issue'
-        }).then(async (swalResult) => {
-          if (!swalResult.isConfirmed) return;
-          try {
-            const res = await fetch('../../api/welfare/complete_biometric.php', {
-              method: 'POST',
-              body: JSON.stringify({ workman_id: id }),
-              headers: { 
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
-              }
+        // Pass Till Dt dynamic validation (Live updates "Pass To Dt" column)
+        const passTillInputs = document.querySelectorAll('.pass-till-dt');
+        passTillInputs.forEach(input => {
+            input.addEventListener('change', function() {
+                const maxDt = new Date(this.getAttribute('data-max-dt'));
+                const selectedDt = new Date(this.value);
+                
+                if (selectedDt > maxDt) {
+                    alert('Validity cannot exceed ' + this.getAttribute('data-max-days') + ' days from Preferred Joining Dt.');
+                    this.value = this.getAttribute('data-max-dt');
+                }
+                
+                // Update display Pass To Dt
+                const tr = this.closest('tr');
+                const passToCell = tr.querySelector('.computed-pass-to-dt');
+                if (this.value) {
+                    const parts = this.value.split('-');
+                    passToCell.textContent = parts[2] + '/' + parts[1] + '/' + parts[0];
+                }
             });
-            const result = await parsePassApiResponse(res, 'Permanent pass issue failed on the server. Please check api_errors.log.');
-            if (result.success) {
-              alert(result.message || 'Permanent pass issued successfully.');
-              location.reload();
-            } else {
-              alert('Error: ' + (result.message || result.error || 'Unknown error'));
-            }
-          } catch (err) {
-            alert('API Error: ' + err.message);
-          }
         });
-      }
 
-      function generateWorkerACC(id) {
-        Swal.fire({
-          title: 'Confirm',
-          text: 'Generate ACC number for this workman?',
-          icon: 'warning',
-          showCancelButton: true,
-          confirmButtonColor: '#1e3a8a',
-          cancelButtonColor: '#d33',
-          confirmButtonText: 'Yes, Generate'
-        }).then(async (swalResult) => {
-          if (!swalResult.isConfirmed) return;
-          try {
-            const res = await fetch('../../api/welfare/generate_worker_acc.php', {
-              method: 'POST',
-              body: JSON.stringify({ workman_id: id }),
-              headers: { 
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': window.CLMS_CSRF_TOKEN || ''
-              }
-            });
-            const result = await parsePassApiResponse(res, 'ACC generation failed on the server. Please check api_errors.log.');
-            if (result.success) {
-              alert(result.message || 'ACC Generated successfully!');
-              location.reload();
-            } else {
-              alert('Error: ' + (result.message || result.error || 'Unknown error'));
+        // Hiring Button Action
+        document.getElementById('btnHire').addEventListener('click', function() {
+            const selected = document.querySelectorAll('.row-checkbox:checked');
+            if (selected.length === 0) {
+                alert('Please select workmen.');
+                return;
             }
-          } catch (err) {
-            alert('API Error: ' + err.message);
-          }
+
+            let payload = {
+                action: 'hiring',
+                workmen: []
+            };
+
+            selected.forEach(cb => {
+                const tr = cb.closest('tr');
+                const id = cb.name.match(/\[(\d+)\]/)[1];
+                const aadhaar = tr.querySelector('input[name="workmen['+id+'][aadhaar]"]').value;
+                const passTill = tr.querySelector('.pass-till-dt').value;
+                const passFrom = tr.querySelector('input[name="workmen['+id+'][pass_from_dt]"]').value;
+                
+                payload.workmen.push({
+                    id: id,
+                    aadhaar: aadhaar,
+                    pass_from: passFrom,
+                    pass_to: passTill
+                });
+            });
+
+            // Disable button during processing
+            const btn = document.getElementById('btnHire');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Processing...';
+            btn.disabled = true;
+
+            fetch('../../api/welfare/process_hiring.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Success: ' + data.message + '\n\nEmployee validity dt (Hiring action) -> 31/12/9999\nAfter Hiring:\n- Acc no generated\n- Hiring Dt\n- Reply to APP4S');
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('An error occurred during the hiring process.');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
         });
-      }
+    });
     </script>
     <?php
 }
 
-renderLayout("ACC Number Generation", 'renderContent', $role, $name);
+renderLayout("ACC Generation & Hiring", 'renderContent', $role, $name);

@@ -429,9 +429,9 @@ function renderContent() {
                   </div>
                 <?php else: ?>
                   <?php if (($r['source'] ?? '') === 'contractor_re_enroll'): ?>
-                    <span class="badge badge-gray">N/A (Retraining)</span>
+                    <span class="badge badge-gray" style="white-space:nowrap;">N/A (Retraining)</span>
                   <?php else: ?>
-                    <span class="badge badge-gray">Not Generated</span>
+                    <span class="badge badge-gray" style="white-space:nowrap;">Not Generated</span>
                   <?php endif; ?>
                 <?php endif; ?>
               </td>

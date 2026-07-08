@@ -4,6 +4,9 @@ require_once '../../include/auth_middleware.php';
 require_once '../../include/layout.php';
 
 // Ensure user is customer
+if (isset($_SESSION['role'])) {
+    $_SESSION['role'] = strtolower(trim($_SESSION['role']));
+}
 $role = $_SESSION['role'] ?? 'customer';
 require_role(['customer']);
 
@@ -32,6 +35,7 @@ function renderContent() {
     global $conn, $customer_code, $name, $customer_name, $customer_email, $customer_mobile;
 
     $annexure3aHistory = [];
+    $customer_status = 'pending';
     if (!empty($customer_code)) {
         $annexure3aHistory = db_fetch_all($conn, "
             SELECT annexure3a_id, vendor_code, work_order_no, status, reason, updated_at
@@ -40,7 +44,43 @@ function renderContent() {
             ORDER BY updated_at DESC
             LIMIT 10
         ", 's', [$customer_code]);
+        
+        // Fetch overall customer status (if any approved, operationalAccess is true)
+        $c_info = db_single($conn, "SELECT status FROM contractor_annexure3a WHERE customer_code = ? ORDER BY CASE WHEN status = 'approved' THEN 1 ELSE 2 END, id DESC LIMIT 1", 's', [$customer_code]);
+        if ($c_info) {
+            $customer_status = strtolower($c_info['status']);
+        }
     }
+    
+    $display_customer_status = $customer_status ?: 'pending';
+    $operationalAccess = ($customer_status === 'approved');
+    $entryEnrollmentLocked = !in_array($customer_status, ['approved', 'correction_required', 'hold']);
+    
+    if ($operationalAccess) {
+        $flow = [
+            ['label' => 'Customer Registration', 'detail' => 'Open registration and statutory details', 'icon' => 'fa-file-signature', 'link' => 'annexure-3a.php', 'status' => 'active', 'badge' => 'Open', 'badgeClass' => 'badge-success'],
+            ['label' => 'Resubmit Customer Registration', 'detail' => 'Update EC Policy and Labour License only', 'icon' => 'fa-rotate', 'link' => 'annexure-3a.php?resubmit=1', 'status' => 'active', 'badge' => 'Resubmit', 'badgeClass' => 'badge-warning'],
+            ['label' => 'Worker Management', 'detail' => 'View workforce records', 'icon' => 'fa-users', 'link' => '../contractor/enrolment-4a.php?type=workmen', 'status' => 'active', 'badge' => 'Open', 'badgeClass' => 'badge-secondary'],
+            ['label' => 'Safety Training', 'detail' => 'Training status and qualification', 'icon' => 'fa-graduation-cap', 'link' => '../contractor/training_request.php', 'status' => 'active', 'badge' => 'Open', 'badgeClass' => 'badge-info'],
+            ['label' => 'Gate Pass', 'detail' => 'Pass issue and validity status', 'icon' => 'fa-id-badge', 'link' => '../contractor/gatepass-6a.php', 'status' => 'active', 'badge' => 'Open', 'badgeClass' => 'badge-info'],
+            ['label' => 'ACC Card', 'detail' => 'Permanent card status', 'icon' => 'fa-id-card', 'link' => '../contractor/pass_status.php', 'status' => 'active', 'badge' => 'Open', 'badgeClass' => 'badge-info'],
+            ['label' => 'Attendance', 'detail' => 'Daily attendance monitoring', 'icon' => 'fa-calendar-check', 'link' => '../contractor/attendance.php', 'status' => 'active', 'badge' => 'Open', 'badgeClass' => 'badge-info'],
+            ['label' => 'Compliance Monitor', 'detail' => 'Statutory compliance status', 'icon' => 'fa-shield-check', 'link' => '../contractor/compliance.php', 'status' => 'active', 'badge' => 'Open', 'badgeClass' => 'badge-info'],
+            ['label' => 'Documents', 'detail' => 'Uploaded document library', 'icon' => 'fa-folder-open', 'link' => '../contractor/documents.php', 'status' => 'active', 'badge' => 'Open', 'badgeClass' => 'badge-info'],
+            ['label' => 'Reports', 'detail' => 'Muster, attendance and compliance reports', 'icon' => 'fa-clipboard-list', 'link' => '../contractor/reports.php', 'status' => 'active', 'badge' => 'Run', 'badgeClass' => 'badge-info'],
+        ];
+    } else {
+        $flow = [
+            ['label' => 'Customer Registration', 'detail' => 'Open registration and statutory details', 'icon' => 'fa-file-signature', 'link' => 'annexure-3a.php', 'status' => $customer_status === 'approved' ? 'done' : 'pending', 'badge' => ucfirst(str_replace('_', ' ', $display_customer_status)), 'badgeClass' => 'badge-warning'],
+            ['label' => 'Awaiting Approval', 'detail' => 'Please wait for Welfare user to verify your registration.', 'icon' => 'fa-clock', 'link' => '#', 'status' => 'active', 'badge' => 'WAITING', 'badgeClass' => 'badge-secondary'],
+        ];
+        if ($entryEnrollmentLocked) {
+            $flow[] = ['label' => 'Worker Management', 'detail' => 'Available after Welfare approves Customer Registration', 'icon' => 'fa-users', 'link' => '#', 'status' => 'locked', 'badge' => 'Approval Pending', 'badgeClass' => 'badge-secondary'];
+        } else {
+            $flow[] = ['label' => 'Worker Management', 'detail' => 'View workforce records', 'icon' => 'fa-users', 'link' => '../contractor/enrolment-4a.php?type=workmen', 'status' => 'active', 'badge' => 'Open', 'badgeClass' => 'badge-secondary'];
+        }
+    }
+
 ?>
 <style>
     :root {
@@ -76,8 +116,8 @@ function renderContent() {
         border-radius: 50%;
     }
 
-    .welcome-banner h1 { font-size: 2.2rem; font-weight: 800; margin-bottom: 0.5rem; }
-    .welcome-banner p { opacity: 0.9; font-size: 1.1rem; font-weight: 500; }
+    .welcome-banner h1 { font-size: 2.2rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff; }
+    .welcome-banner p { opacity: 0.9; font-size: 1.1rem; font-weight: 500; color: #ffffff; }
 
     .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-top: -3.5rem; padding: 0 1rem; margin-bottom: 2.5rem; }
     
@@ -174,6 +214,8 @@ function renderContent() {
     .flow-title { font-weight:800; color:#1a202c; line-height:1.25; }
     .flow-detail { font-size:12px; color:#718096; line-height:1.35; margin-top:4px; }
     .flow-step.active .flow-index { background:#f59e0b; color:#fff; }
+    .flow-step.done .flow-index { background:#38a169; color:#fff; }
+    .flow-step.locked { opacity:.68; pointer-events:none; }
 
     .worker-list-item {
         display: flex;
@@ -261,96 +303,36 @@ function renderContent() {
 
         <!-- Quick Module Links -->
         <div class="contractor-flow" style="margin:18px 0;">
-            <a class="flow-step active" href="annexure-3a.php">
-                <div class="flow-index">1</div>
-                <div class="flow-icon"><i class="fas fa-file-signature"></i></div>
+            <?php 
+            $i = 1;
+            foreach ($flow as $step): 
+                $isLocked = ($step['status'] === 'locked');
+                $isDone = ($step['status'] === 'done');
+                $linkHref = $isLocked ? '#' : $step['link'];
+                $cardClasses = 'flow-step';
+                if ($isLocked) $cardClasses .= ' locked';
+                if ($isDone) $cardClasses .= ' done';
+                if ($step['status'] === 'active') $cardClasses .= ' active';
+                
+                $indexDisplay = $i;
+                if ($step['label'] === 'Resubmit Customer Registration') {
+                    $indexDisplay = 'R';
+                } else {
+                    $i++;
+                }
+            ?>
+            <a class="<?= $cardClasses ?>" href="<?= htmlspecialchars($linkHref) ?>">
+                <div class="flow-index"><?= $indexDisplay ?></div>
+                <div class="flow-icon"><i class="fas <?= htmlspecialchars($step['icon']) ?>"></i></div>
                 <div class="flow-body">
-                    <div class="flow-title">Customer Registration</div>
-                    <div class="flow-detail">Open registration and statutory details</div>
+                    <div class="flow-title"><?= htmlspecialchars($step['label']) ?></div>
+                    <div class="flow-detail"><?= htmlspecialchars($step['detail']) ?></div>
                 </div>
-                <span class="badge badge-success">Open</span>
+                <?php if (!empty($step['badge'])): ?>
+                <span class="badge <?= htmlspecialchars($step['badgeClass']) ?>"><?= htmlspecialchars($step['badge']) ?></span>
+                <?php endif; ?>
             </a>
-            <a class="flow-step active" href="annexure-3a.php?resubmit=1">
-                <div class="flow-index">R</div>
-                <div class="flow-icon"><i class="fas fa-rotate"></i></div>
-                <div class="flow-body">
-                    <div class="flow-title">Resubmit Customer Registration</div>
-                    <div class="flow-detail">Update EC Policy and Labour License only</div>
-                </div>
-                <span class="badge badge-warning">Resubmit</span>
-            </a>
-            <a class="flow-step" href="../contractor/enrolment-4a.php?type=workmen">
-                <div class="flow-index">2</div>
-                <div class="flow-icon"><i class="fas fa-users"></i></div>
-                <div class="flow-body">
-                    <div class="flow-title">Worker Management</div>
-                    <div class="flow-detail">View workforce records</div>
-                </div>
-                <span class="badge badge-secondary">Open</span>
-            </a>
-            <a class="flow-step" href="../contractor/training_request.php">
-                <div class="flow-index">3</div>
-                <div class="flow-icon"><i class="fas fa-graduation-cap"></i></div>
-                <div class="flow-body">
-                    <div class="flow-title">Safety Training</div>
-                    <div class="flow-detail">Training status and qualification</div>
-                </div>
-                <span class="badge badge-info">Open</span>
-            </a>
-            <a class="flow-step" href="../contractor/gatepass-6a.php">
-                <div class="flow-index">4</div>
-                <div class="flow-icon"><i class="fas fa-id-badge"></i></div>
-                <div class="flow-body">
-                    <div class="flow-title">Gate Pass</div>
-                    <div class="flow-detail">Pass issue and validity status</div>
-                </div>
-                <span class="badge badge-info">Open</span>
-            </a>
-            <a class="flow-step" href="../contractor/pass_status.php">
-                <div class="flow-index">5</div>
-                <div class="flow-icon"><i class="fas fa-id-card"></i></div>
-                <div class="flow-body">
-                    <div class="flow-title">ACC Card</div>
-                    <div class="flow-detail">Permanent card status</div>
-                </div>
-                <span class="badge badge-info">Open</span>
-            </a>
-            <a class="flow-step" href="../contractor/attendance.php">
-                <div class="flow-index">6</div>
-                <div class="flow-icon"><i class="fas fa-calendar-check"></i></div>
-                <div class="flow-body">
-                    <div class="flow-title">Attendance</div>
-                    <div class="flow-detail">Daily attendance monitoring</div>
-                </div>
-                <span class="badge badge-info">Open</span>
-            </a>
-            <a class="flow-step" href="../contractor/compliance.php">
-                <div class="flow-index">7</div>
-                <div class="flow-icon"><i class="fas fa-shield-check"></i></div>
-                <div class="flow-body">
-                    <div class="flow-title">Compliance Monitor</div>
-                    <div class="flow-detail">Statutory compliance status</div>
-                </div>
-                <span class="badge badge-info">Open</span>
-            </a>
-            <a class="flow-step" href="../contractor/documents.php">
-                <div class="flow-index">8</div>
-                <div class="flow-icon"><i class="fas fa-folder-open"></i></div>
-                <div class="flow-body">
-                    <div class="flow-title">Documents</div>
-                    <div class="flow-detail">Uploaded document library</div>
-                </div>
-                <span class="badge badge-info">Open</span>
-            </a>
-            <a class="flow-step" href="../contractor/reports.php">
-                <div class="flow-index">9</div>
-                <div class="flow-icon"><i class="fas fa-clipboard-list"></i></div>
-                <div class="flow-body">
-                    <div class="flow-title">Reports</div>
-                    <div class="flow-detail">Muster, attendance and compliance reports</div>
-                </div>
-                <span class="badge badge-info">Run</span>
-            </a>
+            <?php endforeach; ?>
         </div>
 
         <div class="card" style="margin-bottom: 2rem;">

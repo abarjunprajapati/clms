@@ -123,6 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 function renderContent() {
     global $conn, $educationOptions;
+    $skillCategories = clms_get_skill_categories($conn);
 
     $selectedId = (int)($_GET['id'] ?? 0);
     $flowRows = clms_get_education_flow_rows($conn);
@@ -179,12 +180,12 @@ function renderContent() {
             <input type="hidden" name="action" value="add_flow">
             <div class="form-group">
               <label class="form-label required">Skill Category</label>
-              <select class="form-control" name="flow_skill_category" required>
-                <option value="">Select category</option>
-                <option value="Skilled">Skilled</option>
-                <option value="Semi-Skilled">Semi-Skilled</option>
-                <option value="Unskilled">Unskilled</option>
-              </select>
+              <input class="form-control" name="flow_skill_category" list="skillCategoryList" placeholder="e.g. Highly-Skilled" required>
+              <datalist id="skillCategoryList">
+                <?php foreach ($skillCategories as $cat): ?>
+                  <option value="<?= htmlspecialchars($cat) ?>"></option>
+                <?php endforeach; ?>
+              </datalist>
             </div>
             <div class="form-group">
               <label class="form-label required">Education / Qualification</label>
@@ -300,9 +301,9 @@ function renderContent() {
                 <label class="form-label required">Skill Category</label>
                 <select class="form-control" name="skill_category" id="skillSelect" required>
                   <?php $selectedSkill = clms_normalize_flow_skill(($selected['skill_category'] ?? '') ?: ($selected['skill'] ?? '')); ?>
-                  <?php foreach (['Skilled', 'Semi-Skilled', 'Unskilled'] as $skill): ?>
-                    <option value="<?= $skill ?>" <?= ($selectedSkill === $skill) ? 'selected' : '' ?>>
-                      <?= $skill ?>
+                  <?php foreach ($skillCategories as $skill): ?>
+                    <option value="<?= htmlspecialchars($skill) ?>" <?= ($selectedSkill === $skill) ? 'selected' : '' ?>>
+                      <?= htmlspecialchars($skill) ?>
                     </option>
                   <?php endforeach; ?>
                 </select>

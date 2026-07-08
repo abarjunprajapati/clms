@@ -123,6 +123,102 @@ try {
 
     $updated_by = (int)($_SESSION['user_id'] ?? 0);
 
+    // Process pending edit request if it exists for this contractor
+    $edit_request = db_single($conn, "SELECT * FROM contractor_edit_requests WHERE contractor_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", 'i', [$id]);
+    if ($edit_request) {
+        if ($status === 'approved') {
+            $data = json_decode($edit_request['requested_data_json'], true);
+            if (is_array($data)) {
+                // Update contractors table with requested values
+                db_execute($conn, "UPDATE contractors SET 
+                    mobile=?, vendor_mob2=?, email=?, address=?, work_awarding_department=?, 
+                    epf_registered=?, epf_code=?, esi_registered=?, esi_code=?, epf_esi_exemption_reason=?,
+                    wage_category=?, wage_declaration=?, ecp_covered=?, ecp_details_json=?, license_details_json=?,
+                    ecp_number=?, ecp_valid_from=?, ecp_valid_to=?, workers_ecp=?, workers_proposed_to_be_engaged=?, 
+                    workers_proposed=?, worker_category=?, license_no=?, license_issued=?, issued_date=?, 
+                    expiry_date=?, license_file=?, labour_license_appl_no=?, labour_identification_no=?, contact_person=?, 
+                    remarks=? WHERE id=?",
+                    'ssssssssssssssssssiiissssssssssi',
+                    [
+                        $data['mobile'] ?? null, $data['vendor_mob2'] ?? null, $data['email'] ?? null, $data['address'] ?? null, $data['work_awarding_department'] ?? null,
+                        $data['epf_registered'] ?? 'NO', $data['epf_code'] ?? null, $data['esi_registered'] ?? 'NO', $data['esi_code'] ?? null, $data['epf_esi_exemption_reason'] ?? null,
+                        $data['wage_category'] ?? null, $data['wage_declaration'] ?? null, $data['ecp_covered'] ?? 'NO', $data['ecp_details_json'] ?? null, $data['license_details_json'] ?? null,
+                        $data['ecp_number'] ?? null, $data['ecp_valid_from'] ?? null, $data['ecp_valid_to'] ?? null, intval($data['workers_ecp'] ?? 0), intval($data['workers_proposed_to_be_engaged'] ?? 0),
+                        intval($data['workers_proposed_to_be_engaged'] ?? 0), $data['worker_category'] ?? null, $data['license_no'] ?? null, $data['license_issued'] ?? null, $data['issued_date'] ?? null,
+                        $data['expiry_date'] ?? null, $data['license_file'] ?? null, $data['labour_license_appl_no'] ?? null, $data['labour_identification_no'] ?? null, $data['contact_person'] ?? null,
+                        $data['remarks'] ?? null, $id
+                    ]
+                );
+
+                // Update annexure2a table with requested values
+                db_execute($conn, "UPDATE annexure2a SET 
+                    mobile=?, vendor_mob2=?, email=?, office_address=?, 
+                    epf_registered=?, epf_code=?, esi_registered=?, esic_code=?, epf_esi_exemption_reason=?,
+                    project_name=?, wage_category=?, wage_declaration=?, ecp_covered=?, ecp_details_json=?, license_details_json=?,
+                    ecp_number=?, ecp_valid_from=?, ecp_valid_to=?, 
+                    workers_ecp=?, workers_proposed_to_be_engaged=?, worker_category=?, 
+                    license_no=?, license_issued=?, issued_date=?, expiry_date=?, 
+                    klwf_registration_no=?, labour_license_appl_no=?, labour_identification_no=?, contact_person=?, remarks=?
+                    WHERE contractor_id=?",
+                    'ssssssssssssssssssiissssssssssi',
+                    [
+                        $data['mobile'] ?? null, $data['vendor_mob2'] ?? null, $data['email'] ?? null, $data['address'] ?? null,
+                        $data['epf_registered'] ?? 'NO', $data['epf_code'] ?? null, $data['esi_registered'] ?? 'NO', $data['esi_code'] ?? null, $data['epf_esi_exemption_reason'] ?? null,
+                        $data['work_awarding_department'] ?? null, $data['wage_category'] ?? null, $data['wage_declaration'] ?? null, $data['ecp_covered'] ?? 'NO', $data['ecp_details_json'] ?? null, $data['license_details_json'] ?? null,
+                        $data['ecp_number'] ?? null, $data['ecp_valid_from'] ?? null, $data['ecp_valid_to'] ?? null,
+                        intval($data['workers_ecp'] ?? 0), intval($data['workers_proposed_to_be_engaged'] ?? 0), $data['worker_category'] ?? null,
+                        $data['license_no'] ?? null, $data['license_issued'] ?? null, $data['issued_date'] ?? null, $data['expiry_date'] ?? null,
+                        $data['license_issued'] ?? null, $data['labour_license_appl_no'] ?? null, $data['labour_identification_no'] ?? null, $data['contact_person'] ?? null, $data['remarks'] ?? null,
+                        $id
+                    ]
+                );
+
+                // Sync PO/PWO/SO selections if present in data
+                if (isset($data['selected_pos'])) {
+                    $conn->query("DELETE FROM contractor_po_selection WHERE contractor_id = $id");
+                    $pos = json_decode($data['selected_pos'], true);
+                    if (is_array($pos)) {
+                        foreach ($pos as $po) {
+                            db_execute($conn, "INSERT INTO contractor_po_selection (contractor_id, po_number) VALUES (?,?)", 'is', [$id, $po]);
+                        }
+                    }
+                    $pos_str = is_array($pos) ? implode(',', array_filter($pos)) : '';
+                    db_execute($conn, "UPDATE contractors SET po_number = ? WHERE id = ?", 'si', [$pos_str, $id]);
+                }
+                if (isset($data['selected_pwos'])) {
+                    $conn->query("DELETE FROM contractor_pwo_selection WHERE contractor_id = $id");
+                    $pwos = json_decode($data['selected_pwos'], true);
+                    if (is_array($pwos)) {
+                        foreach ($pwos as $pwo) {
+                            db_execute($conn, "INSERT INTO contractor_pwo_selection (contractor_id, pwo_number) VALUES (?,?)", 'is', [$id, $pwo]);
+                        }
+                    }
+                    $pwos_str = is_array($pwos) ? implode(',', array_filter($pwos)) : '';
+                    db_execute($conn, "UPDATE contractors SET pwo_number = ? WHERE id = ?", 'si', [$pwos_str, $id]);
+                }
+                if (isset($data['selected_sales'])) {
+                    $conn->query("DELETE FROM contractor_so_selection WHERE contractor_id = $id");
+                    $sos = json_decode($data['selected_sales'], true);
+                    if (is_array($sos)) {
+                        foreach ($sos as $so) {
+                            db_execute($conn, "INSERT INTO contractor_so_selection (contractor_id, sale_order_no) VALUES (?,?)", 'is', [$id, $so]);
+                        }
+                    }
+                    $sos_str = is_array($sos) ? implode(',', array_filter($sos)) : '';
+                    db_execute($conn, "UPDATE contractors SET sales_order_number = ? WHERE id = ?", 'si', [$sos_str, $id]);
+                }
+            }
+
+            db_execute($conn, "UPDATE contractor_edit_requests SET status = 'approved', action_by = ?, action_at = NOW(), remarks = ? WHERE id = ?", 'isi', [$updated_by, $reason, $edit_request['id']]);
+        } else {
+            // Rejected or other action
+            db_execute($conn, "UPDATE contractor_edit_requests SET status = 'rejected', action_by = ?, action_at = NOW(), remarks = ? WHERE id = ?", 'isi', [$updated_by, $reason, $edit_request['id']]);
+            
+            // Set the target status to approved so contractor status remains approved
+            $status = 'approved';
+        }
+    }
+
     contractor_status_ensure_column($conn, 'contractors', 'approval_reason', 'TEXT NULL');
     contractor_status_ensure_column($conn, 'contractors', 'approval_pdf', 'VARCHAR(255) NULL');
     contractor_status_ensure_column($conn, 'contractors', 'last_action_by', 'INT NULL');

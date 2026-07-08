@@ -2,8 +2,8 @@
 session_start();
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/payment_flow.php';
+require_once __DIR__ . '/../../include/payment_csl.php';
 require_once __DIR__ . '/../../include/AuditLogger.php';
-
 header('Content-Type: application/json; charset=utf-8');
 
 function paymentOrderJson($payload, $status = 200) {
@@ -39,7 +39,44 @@ try {
 
     $provider = clms_payment_setting($conn, 'payment_gateway_provider', 'demo_qr');
     
-    if ($provider === 'razorpay') {
+    if ($provider === 'csl_payment') {
+        $keyId = trim((string)clms_payment_setting($conn, 'payment_gateway_key_id', ''));
+        $keySecret = trim((string)clms_payment_setting($conn, 'payment_gateway_key_secret', ''));
+        
+        if ($keyId === '' || $keySecret === '') {
+            paymentOrderJson(['success' => false, 'message' => 'Payment API credentials are not configured.'], 400);
+        }
+
+        $cslOrderResult = clms_csl_create_payment_order($conn, $request);
+
+        if (!$cslOrderResult['status']) {
+            paymentOrderJson(['success' => false, 'message' => $cslOrderResult['message']], 400);
+        }
+
+        $orderId = $cslOrderResult['order_id'];
+        
+        // Audit log
+        AuditLogger::log($conn, 'CSL_ORDER_CREATED', 'payment', '', [
+            'payment_ref' => $request['payment_ref'],
+            'order_id' => $orderId,
+            'amount' => $request['total_amount']
+        ], "Cochin Shipyard payment order created successfully.");
+
+        paymentOrderJson([
+            'success' => true,
+            'message' => 'CSL order created.',
+            'provider' => 'razorpay', // Load Razorpay checkout in the frontend
+            'key_id' => $keyId,
+            'gateway_order_id' => $orderId,
+            'amount' => $request['total_amount'],
+            'currency' => 'INR',
+            'token' => $token,
+            'contractor_name' => $contractor['contractor_name'] ?? ($contractor['vendor_name'] ?? 'Contractor'),
+            'contractor_email' => $contractor['email'] ?? '',
+            'contractor_phone' => $contractor['mobile'] ?? ($contractor['phone'] ?? '')
+        ]);
+
+    } elseif ($provider === 'razorpay') {
         $keyId = trim((string)clms_payment_setting($conn, 'payment_gateway_key_id', ''));
         $keySecret = trim((string)clms_payment_setting($conn, 'payment_gateway_key_secret', ''));
         

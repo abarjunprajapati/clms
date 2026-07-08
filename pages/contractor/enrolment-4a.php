@@ -463,7 +463,7 @@ function renderContent() {
         }
     }
 
-    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_po_master') && enrolment_column_exists($conn, 'sap_po_master', 'po_number')) {
+    if (empty($workOptions) && $vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_po_master') && enrolment_column_exists($conn, 'sap_po_master', 'po_number')) {
         $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
         $vendorFilters = [];
         if (enrolment_column_exists($conn, 'sap_po_master', 'vendor_code')) {
@@ -488,7 +488,7 @@ function renderContent() {
         }
     }
 
-    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_pwo_master') && enrolment_column_exists($conn, 'sap_pwo_master', 'pwo_number')) {
+    if (empty($workOptions) && $vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_pwo_master') && enrolment_column_exists($conn, 'sap_pwo_master', 'pwo_number')) {
         $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
         $vendorFilters = [];
         if (enrolment_column_exists($conn, 'sap_pwo_master', 'vendor_code')) {
@@ -513,7 +513,7 @@ function renderContent() {
             enrolment_add_work_option($workOptions, $seenWorkOrders, $pwoRow['work_order_no'], $pwoRow['project_name'], $pwoRow['department'], $pwoRow['project_no'], 'PWO');
         }
     }
-    if ($vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_sale_order_master') && enrolment_column_exists($conn, 'sap_sale_order_master', 'sale_order_no')) {
+    if (empty($workOptions) && $vendorCodeForSap !== '' && enrolment_table_exists($conn, 'sap_sale_order_master') && enrolment_column_exists($conn, 'sap_sale_order_master', 'sale_order_no')) {
         $safeVendor = mysqli_real_escape_string($conn, $vendorCodeForSap);
         $vendorFilters = [];
         if (enrolment_column_exists($conn, 'sap_sale_order_master', 'vendor_code')) {
@@ -1732,7 +1732,7 @@ function renderContent() {
               <!-- Dynamic Gate Pass Documents Section -->
               <?php
               $dynamicDocs = clms_get_gate_pass_document_master_rows($conn, true);
-              if (!empty($dynamicDocs) && $requestedType === 'workmen'):
+              if (!empty($dynamicDocs)):
               ?>
                 <div style="grid-column: 1 / -1; margin-top: 15px; margin-bottom: 5px;">
                   <h4 style="font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin: 0;">Additional Gate Pass Documents</h4>
@@ -1839,7 +1839,7 @@ function renderContent() {
             <div class="enroll-actions-left">
             </div>
             <div class="enroll-actions-right">
-              <button type="button" class="btn btn-outline" id="btnPrevTab">Previous</button>
+              <button type="button" class="btn btn-outline" id="btnPrevTab" style="display:none;">Previous</button>
               <button type="button" class="btn btn-primary-soft" id="btnNextTab">Next</button>
               <button type="button" class="btn btn-primary-soft" id="btnSaveDraft" style="display:none;">Save Draft</button>
               <button type="button" class="btn btn-primary" id="btnSubmit" style="display:none;">Submit</button>
@@ -2508,10 +2508,11 @@ function renderContent() {
           const isPwo = isPwoWorkOrder();
           const nextBtn = document.getElementById('btnNextTab');
           const submitBtn = document.getElementById('btnSubmit');
-          document.getElementById('btnPrevTab').style.visibility = index <= 0 ? 'hidden' : 'visible';
+          document.getElementById('btnPrevTab').style.display = index <= 0 ? 'none' : 'inline-flex';
           const isLastTab = index === visibleTabs.length - 1;
           const isTrainingTab = tabId === 'training';
           const isPaymentTab = tabId === 'payment';
+          const isEdit = Boolean(document.getElementById('workerEditId')?.value);
           let showSubmit = isLastTab || isEdit;
           // Only suppress Submit on the payment tab for pay_later/PWO flows — never on the training (last) tab
           if (isPaymentTab && selectedSafetyFeeOption() === 'pay_later') {
@@ -2527,9 +2528,10 @@ function renderContent() {
             showSubmit = true;
             showNext = false;
           }
+          
           nextBtn.style.display = showNext ? 'inline-flex' : 'none';
           const draftBtn = document.getElementById('btnSaveDraft');
-          if (draftBtn) draftBtn.style.display = isLastTab ? 'inline-flex' : 'none';
+          if (draftBtn) draftBtn.style.display = (isLastTab || isEdit) ? 'inline-flex' : 'none';
           submitBtn.style.display = showSubmit ? 'inline-flex' : 'none';
           submitBtn.innerText = isPaymentTab && isPwo
             ? (isPwoPayLater() ? 'Complete Enrollment' : 'Pay Now')
@@ -3034,7 +3036,7 @@ function renderContent() {
             const value = (category || '').trim().toLowerCase();
             if (value === 'skilled') return 'Skilled';
             if (value === 'semi-skilled' || value === 'semi skilled' || value === 'semiskilled') return 'Semi-Skilled';
-            if (value === 'unskilled') return 'Unskilled';
+            if (value === 'un-skilled' || value === 'un skilled' || value === 'unskilled') return 'Unskilled';
             return '';
         }
 

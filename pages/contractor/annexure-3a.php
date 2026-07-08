@@ -1,29 +1,65 @@
 <?php
 require_once '../../include/auth.php';
-checkAuth(['contractor', 'super_admin']);
+checkAuth(['customer', 'super_admin']);
 include '../../include/config.php';
 include '../../include/layout.php';
 require_once '../../include/labour_license_threshold.php';
 
 $role = $_SESSION['role'];
-$name = $_SESSION['name'] ?? 'Contractor';
-$vendor_code = $_SESSION['contractor_id'] ?? '';
+$name = $_SESSION['customer_name'] ?? $_SESSION['name'] ?? 'Customer';
+$customer_code = $_SESSION['customer_code'] ?? '';
 
-if (empty($vendor_code) || $role !== 'contractor') {
-    die('<div class="alert alert-danger m-5">Invalid Session. Please login as a contractor.</div>');
+if (empty($customer_code) || $role !== 'customer') {
+    die('<div class="alert alert-danger m-5">Invalid Session. Please login as a customer.</div>');
 }
 
-// 1. Fetch All Active Work Orders & Customer Mapping (Auto-Fetch Source)
+// 1. Fetch All Active Work Orders & Mapped Contractors for this Customer
 $work_orders = db_fetch_all($conn, "
-    SELECT wo.*, c.customer_name
+    SELECT wo.*, c.customer_name, v.vendor_name, v.address as vendor_address
     FROM work_orders wo
     LEFT JOIN sap_customer_master c ON c.customer_code = wo.customer_code
-    WHERE wo.vendor_code = ? AND wo.wo_status = 'ACTIVE'
+    LEFT JOIN sap_vendor_master v ON v.vendor_code = wo.vendor_code
+    WHERE wo.customer_code = ? AND wo.wo_status = 'ACTIVE'
     ORDER BY wo.id DESC
-", 's', [$vendor_code]);
+", 's', [$customer_code]);
+
+// Fetch Sales Orders by the SAP sale order master schema.
+if (!function_exists('customer_column_exists')) {
+    function customer_column_exists($conn, $table, $column) {
+        $safeTable = str_replace('`', '``', $table);
+        $column = mysqli_real_escape_string($conn, $column);
+        $result = mysqli_query($conn, "SHOW COLUMNS FROM `$safeTable` LIKE '{$column}'");
+        return $result && mysqli_num_rows($result) > 0;
+    }
+}
+
+$vendor_code_expr = customer_column_exists($conn, 'sap_sale_order_master', 'vendor_code') ? 'vendor_code' : "'' AS vendor_code";
+$po_number_expr = customer_column_exists($conn, 'sap_sale_order_master', 'po_number') ? 'po_number' : "'' AS po_number";
+$department_expr = customer_column_exists($conn, 'sap_sale_order_master', 'department') ? 'department' : "'' AS department";
+
+$raw_sales_orders = db_fetch_all($conn, "
+    SELECT id, sale_order_no, customer_code, customer_name, amount, currency,
+           doc_date, sales_organization, description, status, 
+           $vendor_code_expr, $po_number_expr, $department_expr
+    FROM sap_sale_order_master
+    WHERE customer_code = ?
+    ORDER BY doc_date DESC, id DESC
+", 's', [$customer_code]);
+
+$sales_orders = [];
+$seen = [];
+foreach ($raw_sales_orders as $so) {
+    $key = ($so['sale_order_no'] ?? '') . '_' . ($so['po_number'] ?? '');
+    if (!isset($seen[$key])) {
+        $seen[$key] = true;
+        $sales_orders[] = $so;
+    }
+}
 
 $selected_wo_no = $_GET['wo'] ?? '';
+$selected_so_id = $_GET['so_id'] ?? '';
 $work_order = null;
+
 if ($selected_wo_no) {
     foreach ($work_orders as $wo) {
         if (($wo['work_order_no'] ?? '') === $selected_wo_no) {
@@ -32,64 +68,143 @@ if ($selected_wo_no) {
         }
     }
 }
+
+if (!$work_order && $selected_so_id) {
+    foreach ($sales_orders as $so) {
+        if ((string)$so['id'] === $selected_so_id) {
+            $v_row = db_single($conn, "SELECT vendor_name, address FROM sap_vendor_master WHERE vendor_code = ?", 's', [$so['vendor_code']]);
+            $work_order = [
+                'customer_code' => $customer_code,
+                'customer_name' => $so['customer_name'] ?? $name,
+                'work_order_no' => $so['po_number'] ?? '',
+                'project_name' => $so['description'] ?? '',
+                'department' => $so['department'] ?? '',
+                'vendor_code' => $so['vendor_code'] ?? '',
+                'vendor_name' => $v_row['vendor_name'] ?? '',
+                'vendor_address' => $v_row['address'] ?? '',
+                'sale_order_no' => $so['sale_order_no'] ?? '',
+            ];
+            break;
+        }
+    }
+}
+
 if (!$work_order) {
     $work_order = $work_orders[0] ?? null;
 }
 
+if (!$work_order && !empty($sales_orders)) {
+    // If no work_orders exist but sales_orders exist, default to the first sales order
+    $so = $sales_orders[0];
+    $v_row = db_single($conn, "SELECT vendor_name, address FROM sap_vendor_master WHERE vendor_code = ?", 's', [$so['vendor_code']]);
+    $work_order = [
+        'customer_code' => $customer_code,
+        'customer_name' => $so['customer_name'] ?? $name,
+        'work_order_no' => $so['po_number'] ?? '',
+        'project_name' => $so['description'] ?? '',
+        'department' => $so['department'] ?? '',
+        'vendor_code' => $so['vendor_code'] ?? '',
+        'vendor_name' => $v_row['vendor_name'] ?? '',
+        'vendor_address' => $v_row['address'] ?? '',
+        'sale_order_no' => $so['sale_order_no'] ?? '',
+    ];
+}
+
+if (!$work_order) {
+    $customer_row = $customer_code ? db_single($conn, "SELECT customer_name FROM sap_customer_master WHERE customer_code = ?", 's', [$customer_code]) : null;
+    $work_order = [
+        'customer_code' => $customer_code,
+        'customer_name' => $customer_row['customer_name'] ?? $name,
+        'work_order_no' => '',
+        'project_name' => '',
+        'department' => '',
+        'vendor_code' => '',
+        'vendor_name' => '',
+        'vendor_address' => '',
+    ];
+}
+$vendor_code = $work_order['vendor_code'] ?? '';
+
 // 2. Fetch Contractor Profile (from Contractor Registration - approved data)
-$c = db_single($conn, "SELECT * FROM contractors WHERE vendor_code = ?", 's', [$vendor_code]);
+$c = $vendor_code ? db_single($conn, "SELECT * FROM contractors WHERE vendor_code = ?", 's', [$vendor_code]) : null;
 $is_registered = ($c && $c['status'] === 'approved') ? true : false;
+
+$selected_so_nos = [];
+if ($c) {
+    $selections = db_fetch_all($conn, "SELECT sale_order_no FROM contractor_so_selection WHERE contractor_id = ?", 'i', [$c['id']]);
+    $selected_so_nos = array_column($selections, 'sale_order_no');
+}
+if ($role === 'customer' && !empty($customer_code)) {
+    $c_cust = db_single($conn, "SELECT id FROM contractors WHERE vendor_code = ?", 's', ['CUST-' . $customer_code]);
+    if ($c_cust) {
+        $selections = db_fetch_all($conn, "SELECT sale_order_no FROM contractor_so_selection WHERE contractor_id = ?", 'i', [$c_cust['id']]);
+        $selected_so_nos = array_merge($selected_so_nos, array_column($selections, 'sale_order_no'));
+    }
+}
+$selected_so_nos = array_values(array_unique(array_filter($selected_so_nos)));
+if (empty($selected_so_nos) && !empty($work_order['sale_order_no'])) {
+    $selected_so_nos[] = $work_order['sale_order_no'];
+}
+
 
 // Handle Edit Mode
 $edit_id = $_GET['edit_id'] ?? null;
 $existing_data = null;
 if ($edit_id) {
-    $existing_data = db_single($conn, "SELECT * FROM contractor_annexure3a WHERE id = ? AND vendor_code = ?", 'is', [$edit_id, $vendor_code]);
+    $existing_data = db_single($conn, "SELECT * FROM contractor_annexure3a WHERE id = ? AND customer_code = ?", 'is', [$edit_id, $customer_code]);
 }
 if (!$existing_data && $work_order) {
-    $existing_data = db_single($conn, "SELECT * FROM contractor_annexure3a WHERE vendor_code = ? AND work_order_no = ? ORDER BY id DESC LIMIT 1", 'ss', [$vendor_code, $work_order['work_order_no']]);
+    $existing_data = db_single($conn, "SELECT * FROM contractor_annexure3a WHERE customer_code = ? AND work_order_no = ? ORDER BY id DESC LIMIT 1", 'ss', [$customer_code, $work_order['work_order_no']]);
     if ($existing_data) {
         $edit_id = $existing_data['id'];
     }
 }
 
 function renderContent() {
-    global $conn, $c, $is_registered, $vendor_code, $work_order, $work_orders, $existing_data, $edit_id;
-    
-    if (!$is_registered) {
-        echo '<div class="alert alert-danger" style="margin:20px;border-radius:12px;"><i class="fas fa-exclamation-triangle"></i> Please complete Contractor Registration first.</div>';
-        return;
-    }
+    global $conn, $c, $is_registered, $vendor_code, $customer_code, $work_order, $work_orders, $sales_orders, $existing_data, $edit_id, $selected_so_nos;
+
     $a3_status = strtolower($existing_data['status'] ?? 'new');
     $is_resubmit_mode = (($_GET['resubmit'] ?? '') === '1');
-    $is_locked = $a3_status === 'pending';
-    $is_approved_limited_edit = $a3_status === 'approved' && $is_resubmit_mode;
-    $is_approved_view_only = $a3_status === 'approved' && !$is_resubmit_mode;
-    $statusClass = $a3_status === 'approved' ? 'success' : ($a3_status === 'rejected' ? 'danger' : ($a3_status === 'pending' ? 'warning' : 'secondary'));
+    $is_locked = in_array($a3_status, ['pending', 'resubmitted'], true);
+    $is_approved_limited_edit = $a3_status === 'approved';
+    $is_limited_update_mode = $is_locked || $is_approved_limited_edit;
+    $is_approved_view_only = false;
+    $statusClass = $a3_status === 'approved' ? 'success' : ($a3_status === 'rejected' ? 'danger' : (in_array($a3_status, ['pending', 'resubmitted'], true) ? 'warning' : 'secondary'));
     $readonly_attr = ($is_locked || $is_approved_limited_edit || $is_approved_view_only) ? 'readonly' : '';
     $disabled_attr = ($is_locked || $is_approved_limited_edit || $is_approved_view_only) ? 'disabled' : '';
-    $limited_edit_readonly_attr = $is_locked ? 'readonly' : '';
-    $limited_edit_disabled_attr = $is_locked ? 'disabled' : '';
-    $submit_disabled_attr = ($is_locked || $is_approved_view_only) ? 'disabled' : '';
+    $limited_edit_readonly_attr = $is_approved_view_only ? 'readonly' : '';
+    $limited_edit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
+    $saved_limited_row_readonly_attr = $limited_edit_readonly_attr;
+    $saved_limited_file_disabled_attr = $limited_edit_disabled_attr;
+    $saved_limited_action_disabled_attr = $limited_edit_disabled_attr;
+    $ecp_choice_disabled_attr = $limited_edit_disabled_attr;
+    $submit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
+    $draft_disabled_attr = ($is_locked || $is_approved_view_only) ? 'disabled' : '';
     $worker_category_source = $existing_data['worker_category'] ?? '';
     $worker_cats = !empty($worker_category_source) ? array_map('trim', explode(',', $worker_category_source)) : [];
     $selected_ecp_covered = $existing_data['ecp_covered'] ?? 'YES';
 
-    // Parse individual reasons from concatenated string (like Contractor Registration)
     $stored_reason = $existing_data['epf_esi_exemption_reason'] ?? '';
-    $reason_value = function($label) use ($stored_reason) {
-        if (preg_match('/' . preg_quote($label, '/') . ':\s*(.*?)(?=\n[A-Z][A-Za-z ]+ Reason:|$)/s', $stored_reason, $m)) {
-            return trim($m[1]);
+    $clean_reason = function($value) {
+        $value = trim((string)$value);
+        do {
+            $old = $value;
+            $value = preg_replace('/^(EPF Reason|ESI Reason|EC Policy Reason):\s*/i', '', $value);
+            $value = trim($value);
+        } while ($value !== $old);
+        return $value;
+    };
+    $reason_value = function($label) use ($stored_reason, $clean_reason) {
+        if (preg_match('/' . preg_quote($label, '/') . ':\s*(.*?)(?=\n(?:EPF Reason|ESI Reason|EC Policy Reason):|$)/is', $stored_reason, $m)) {
+            return $clean_reason($m[1]);
         }
         return '';
     };
-    
     $epf_reason = $reason_value('EPF Reason');
     $esi_reason = $reason_value('ESI Reason');
     $ecp_reason = $reason_value('EC Policy Reason');
-    // Fallback: if no structured reasons found, use entire string for ECP field
     if (empty($epf_reason) && empty($esi_reason) && empty($ecp_reason) && !empty($stored_reason)) {
-        $ecp_reason = $stored_reason;
+        $ecp_reason = $clean_reason($stored_reason);
     }
 
     $yes_selected_by_default = function($raw, $no_reason, $yes_detail = '') {
@@ -130,13 +245,6 @@ function renderContent() {
     }
 
     $licence_threshold = clms_get_labour_license_threshold($conn);
-
-    $welfareApprovalHistory = db_fetch_all($conn, "
-        SELECT annexure3a_id, work_order_no, status, reason, updated_at
-        FROM contractor_annexure3a_history
-        WHERE vendor_code = ?
-        ORDER BY updated_at DESC
-    ", 's', [$vendor_code]);
 ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -258,17 +366,12 @@ function renderContent() {
         .sticky-bottom-bar {
             position: sticky;
             bottom: 0;
-            background: linear-gradient(to top, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.98) 100%);
+            background: rgba(255, 255, 255, 0.8);
             backdrop-filter: blur(12px);
-            border-top: 2px solid #e2e8f0;
+            border-top: 1px solid #e2e8f0;
             padding: 1.5rem;
             z-index: 1000;
             margin: 0 -1.5rem -1.5rem -1.5rem;
-            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
         }
 
         .upload-box { 
@@ -295,6 +398,7 @@ function renderContent() {
             text-transform: uppercase; 
         }
         .badge-pending { background: #fef3c7; color: #92400e; }
+        .badge-resubmitted { background: #fef3c7; color: #92400e; }
         .badge-approved { background: #dcfce7; color: #166534; }
         .badge-rejected { background: #fee2e2; color: #991b1b; }
 
@@ -341,113 +445,46 @@ function renderContent() {
             padding: 9px 12px;
         }
         #annexure3aRegistration textarea.form-control { min-height: 100px; }
-        
-        /* Enhanced Button Styling */
-        .btn-reg-draft {
-            border: 1.5px solid #2b6cb0;
-            color: #2b6cb0;
-            background: #fff;
-            font-weight: 600;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            transition: all 0.3s ease;
-            border-radius: 8px;
-        }
-        .btn-reg-draft:hover {
-            background: #f0f7ff;
-            border-color: #1e4d8b;
-            color: #1e4d8b;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(43, 108, 176, 0.15);
-        }
-        .btn-reg-draft:disabled,
-        .btn-reg-draft[disabled] {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .btn-reg-submit {
-            background: linear-gradient(135deg, #2b6cb0 0%, #1e4d8b 100%);
-            color: #fff;
-            border: none;
-            font-weight: 700;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            transition: all 0.3s ease;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(43, 108, 176, 0.25);
-        }
-        .btn-reg-submit:hover {
-            background: linear-gradient(135deg, #1e4d8b 0%, #152d5a 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(43, 108, 176, 0.35);
-        }
-        .btn-reg-submit:disabled,
-        .btn-reg-submit[disabled] {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .btn-reg-prev {
-            border: 1.5px solid #64748b;
-            color: #64748b;
-            background: #fff;
-            font-weight: 600;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            transition: all 0.3s ease;
-            border-radius: 8px;
-        }
-        .btn-reg-prev:hover {
-            background: #f8fafc;
-            border-color: #475569;
-            color: #475569;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(100, 116, 139, 0.15);
-        }
-        
         .registration-actions {
             display: flex;
             justify-content: flex-end;
             align-items: center;
-            gap: 12px;
-            margin-top: 24px;
-            padding-top: 24px;
-            border-top: 1px solid #e2e8f0;
+            gap: 10px;
+            padding: 18px 0 6px;
         }
-        
-        .sticky-bottom-bar .d-flex {
-            gap: 12px;
+        .registration-actions .btn {
+            min-width: 132px;
+            min-height: 38px;
+            border-radius: 5px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1.2;
         }
-        
+        .btn-reg-prev { border: 1px solid #8aa4c8; color: #1f2937; background: #fff; }
+        .btn-reg-prev:hover { background: #f8fafc; border-color: #2b6cb0; color: #1e3a5f; }
+        .btn-reg-draft { border: 1px solid #2b6cb0; color: #2b6cb0; background: #fff; }
+        .btn-reg-draft:hover { background: #eff6ff; color: #1e3a5f; }
+        .btn-reg-submit { border: 1px solid #2b6cb0; color: #fff !important; background: #2b6cb0; }
+        .btn-reg-submit:hover { background: #1e5a96; border-color: #1e5a96; color: #fff !important; }
+        .registration-actions .btn:disabled {
+            opacity: .65;
+            cursor: not-allowed;
+        }
         @media (max-width: 768px) {
             #annexure3aRegistration .registration-grid { grid-template-columns: 1fr; }
             #annexure3aRegistration .span-2 { grid-column: auto; }
-            .sticky-bottom-bar {
-                flex-direction: column;
-            }
-            .sticky-bottom-bar .btn {
-                width: 100%;
-            }
-            .registration-actions {
-                flex-direction: column;
-            }
-            .registration-actions .btn {
-                width: 100%;
-            }
+            .registration-actions { flex-direction: column; }
+            .registration-actions .btn { width: 100%; }
         }
     </style>
 
 <div class="container-fluid py-4 px-lg-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2 class="fw-extrabold mb-1" style="font-weight: 800; color: #1e293b;">Contractor Info</h2>
-            <p class="text-muted mb-0">Contractor registration details for welfare verification</p>
+            <h2 class="fw-extrabold mb-1" style="font-weight: 800; color: #1e293b;">Customer Information Form</h2>
+            <p class="text-muted mb-0">Registration details for welfare verification</p>
         </div>
         <div class="text-end">
             <?php if ($existing_data): ?>
@@ -468,21 +505,14 @@ function renderContent() {
                 <div>
                     <i class="fas fa-circle-exclamation me-2"></i>
                     Welfare action recorded. Please open history to view reason, rejection date and attachment.
+                    <?php if (!empty($existing_data['remarks'])): ?>
+                        <div class="mt-2 p-2 bg-white rounded border border-warning">
+                            <strong><i class="fas fa-comment-dots text-danger me-1"></i> Reviewer Remarks:</strong> 
+                            <span class="text-danger fw-bold ms-1"><?= htmlspecialchars($existing_data['remarks']) ?></span>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 <a href="welfare-actions.php" class="btn btn-sm btn-warning fw-bold">View History</a>
-            </div>
-        </div>
-    <?php endif; ?>
-
-    <?php if ($a3_status === 'rejected' && !empty($existing_data['rejection_reason'])): ?>
-        <div class="alert alert-danger border-0 shadow-sm mb-4" style="background:#fee2e2; border-left: 4px solid #dc2626;">
-            <div style="display: flex; align-items: flex-start; gap: 12px;">
-                <i class="fas fa-times-circle" style="font-size: 20px; color: #dc2626; flex-shrink: 0; margin-top: 2px;"></i>
-                <div style="flex: 1;">
-                    <h6 style="color: #991b1b; font-weight: 700; margin-bottom: 6px;">Rejection Notice</h6>
-                    <p style="color: #7f1d1d; margin: 0; font-size: 14px; line-height: 1.6;"><?= htmlspecialchars($existing_data['rejection_reason']) ?></p>
-                    <p style="color: #991b1b; margin: 8px 0 0 0; font-size: 13px; font-weight: 600;">Please correct the above points and resubmit.</p>
-                </div>
             </div>
         </div>
     <?php endif; ?>
@@ -518,8 +548,9 @@ function renderContent() {
 
     <form id="annexure3AForm" enctype="multipart/form-data" novalidate>
         <input type="hidden" name="vendor_code" id="vendor_code" value="<?= htmlspecialchars($vendor_code) ?>">
-        <input type="hidden" name="customer_code" id="hidden_customer_code" value="<?= htmlspecialchars($work_order['customer_code'] ?? '') ?>">
+        <input type="hidden" name="customer_code" id="hidden_customer_code" value="<?= htmlspecialchars($customer_code) ?>">
         <input type="hidden" name="work_order_no" id="hidden_work_order_no" value="<?= htmlspecialchars($work_order['work_order_no'] ?? '') ?>">
+        <input type="hidden" name="selected_sales" id="selected_sales" value='<?= json_encode($selected_so_nos) ?>'>
         <?php if($edit_id): ?>
             <input type="hidden" name="edit_id" value="<?= $edit_id ?>">
         <?php endif; ?>
@@ -533,24 +564,10 @@ function renderContent() {
                             <div class="bg-primary text-white rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
                                 <i class="fas fa-building fa-sm"></i>
                             </div>
-                            <h5 class="mb-0 text-primary">Contractor Information</h5>
+                            <h5 class="mb-0 text-primary">Customer Information</h5>
                         </div>
                     </div>
                     <div class="card-body p-4">
-                        <!-- WORK ORDER SELECTION -->
-                        <div class="mb-4">
-                            <label class="form-label required">Select Active Work Order</label>
-                            <select class="form-select border-primary" id="wo_selector" name="wo_selector" onchange="updateWorkOrderDetails(this.value)" required <?= $is_locked ? 'disabled' : '' ?>>
-                                <option value="">-- Select Work Order --</option>
-                                <?php foreach($work_orders as $wo): ?>
-                                    <option value="<?= htmlspecialchars($wo['work_order_no']) ?>" <?= ($work_order['work_order_no'] ?? '') === $wo['work_order_no'] ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($wo['work_order_no']) ?> (<?= htmlspecialchars($wo['project_name']) ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <div class="text-muted small mt-1"><i class="fas fa-info-circle"></i> Selecting a Work Order will auto-fill the customer and department details below.</div>
-                        </div>
-
                         <!-- CUSTOMER SIDE -->
                         <h6 class="text-uppercase fw-bold text-muted small mb-3">Customer Side (Auto-Fetched from Mapping)</h6>
                         <div class="row g-3 mb-4 p-3 bg-light rounded shadow-sm" style="border-left: 4px solid var(--primary-color);">
@@ -576,33 +593,66 @@ function renderContent() {
                             </div>
                         </div>
 
-                        <!-- CONTRACTOR SIDE -->
-                        <h6 class="text-uppercase fw-bold text-muted small mb-3">Contractor Side (From Contractor Registration)</h6>
-                        <div class="row g-3">
-                            <div class="col-md-3">
-                                <label class="form-label">Vendor Code</label>
-                                <input type="text" id="display_vendor_code" class="form-control bg-white" value="<?= htmlspecialchars($vendor_code) ?>" readonly>
+                    </div>
+                </div>
+
+                <!-- SAP SALES ORDERS TABLE -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white py-3 border-bottom">
+                        <div class="d-flex align-items-center">
+                            <div class="bg-primary text-white rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                <i class="fas fa-shopping-cart fa-sm"></i>
                             </div>
-                            <div class="col-md-9">
-                                <label class="form-label">Contractor Name</label>
-                                <input type="text" id="display_vendor_name" class="form-control bg-white" value="<?= htmlspecialchars($c['vendor_name'] ?? '') ?>" readonly>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">GST No</label>
-                                <input type="text" id="display_gst_no" class="form-control bg-white" value="<?= htmlspecialchars($c['gst_no'] ?? '') ?>" readonly>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">EPF Code</label>
-                                <input type="text" id="display_epf_code" class="form-control bg-white" value="<?= htmlspecialchars($c['epf_code'] ?? '') ?>" readonly>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">ESI Code</label>
-                                <input type="text" id="display_esi_code" class="form-control bg-white" value="<?= htmlspecialchars($c['esi_code'] ?? '') ?>" readonly>
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label">Registered Address</label>
-                                <input type="text" id="display_address" class="form-control bg-white" value="<?= htmlspecialchars($c['address'] ?? '') ?>" readonly>
-                            </div>
+                            <h5 class="mb-0 text-primary">SAP Sales Orders</h5>
+                        </div>
+                    </div>
+                    <div class="card-body p-4">
+                        <h6 class="text-uppercase fw-bold text-muted small mb-3">Select Sales Orders to load details</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle" id="salesOrdersTable">
+                                <thead>
+                                    <tr>
+                                        <th class="ps-4"><input type="checkbox" id="selectAllSO" class="form-check-input"></th>
+                                        <th>Sales Order No</th>
+                                        <th>PO / Work Order No</th>
+                                        <th>Project Name</th>
+                                        <th>Department</th>
+                                        <th>Vendor Code</th>
+                                        <th>Amount</th>
+                                        <th>Doc Date</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($sales_orders as $so): 
+                                         $is_checked = in_array($so['sale_order_no'], $selected_so_nos);
+                                         $row_class = $is_checked ? 'table-primary fw-bold' : '';
+                                     ?>
+                                     <tr class="<?= $row_class ?>">
+                                         <td class="ps-4">
+                                             <input type="checkbox" class="form-check-input so-checkbox" value="<?= htmlspecialchars($so['sale_order_no']) ?>" <?= $is_checked ? 'checked' : '' ?> data-vendor-code="<?= htmlspecialchars($so['vendor_code'] ?? '') ?>" data-po-number="<?= htmlspecialchars($so['po_number'] ?? '') ?>" data-description="<?= htmlspecialchars($so['description'] ?? '') ?>" data-department="<?= htmlspecialchars($so['department'] ?? '') ?>">
+                                         </td>
+                                         <td><b class="text-primary"><?= htmlspecialchars($so['sale_order_no']) ?></b></td>
+                                         <td><?= htmlspecialchars($so['po_number'] ?? 'N/A') ?></td>
+                                         <td><?= htmlspecialchars($so['description'] ?? 'N/A') ?></td>
+                                         <td><span class="badge bg-secondary"><?= htmlspecialchars($so['department'] ?? 'N/A') ?></span></td>
+                                         <td><?= htmlspecialchars($so['vendor_code'] ?? 'N/A') ?></td>
+                                         <td><?= number_format($so['amount'], 2) ?> <?= htmlspecialchars($so['currency']) ?></td>
+                                         <td><?= !empty($so['doc_date']) ? date('d M Y', strtotime($so['doc_date'])) : 'N/A' ?></td>
+                                         <td>
+                                             <span class="badge bg-<?= (strtolower($so['status'] ?? 'active') === 'active') ? 'success' : 'warning' ?>">
+                                                 <?= htmlspecialchars(strtoupper($so['status'] ?? 'active')) ?>
+                                             </span>
+                                         </td>
+                                     </tr>
+                                     <?php endforeach; ?>
+                                     <?php if (empty($sales_orders)): ?>
+                                     <tr>
+                                         <td colspan="9" class="text-center py-4 text-muted">No Sales Orders found in SAP master for this customer.</td>
+                                     </tr>
+                                     <?php endif; ?>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -637,6 +687,7 @@ function renderContent() {
                         <div class="registration-section-header">2. Whether Registered under EPF</div>
                         <div class="registration-grid">
                             <div>
+                                <label class="form-label d-none d-md-block" style="visibility:hidden; margin-bottom: 8px;">&nbsp;</label>
                                 <div class="gov-radio-group">
                                     <?php
                                     $epfYes = $epf_selected_yes;
@@ -658,15 +709,22 @@ function renderContent() {
                             </div>
                             <div class="span-2" id="epfReasonCard">
                                 <label class="form-label required">3. EPF Non-Registration Reason</label>
-                                <textarea class="form-control" name="epf_non_registration_reason" id="epf_non_registration_reason" rows="3" placeholder="Enter reason for not registered under EPF" <?= $readonly_attr ?>><?= htmlspecialchars($epf_reason) ?></textarea>
-                            </div>
+                                <select class="form-select mb-2" name="epf_non_registration_reason_type" id="epf_non_registration_reason_type" <?= $readonly_attr ?> onchange="document.getElementById('epf_reason_other_container').style.display = this.value === 'Others' ? 'block' : 'none';">
+                                    <option value="">Select Reason</option>
+                                    <option value="Above Coverage" <?= ($epf_reason === 'Above Coverage') ? 'selected' : '' ?>>1. Above Coverage</option>
+                                    <option value="Others" <?= ($epf_reason && $epf_reason !== 'Above Coverage') ? 'selected' : '' ?>>2. Others</option>
+                                </select>
+                                <div id="epf_reason_other_container" style="display: <?= ($epf_reason && $epf_reason !== 'Above Coverage') ? 'block' : 'none' ?>;">
+                                    <textarea class="form-control" name="epf_non_registration_reason" id="epf_non_registration_reason" rows="2" placeholder="Please specify other reason" <?= $readonly_attr ?>><?= ($epf_reason !== 'Above Coverage') ? htmlspecialchars($epf_reason) : '' ?></textarea>
+                                </div></div>
                         </div>
                     </div>
 
                     <div class="registration-card">
-                        <div class="registration-section-header">4. Whether Registered under ESI</div>
+                        <div class="registration-section-header">3. Whether Registered under ESI</div>
                         <div class="registration-grid">
                             <div>
+                                <label class="form-label d-none d-md-block" style="visibility:hidden; margin-bottom: 8px;">&nbsp;</label>
                                 <div class="gov-radio-group">
                                     <?php
                                     $esiYes = $esi_selected_yes;
@@ -687,8 +745,14 @@ function renderContent() {
                             </div>
                             <div class="span-2" id="esi_reason_container">
                                 <label class="form-label required">Reason</label>
-                                <textarea class="form-control" name="esi_non_registration_reason" id="esi_non_registration_reason" rows="3" placeholder="Enter reason for not registered under ESI" <?= $readonly_attr ?>><?= htmlspecialchars($esi_reason) ?></textarea>
-                            </div>
+                                <select class="form-select mb-2" name="esi_non_registration_reason_type" id="esi_non_registration_reason_type" <?= $readonly_attr ?> onchange="document.getElementById('esi_reason_other_container').style.display = this.value === 'Others' ? 'block' : 'none';">
+                                    <option value="">Select Reason</option>
+                                    <option value="Above Coverage" <?= ($esi_reason === 'Above Coverage') ? 'selected' : '' ?>>1. Above Coverage</option>
+                                    <option value="Others" <?= ($esi_reason && $esi_reason !== 'Above Coverage') ? 'selected' : '' ?>>2. Others</option>
+                                </select>
+                                <div id="esi_reason_other_container" style="display: <?= ($esi_reason && $esi_reason !== 'Above Coverage') ? 'block' : 'none' ?>;">
+                                    <textarea class="form-control" name="esi_non_registration_reason" id="esi_non_registration_reason" rows="2" placeholder="Please specify other reason" <?= $readonly_attr ?>><?= ($esi_reason !== 'Above Coverage') ? htmlspecialchars($esi_reason) : '' ?></textarea>
+                                </div></div>
                             <div class="span-2">
                                 <div class="alert alert-warning py-2 px-3 mb-0 d-none" id="esi-ec-warning">Either ESI or EC Policy is mandatory</div>
                             </div>
@@ -696,28 +760,31 @@ function renderContent() {
                     </div>
 
                     <div class="registration-card">
-                        <div class="registration-section-header">5. Wage Declaration by Contractor</div>
+                        <div class="registration-section-header">4. Wage Declaration</div>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="wage_declaration" id="wage_declaration" value="I declare to pay minimum wage as per government norms" <?= !empty($existing_data['wage_declaration']) ? 'checked' : '' ?> required <?= $disabled_attr ?>>
-                            <label class="form-check-label fw-semibold" for="wage_declaration">With this I declare to pay minimum wage as per government norms.</label>
+                            <label class="form-check-label fw-semibold" for="wage_declaration">I declare to pay minimum wage as per government norms.</label>
                         </div>
                         <input type="hidden" name="wage_category" value="<?= htmlspecialchars($existing_data['salary_category'] ?? ($existing_data['wage_category'] ?? '')) ?>">
                         <input type="hidden" name="salary_category" value="<?= htmlspecialchars($existing_data['salary_category'] ?? ($existing_data['wage_category'] ?? '')) ?>">
                     </div>
 
                     <div class="registration-card">
-                        <div class="registration-section-header">6. Employee Compensation Policy</div>
+                        <div class="registration-section-header">5. Employee Compensation Policy</div>
                         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                             <div class="gov-radio-group">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_yes" value="YES" <?= $ecp_selected_yes ? 'checked' : '' ?> required <?= $limited_edit_disabled_attr ?>>
+                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_yes" value="YES" <?= $ecp_selected_yes ? 'checked' : '' ?> required <?= $ecp_choice_disabled_attr ?>>
                                     <label class="form-check-label" for="ecp_yes">YES</label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_no" value="NO" <?= !$ecp_selected_yes ? 'checked' : '' ?> required <?= $limited_edit_disabled_attr ?>>
+                                    <input class="form-check-input" type="radio" name="ecp_covered" id="ecp_no" value="NO" <?= !$ecp_selected_yes ? 'checked' : '' ?> required <?= $ecp_choice_disabled_attr ?>>
                                     <label class="form-check-label" for="ecp_no">NO</label>
                                 </div>
                             </div>
+                            <?php if ($ecp_choice_disabled_attr): ?>
+                                <input type="hidden" name="ecp_covered" value="<?= $ecp_selected_yes ? 'YES' : 'NO' ?>">
+                            <?php endif; ?>
                             <button type="button" class="btn btn-sm btn-reg-draft" id="addEcpBtn" onclick="addEcpRow()" <?= $limited_edit_disabled_attr ?>>Add Row</button>
                         </div>
                         <div class="table-responsive" id="ecpTableWrap">
@@ -729,11 +796,11 @@ function renderContent() {
                                     <?php foreach ($ecp_rows as $i => $row): ?>
                                         <tr class="ecp-row">
                                             <td class="sl-no text-center fw-bold"><?= $i + 1 ?></td>
-                                            <td><input type="text" class="form-control" name="ecp_number[]" value="<?= htmlspecialchars($row['ecp_number'] ?? '') ?>" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td><input type="date" class="form-control ecp-from" name="ecp_valid_from[]" value="<?= htmlspecialchars($row['ecp_valid_from'] ?? '') ?>" onchange="validateEcpRowDates(this)" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td><input type="date" class="form-control ecp-to" name="ecp_valid_to[]" value="<?= htmlspecialchars($row['ecp_valid_to'] ?? '') ?>" onchange="validateEcpRowDates(this)" <?= $limited_edit_readonly_attr ?>><div class="invalid-feedback ecp-date-error">Valid From must be before Valid To.</div></td>
-                                            <td><input type="number" class="form-control" name="ecp_workers[]" min="0" value="<?= htmlspecialchars($row['workers_under_policy'] ?? '') ?>" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td class="text-center"><button type="button" class="btn btn-sm text-danger delete-btn" onclick="deleteEcpRow(this)" <?= $limited_edit_disabled_attr ?>>Remove</button></td>
+                                            <td><input type="text" class="form-control" name="ecp_number[]" value="<?= htmlspecialchars($row['ecp_number'] ?? '') ?>" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td><input type="date" class="form-control ecp-from" name="ecp_valid_from[]" value="<?= htmlspecialchars($row['ecp_valid_from'] ?? '') ?>" onchange="validateEcpRowDates(this)" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td><input type="date" class="form-control ecp-to" name="ecp_valid_to[]" value="<?= htmlspecialchars($row['ecp_valid_to'] ?? '') ?>" onchange="validateEcpRowDates(this)" <?= $saved_limited_row_readonly_attr ?>><div class="invalid-feedback ecp-date-error">Valid From must be before Valid To.</div></td>
+                                            <td><input type="number" class="form-control" name="ecp_workers[]" min="0" value="<?= htmlspecialchars($row['workers_under_policy'] ?? '') ?>" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td class="text-center"><button type="button" class="btn btn-sm text-danger delete-btn" onclick="deleteEcpRow(this)" title="Delete row" <?= $saved_limited_action_disabled_attr ?> <?= $saved_limited_action_disabled_attr ? 'style="display:none;"' : '' ?>><i class="fas fa-trash-alt"></i><span class="visually-hidden">Delete</span></button></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -742,13 +809,13 @@ function renderContent() {
                     </div>
 
                     <div class="registration-card" id="reasonCard">
-                        <div class="registration-section-header">7. EC Policy Non-Coverage Reason</div>
-                        <textarea class="form-control" name="ecp_exemption_reason" id="ecp_exemption_reason" placeholder="Enter reason for not covered under EC Policy" <?= $limited_edit_readonly_attr ?>><?= htmlspecialchars($ecp_reason) ?></textarea>
+                        <div class="registration-section-header">EC Policy Non-Coverage Reason</div>
+                        <textarea class="form-control" name="ecp_exemption_reason" id="ecp_exemption_reason" placeholder="Enter reason for not covered under EC Policy" <?= $readonly_attr ?>><?= htmlspecialchars($ecp_reason) ?></textarea>
                         <input type="hidden" name="epf_esi_exemption_reason" id="epf_esi_exemption_reason" value="<?= htmlspecialchars($existing_data['epf_esi_exemption_reason'] ?? '') ?>">
                     </div>
 
                     <div class="registration-card">
-                        <div class="registration-section-header">8. Approximate Workforce Details</div>
+                        <div class="registration-section-header">6. Approximate Workforce Details</div>
                         <div class="registration-grid">
                             <div>
                                 <label class="form-label required">No. of Workers Proposed to be Engaged</label>
@@ -768,8 +835,8 @@ function renderContent() {
 
                     <div class="registration-card" id="section7Card">
                         <div class="registration-section-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                            <span>9. Labour License Details</span>
-                            <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &gt; <?= $licence_threshold ?>)</span>
+                            <span>7. Labour License Details</span>
+                            <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &ge; <?= $licence_threshold ?>)</span>
                         </div>
                         <div class="d-flex justify-content-end mb-3"><button type="button" class="btn btn-sm btn-reg-draft" onclick="addLicenseRow()" <?= $limited_edit_disabled_attr ?>>Add Row</button></div>
                         <div class="table-responsive">
@@ -781,16 +848,16 @@ function renderContent() {
                                     <?php foreach ($license_rows as $i => $row): $file_path = $row['file_path'] ?? ''; ?>
                                         <tr class="license-row">
                                             <td class="sl-no text-center fw-bold"><?= $i + 1 ?></td>
-                                            <td><input type="text" class="form-control" name="license_no[]" value="<?= htmlspecialchars($row['license_no'] ?? '') ?>" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td><input type="text" class="form-control" name="license_validity[]" value="<?= htmlspecialchars($row['validity'] ?? ($row['license_issued'] ?? '')) ?>" <?= $limited_edit_readonly_attr ?>><input type="hidden" name="license_issued[]" value="<?= htmlspecialchars($row['license_issued'] ?? ($row['validity'] ?? '')) ?>"></td>
-                                            <td><input type="date" class="form-control lic-issued" name="issued_date[]" value="<?= htmlspecialchars($row['issued_date'] ?? '') ?>" onchange="validateLicRowDates(this)" <?= $limited_edit_readonly_attr ?>></td>
-                                            <td><input type="date" class="form-control lic-expiry" name="expiry_date[]" value="<?= htmlspecialchars($row['expiry_date'] ?? '') ?>" onchange="validateLicRowDates(this)" <?= $limited_edit_readonly_attr ?>><div class="invalid-feedback lic-date-error">Issued Date must be before Expiry Date.</div></td>
+                                            <td><input type="text" class="form-control" name="license_no[]" value="<?= htmlspecialchars($row['license_no'] ?? '') ?>" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td><input type="text" class="form-control" name="license_validity[]" value="<?= htmlspecialchars($row['validity'] ?? ($row['license_issued'] ?? '')) ?>" <?= $saved_limited_row_readonly_attr ?>><input type="hidden" name="license_issued[]" value="<?= htmlspecialchars($row['license_issued'] ?? ($row['validity'] ?? '')) ?>"></td>
+                                            <td><input type="date" class="form-control lic-issued" name="issued_date[]" value="<?= htmlspecialchars($row['issued_date'] ?? '') ?>" onchange="validateLicRowDates(this)" <?= $saved_limited_row_readonly_attr ?>></td>
+                                            <td><input type="date" class="form-control lic-expiry" name="expiry_date[]" value="<?= htmlspecialchars($row['expiry_date'] ?? '') ?>" onchange="validateLicRowDates(this)" <?= $saved_limited_row_readonly_attr ?>><div class="invalid-feedback lic-date-error">Issued Date must be before Expiry Date.</div></td>
                                             <td>
-                                                <input type="file" class="form-control" name="license_file[]" accept="application/pdf,.pdf" <?= $limited_edit_disabled_attr ?>>
+                                                <input type="file" class="form-control" name="license_file[]" accept="application/pdf,.pdf" <?= $saved_limited_file_disabled_attr ?> <?= $saved_limited_file_disabled_attr ? 'style="display:none;"' : '' ?>>
                                                 <input type="hidden" name="existing_license_file[]" value="<?= htmlspecialchars($file_path) ?>">
                                                 <?php if (!empty($file_path)): ?><a href="../../<?= htmlspecialchars($file_path) ?>" target="_blank" class="d-block mt-1 text-success fw-bold" style="font-size:12px;">Uploaded File</a><?php endif; ?>
                                             </td>
-                                            <td class="text-center"><button type="button" class="btn btn-sm text-danger delete-btn" onclick="deleteLicenseRow(this)" <?= $limited_edit_disabled_attr ?>>Remove</button></td>
+                                            <td class="text-center"><button type="button" class="btn btn-sm text-danger delete-btn" onclick="deleteLicenseRow(this)" title="Delete row" <?= $saved_limited_action_disabled_attr ?> <?= $saved_limited_action_disabled_attr ? 'style="display:none;"' : '' ?>><i class="fas fa-trash-alt"></i><span class="visually-hidden">Delete</span></button></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -801,35 +868,35 @@ function renderContent() {
                     <div class="registration-card">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <div class="registration-section-header">10. Kerala Labour Welfare Fund Registration No</div>
+                                <div class="registration-section-header">8. Kerala Labour Welfare Fund Registration No</div>
                                 <input type="text" class="form-control" name="labour_license_appl_no" value="<?= htmlspecialchars($existing_data['labour_license_appl_no'] ?? '') ?>" <?= $readonly_attr ?>>
                             </div>
                             <div class="col-md-6">
-                                <div class="registration-section-header">11. Labour Identification Number</div>
+                                <div class="registration-section-header">9. Labour Identification Number</div>
                                 <input type="text" class="form-control" name="labour_identification_no" id="labour_identification_no" pattern="^[0-9]+$" value="<?= htmlspecialchars($existing_data['labour_identification_no'] ?? '') ?>" placeholder="Numeric digits only" <?= $readonly_attr ?>>
                                 <div class="invalid-feedback">LIN number must be numeric only.</div>
                             </div>
                         </div>
                     </div>
-                    <div class="registration-card"><div class="registration-section-header">12. Name of Contact Person</div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($existing_data['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>></div>
+                    <div class="registration-card"><div class="registration-section-header">10. Name of Contact Person <span class="text-danger">*</span></div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($existing_data['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>></div>
                     <div class="registration-card">
-                        <div class="registration-section-header">13. Mobile Number + Alternate Mobile Number</div>
+                        <div class="registration-section-header">11. Mobile Number + Alternate Mobile Number</div>
                         <div class="registration-grid">
                             <div><label class="form-label required">Mobile Number</label><input type="text" class="form-control" name="mobile" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($existing_data['mobile'] ?? '') ?>" required <?= $readonly_attr ?>></div>
                             <div><label class="form-label">Alternate Mobile Number</label><input type="text" class="form-control" name="vendor_mob2" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($existing_data['vendor_mob2'] ?? '') ?>" <?= $readonly_attr ?>></div>
                         </div>
                     </div>
-                    <div class="registration-card"><div class="registration-section-header">14. Remarks</div><textarea class="form-control" name="remarks" placeholder="Enter remarks" <?= $readonly_attr ?>><?= htmlspecialchars($existing_data['remarks'] ?? '') ?></textarea></div>
+                    <div class="registration-card"><div class="registration-section-header">12. Remarks</div><textarea class="form-control" name="remarks" placeholder="Enter remarks" <?= $readonly_attr ?>><?= htmlspecialchars($existing_data['remarks'] ?? '') ?></textarea></div>
                 </div>
 
                 <div class="registration-actions">
                     <button type="button" class="btn btn-reg-prev px-4" onclick="showTab('contractorDetails')">Previous</button>
                     <?php if ($is_locked): ?>
-                        <span class="alert alert-info mb-0 py-2 px-3">Submitted form is locked while Welfare review is pending.</span>
+                        <span class="alert alert-info mb-0 py-2 px-3">Submitted form is locked except EC Policy and Labour License add rows.</span>
                     <?php else: ?>
-                        <button type="button" class="btn btn-reg-draft px-4" onclick="saveDraft()">Save Draft</button>
+                        <button type="button" class="btn btn-reg-draft px-4" id="saveDraftBtn" onclick="saveDraft()">Save Draft</button>
                     <?php endif; ?>
-                    <button type="submit" class="btn btn-reg-submit px-4" id="submitBtn" <?= $submit_disabled_attr ?>><?= $is_approved_limited_edit ? 'Resubmit for Welfare Approval' : 'Submit Registration' ?></button>
+                    <button type="submit" class="btn btn-reg-submit px-4" id="submitBtn" <?= $submit_disabled_attr ?>><?= $is_limited_update_mode ? 'Resubmit for Welfare Approval' : 'Submit Registration' ?></button>
                 </div>
             </div>
 
@@ -859,7 +926,7 @@ function renderContent() {
                                     </div>
                                     <div class="col-md-6 mb-2">
                                         <label class="form-label required">Validity Date</label>
-                                        <input type="date" name="insurance_validity" id="insurance_validity" class="form-control" value="<?= htmlspecialchars($existing_data['insurance_validity'] ?? '') ?>" required>
+                                        <input type="date" name="insurance_validity" id="insurance_validity" class="form-control" value="<?= htmlspecialchars($existing_data['insurance_validity'] ?? '') ?>" max="9999-12-31" required>
                                     </div>
                                     <div class="col-md-6 mb-2">
                                         <label class="form-label required">Workers Covered</label>
@@ -976,62 +1043,6 @@ function renderContent() {
             <div class="tab-pane fade" id="submissionHistory" role="tabpanel">
                 <div class="card shadow-sm mb-4">
                     <div class="card-header bg-white py-3 border-bottom">
-                        <div class="d-flex align-items-center justify-content-between w-100">
-                            <div class="d-flex align-items-center">
-                                <div class="bg-primary text-white rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
-                                    <i class="fas fa-clipboard-check fa-sm"></i>
-                                </div>
-                                <h5 class="mb-0 text-primary">Welfare Approval History</h5>
-                            </div>
-                            <span class="text-muted small">Approved / rejected details with remarks</span>
-                        </div>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0">
-                                <thead>
-                                    <tr>
-                                        <th class="ps-4">Annexure</th>
-                                        <th>Work Order</th>
-                                        <th>Status</th>
-                                        <th>Reason / Remarks</th>
-                                        <th class="pe-4">Date & Time</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (empty($welfareApprovalHistory)): ?>
-                                        <tr><td colspan="5" class="text-center py-5 text-muted">No welfare approval history found.</td></tr>
-                                    <?php else: ?>
-                                        <?php foreach ($welfareApprovalHistory as $row): ?>
-                                            <?php
-                                                $historyStatus = strtolower((string)($row['status'] ?? 'submitted'));
-                                                $historyBadge = 'badge-info';
-                                                if ($historyStatus === 'approved') $historyBadge = 'badge-success';
-                                                elseif ($historyStatus === 'rejected') $historyBadge = 'badge-danger';
-                                                elseif ($historyStatus === 'resubmitted') $historyBadge = 'badge-warning';
-                                            ?>
-                                            <tr>
-                                                <td class="ps-4">
-                                                    <div class="fw-bold text-dark">Customer Registration</div>
-                                                    <?php if (!empty($row['annexure3a_id'])): ?>
-                                                        <small class="text-muted">Ref: <?= htmlspecialchars((string)$row['annexure3a_id']) ?></small>
-                                                    <?php endif; ?>
-                                                </td>
-                                                <td><code><?= htmlspecialchars($row['work_order_no'] ?: '-') ?></code></td>
-                                                <td><span class="status-badge <?= $historyBadge ?>"><?= htmlspecialchars(strtoupper($historyStatus)) ?></span></td>
-                                                <td style="white-space:pre-wrap;min-width:260px;"><?= htmlspecialchars($row['reason'] ?: 'No remarks provided yet.') ?></td>
-                                                <td class="pe-4"><?= !empty($row['updated_at']) ? htmlspecialchars(date('d M Y h:i A', strtotime($row['updated_at']))) : '-' ?></td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-white py-3 border-bottom">
                         <div class="d-flex align-items-center">
                             <div class="bg-secondary text-white rounded-circle p-2 me-3" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
                                 <i class="fas fa-history fa-sm"></i>
@@ -1045,7 +1056,6 @@ function renderContent() {
                                 <thead>
                                     <tr>
                                         <th class="ps-4">Submitted Date</th>
-                                        <th>Contractor</th>
                                         <th>Work Order</th>
                                         <th>Salary Category</th>
                                         <th>Status</th>
@@ -1058,12 +1068,12 @@ function renderContent() {
                                         SELECT a.*, v.vendor_name 
                                         FROM contractor_annexure3a a
                                         LEFT JOIN sap_vendor_master v ON v.vendor_code = a.vendor_code
-                                        WHERE a.vendor_code = ? 
+                                        WHERE a.customer_code = ? 
                                         ORDER BY a.created_at DESC
-                                    ", 's', [$vendor_code]);
+                                    ", 's', [$customer_code]);
 
                                     if(empty($history)): ?>
-                                        <tr><td colspan="6" class="text-center py-5 text-muted">No submissions found.</td></tr>
+                                        <tr><td colspan="5" class="text-center py-5 text-muted">No submissions found.</td></tr>
                                     <?php else:
                                         foreach($history as $h): 
                                         ?>
@@ -1071,10 +1081,6 @@ function renderContent() {
                                             <td class="ps-4">
                                                 <div class="fw-bold text-dark"><?= date('d M Y', strtotime($h['created_at'])) ?></div>
                                                 <small class="text-muted"><?= date('H:i', strtotime($h['created_at'])) ?></small>
-                                            </td>
-                                            <td>
-                                                <div class="fw-bold"><?= htmlspecialchars($h['vendor_name'] ?: 'N/A') ?></div>
-                                                <div class="text-muted small">Code: <?= htmlspecialchars($h['vendor_code']) ?></div>
                                             </td>
                                             <td><code><?= htmlspecialchars($h['work_order_no']) ?></code></td>
                                             <td><span class="badge bg-light text-dark border fw-bold"><?= strtoupper($h['salary_category']) ?></span></td>
@@ -1089,9 +1095,14 @@ function renderContent() {
                                                         <i class="fas fa-eye"></i>
                                                     </button>
                                                     <?php if(in_array($h['status'], ['pending', 'rejected', 'approved'], true)): ?>
-                                                        <a href="?edit_id=<?= $h['id'] ?>" class="btn btn-sm btn-outline-info rounded-circle" title="Edit">
+                                                        <a href="?edit_id=<?= $h['id'] ?>" class="btn btn-sm btn-outline-info rounded-circle" title="View">
                                                             <i class="fas fa-edit"></i>
                                                         </a>
+                                                        <?php if($h['status'] === 'approved'): ?>
+                                                            <a href="?edit_id=<?= $h['id'] ?>&resubmit=1" class="btn btn-sm btn-outline-warning rounded-circle ms-2" title="Resubmit EC / Labour License">
+                                                                <i class="fas fa-rotate"></i>
+                                                            </a>
+                                                        <?php endif; ?>
                                                     <?php endif; ?>
                                                 </div>
                                             </td>
@@ -1126,18 +1137,127 @@ function renderContent() {
     <!-- Bootstrap JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
-<script>
-    const ANNEXURE3A_LIMITED_EDIT = <?= $is_approved_limited_edit ? 'true' : 'false' ?>;
-
-    function showAnnexure3AFeedback(message, type = 'info', title = '') {
-        if (typeof window.notifyUser === 'function') {
-            return window.notifyUser(message, type, title);
-        }
-        alert((title ? title + ': ' : '') + message);
-        return Promise.resolve();
-    }
+    <script>
+    const ANNEXURE3A_LIMITED_EDIT = <?= $is_limited_update_mode ? 'true' : 'false' ?>;
 
     const workOrders = <?= json_encode($work_orders ?? []) ?>;
+
+    function getEditableState() {
+        const state = {
+            ecp: [],
+            license: []
+        };
+        document.querySelectorAll('#ecpTableBody .ecp-row').forEach(row => {
+            state.ecp.push({
+                number: row.querySelector('input[name="ecp_number[]"]')?.value || '',
+                valid_from: row.querySelector('input[name="ecp_valid_from[]"]')?.value || '',
+                valid_to: row.querySelector('input[name="ecp_valid_to[]"]')?.value || '',
+                workers: row.querySelector('input[name="ecp_workers[]"]')?.value || ''
+            });
+        });
+        document.querySelectorAll('#licenseTableBody .license-row').forEach(row => {
+            state.license.push({
+                no: row.querySelector('input[name="license_no[]"]')?.value || '',
+                validity: row.querySelector('input[name="license_validity[]"]')?.value || '',
+                issued: row.querySelector('input[name="issued_date[]"]')?.value || '',
+                expiry: row.querySelector('input[name="expiry_date[]"]')?.value || ''
+            });
+        });
+        return JSON.stringify(state);
+    }
+    let initialEditableState = '';
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const selectAllSO = document.getElementById('selectAllSO');
+        const soCheckboxes = document.querySelectorAll('.so-checkbox');
+        const selectedSalesInput = document.getElementById('selected_sales');
+        const hiddenWorkOrderNo = document.getElementById('hidden_work_order_no');
+        const displayWorkOrderNo = document.getElementById('display_work_order_no');
+        const displayProjectName = document.getElementById('display_project_name');
+        const displayDepartment = document.getElementById('display_department');
+        const vendorCodeInput = document.getElementById('vendor_code');
+
+        function updateSelections() {
+            const selectedSos = [];
+            const poNumbers = [];
+            const descriptions = [];
+            const departments = [];
+            let vendorCode = '';
+
+            soCheckboxes.forEach(cb => {
+                const row = cb.closest('tr');
+                if (cb.checked) {
+                    selectedSos.push(cb.value);
+                    row.classList.add('table-primary', 'fw-bold');
+                    
+                    const po = cb.getAttribute('data-po-number');
+                    if (po) poNumbers.push(po);
+                    
+                    const desc = cb.getAttribute('data-description');
+                    if (desc) descriptions.push(desc);
+                    
+                    const dept = cb.getAttribute('data-department');
+                    if (dept) departments.push(dept);
+                    
+                    if (!vendorCode) {
+                        vendorCode = cb.getAttribute('data-vendor-code');
+                    }
+                } else {
+                    row.classList.remove('table-primary', 'fw-bold');
+                }
+            });
+
+            selectedSalesInput.value = JSON.stringify(selectedSos);
+
+            if (selectedSos.length > 0) {
+                const woString = [...new Set(poNumbers)].join(', ');
+                hiddenWorkOrderNo.value = woString;
+                if (displayWorkOrderNo) displayWorkOrderNo.value = woString;
+                if (displayProjectName) displayProjectName.value = [...new Set(descriptions)].join(', ');
+                if (displayDepartment) displayDepartment.value = [...new Set(departments)].join(', ');
+                if (vendorCodeInput && vendorCode) {
+                    vendorCodeInput.value = vendorCode;
+                }
+            }
+        }
+
+        if (selectAllSO) {
+            selectAllSO.addEventListener('change', function() {
+                soCheckboxes.forEach(cb => cb.checked = selectAllSO.checked);
+                updateSelections();
+            });
+        }
+
+        soCheckboxes.forEach(cb => {
+            cb.addEventListener('change', updateSelections);
+        });
+
+        // Initialize table classes based on PHP loaded checked states
+        soCheckboxes.forEach(cb => {
+            const row = cb.closest('tr');
+            if (cb.checked) {
+                row.classList.add('table-primary', 'fw-bold');
+            } else {
+                row.classList.remove('table-primary', 'fw-bold');
+            }
+        });
+
+        // Listen for tab switching and save active tab to localStorage
+        document.querySelectorAll('a[data-bs-toggle="tab"]').forEach(tabLink => {
+            tabLink.addEventListener('shown.bs.tab', function(e) {
+                const activeTabId = e.target.getAttribute('href').substring(1);
+                localStorage.setItem('active_annexure3a_tab', activeTabId);
+            });
+        });
+
+        // Restore active tab from localStorage if available
+        const activeTab = localStorage.getItem('active_annexure3a_tab');
+        if (activeTab) {
+            setTimeout(() => {
+                showTab(activeTab);
+            }, 100);
+        }
+    });
 
     function updateWorkOrderDetails(woNo) {
         const wo = workOrders.find(w => w.work_order_no === woNo);
@@ -1215,21 +1335,44 @@ function renderContent() {
     }
 
     function syncReasonSummary() {
+        const cleanReasonValue = (value) => {
+            let clean = (value || '').trim();
+            let old = '';
+            while (clean !== old) {
+                old = clean;
+                clean = clean.replace(/^(EPF Reason|ESI Reason|EC Policy Reason):\s*/i, '').trim();
+            }
+            return clean;
+        };
         const parts = [];
         if (getRadioValue('epf_registered') === 'NO') {
-            const epfReason = document.getElementById('epf_non_registration_reason')?.value?.trim() || '';
+            const epfReason = cleanReasonValue(document.getElementById('epf_non_registration_reason')?.value || '');
+            const epfInput = document.getElementById('epf_non_registration_reason');
+            if (epfInput) epfInput.value = epfReason;
             if (epfReason) parts.push('EPF Reason: ' + epfReason);
         }
         if (getRadioValue('esi_registered') === 'NO') {
-            const esiReason = document.getElementById('esi_non_registration_reason')?.value?.trim() || '';
+            const esiReason = cleanReasonValue(document.getElementById('esi_non_registration_reason')?.value || '');
+            const esiInput = document.getElementById('esi_non_registration_reason');
+            if (esiInput) esiInput.value = esiReason;
             if (esiReason) parts.push('ESI Reason: ' + esiReason);
         }
         if (getRadioValue('ecp_covered') === 'NO') {
-            const ecpReason = document.getElementById('ecp_exemption_reason')?.value?.trim() || '';
+            const ecpReason = cleanReasonValue(document.getElementById('ecp_exemption_reason')?.value || '');
+            const ecpInput = document.getElementById('ecp_exemption_reason');
+            if (ecpInput) ecpInput.value = ecpReason;
             if (ecpReason) parts.push('EC Policy Reason: ' + ecpReason);
         }
         const hidden = document.getElementById('epf_esi_exemption_reason');
         if (hidden) hidden.value = parts.join('\n');
+    }
+
+    function syncLicenseIssuedFields() {
+        document.querySelectorAll('#licenseTableBody .license-row').forEach(row => {
+            const validity = row.querySelector('input[name="license_validity[]"]')?.value || '';
+            const issuedBy = row.querySelector('input[name="license_issued[]"]');
+            if (issuedBy) issuedBy.value = validity;
+        });
     }
 
     function updateSlNos(tbodyId) {
@@ -1237,7 +1380,12 @@ function renderContent() {
         rows.forEach((row, index) => {
             row.querySelector('.sl-no').innerText = index + 1;
             const deleteBtn = row.querySelector('.delete-btn');
-            if (deleteBtn) deleteBtn.style.display = rows.length > 1 ? 'inline-block' : 'none';
+            if (!deleteBtn) return;
+            if (deleteBtn.disabled) {
+                deleteBtn.style.display = 'none';
+                return;
+            }
+            deleteBtn.style.display = rows.length > 1 ? 'inline-block' : 'none';
         });
     }
 
@@ -1296,8 +1444,15 @@ function renderContent() {
         const row = tbody.querySelector('.ecp-row').cloneNode(true);
         row.querySelectorAll('input').forEach(input => {
             input.value = '';
+            input.readOnly = false;
+            input.disabled = false;
+            input.style.display = '';
             input.classList.remove('is-invalid');
             input.required = getRadioValue('ecp_covered') === 'YES' && input.type !== 'hidden';
+        });
+        row.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.disabled = false;
+            btn.style.display = 'inline-block';
         });
         row.querySelectorAll('.invalid-feedback').forEach(error => error.style.display = 'none');
         tbody.appendChild(row);
@@ -1305,6 +1460,7 @@ function renderContent() {
     }
 
     function deleteEcpRow(btn) {
+        if (btn.disabled) return;
         const rows = document.querySelectorAll('#ecpTableBody tr');
         if (rows.length > 1) btn.closest('tr').remove();
         updateSlNos('ecpTableBody');
@@ -1315,7 +1471,14 @@ function renderContent() {
         const row = tbody.querySelector('.license-row').cloneNode(true);
         row.querySelectorAll('input').forEach(input => {
             input.value = '';
+            input.readOnly = false;
+            input.disabled = false;
+            input.style.display = '';
             input.classList.remove('is-invalid');
+        });
+        row.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.disabled = false;
+            btn.style.display = 'inline-block';
         });
         row.querySelectorAll('.invalid-feedback').forEach(error => error.style.display = 'none');
         row.querySelectorAll('a').forEach(a => a.remove());
@@ -1325,6 +1488,7 @@ function renderContent() {
     }
 
     function deleteLicenseRow(btn) {
+        if (btn.disabled) return;
         const rows = document.querySelectorAll('#licenseTableBody tr');
         if (rows.length > 1) btn.closest('tr').remove();
         updateSlNos('licenseTableBody');
@@ -1361,7 +1525,7 @@ function renderContent() {
 
     function toggleLicenceMandatory() {
         const workers = updateWorkerTotal();
-        const mandatory = workers > LICENCE_THRESHOLD;
+        const mandatory = workers >= LICENCE_THRESHOLD;
         const badge = document.getElementById('licenceMandatoryBadge');
         const card = document.getElementById('section7Card');
         const licInputs = document.querySelectorAll('#licenseTableBody input[type="text"], #licenseTableBody input[type="date"]');
@@ -1428,8 +1592,20 @@ function renderContent() {
     document.getElementById('annexure3AForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        // Manual Validation for Required Fields (since novalidate is on)
         const form = e.target;
+        const btn = document.getElementById('submitBtn');
+        const isResubmit = btn && (btn.innerHTML.toLowerCase().includes('resubmit') || ANNEXURE3A_LIMITED_EDIT);
+
+        // Client-side modification verification in resubmit mode
+        if (ANNEXURE3A_LIMITED_EDIT && isResubmit) {
+            const currentState = getEditableState();
+            if (currentState === initialEditableState) {
+                await showAnnexure3AFeedback('No changes detected in either "Employee Compensation Policy" or "Labour License Details". Please make modifications before resubmitting.', 'warning', 'No changes detected');
+                return;
+            }
+        }
+
+        // Manual Validation for Required Fields (since novalidate is on)
         const isDateValid = validateAllDates();
         const isWorkerCatValid = ANNEXURE3A_LIMITED_EDIT || validateWorkerCategories();
         toggleLicenceMandatory();
@@ -1441,21 +1617,21 @@ function renderContent() {
                     showTab(pane.id);
                     setTimeout(() => invalidEl.focus(), 100);
                 }
-                await showAnnexure3AFeedback('Please fill all required fields: ' + (invalidEl.placeholder || invalidEl.name || 'Check form'), 'warning', 'Incomplete form');
+                alert('Please fill all required fields: ' + (invalidEl.placeholder || invalidEl.name || 'Check form'));
                 return;
             }
-            await showAnnexure3AFeedback('Please correct highlighted fields before submitting.', 'warning', 'Validation required');
+            alert('Please correct highlighted fields before submitting.');
             showTab('statutoryDetails');
             return;
         }
 
-        const btn = document.getElementById('submitBtn');
         const originalHtml = btn.innerHTML;
         
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> SUBMITTING...';
 
         syncReasonSummary();
+        syncLicenseIssuedFields();
         const formData = new FormData(e.target);
         formData.append('action', ANNEXURE3A_LIMITED_EDIT ? 'resubmit' : 'submit');
         formData.set('total_workers', String(updateWorkerTotal()));
@@ -1474,25 +1650,40 @@ function renderContent() {
             }
             
             if (res.success) {
-                await showAnnexure3AFeedback('Customer Registration & Statutory documents submitted successfully!', 'success', 'Submitted');
+                alert('Customer Registration & Statutory documents submitted successfully!');
                 window.location.reload(); 
             } else {
-                await showAnnexure3AFeedback(res.message || 'Submission failed. Please check all fields.', 'error', 'Submission failed');
+                alert(res.message || 'Submission failed. Please check all fields.');
                 btn.disabled = false;
                 btn.innerHTML = originalHtml;
             }
         } catch(err) {
-            await showAnnexure3AFeedback(err.message || 'Network error. Please try again.', 'error', 'Request failed');
+            alert(err.message || 'Network error. Please try again.');
             btn.disabled = false;
             btn.innerHTML = originalHtml;
         }
     });
 
+    async function showAnnexure3AFeedback(message, type = 'info', title = '') {
+        if (typeof window.notifyUser === 'function') {
+            return window.notifyUser(message, type, title);
+        }
+        alert(message);
+        return Promise.resolve();
+    }
+
     async function saveDraft() {
         syncReasonSummary();
+        syncLicenseIssuedFields();
         const formData = new FormData(document.getElementById('annexure3AForm'));
         formData.append('action', 'draft');
         formData.set('total_workers', String(updateWorkerTotal()));
+        const btn = document.getElementById('saveDraftBtn');
+        const originalHtml = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Saving...';
+        }
         try {
             const resp = await fetch('../../api/contractor/save_annexure3a.php', {
                 method: 'POST',
@@ -1506,8 +1697,16 @@ function renderContent() {
                 throw new Error(raw ? raw.replace(/<[^>]*>/g, ' ').trim().slice(0, 300) : 'Server returned an empty response.');
             }
             await showAnnexure3AFeedback(res.message || 'Draft saved successfully.', res.success ? 'success' : 'error', res.success ? 'Draft saved' : 'Draft save failed');
+            if (res.success) {
+                window.setTimeout(() => window.location.reload(), 700);
+            }
         } catch (err) {
             await showAnnexure3AFeedback(err.message || 'Network error. Please try again.', 'error', 'Draft save failed');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
         }
     }
 
@@ -1518,12 +1717,33 @@ function renderContent() {
         updateSlNos('ecpTableBody');
         updateSlNos('licenseTableBody');
         toggleLicenceMandatory();
+        initialEditableState = getEditableState();
     });
     document.querySelectorAll('.worker-count').forEach(input => input.addEventListener('input', toggleLicenceMandatory));
     document.querySelectorAll('.worker-cat-check').forEach(input => input.addEventListener('change', validateWorkerCategories));
     document.querySelectorAll('input[name="epf_registered"]').forEach(input => input.addEventListener('change', toggleEPF));
     document.querySelectorAll('input[name="esi_registered"]').forEach(input => input.addEventListener('change', toggleESI));
     document.querySelectorAll('input[name="ecp_covered"]').forEach(input => input.addEventListener('change', toggleEcpPolicy));
+
+    (function normalizeAnnexure3AScroll() {
+        document.documentElement.style.height = '100vh';
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.height = '100vh';
+        document.body.style.overflow = 'hidden';
+        const wrapper = document.querySelector('.layout-wrapper');
+        const main = document.querySelector('.main-content');
+        if (wrapper) {
+            wrapper.style.height = 'calc(100vh - 72px)';
+            wrapper.style.minHeight = '0';
+            wrapper.style.overflow = 'hidden';
+        }
+        if (main) {
+            main.style.height = 'calc(100vh - 72px)';
+            main.style.overflowY = 'auto';
+            main.style.overflowX = 'hidden';
+            main.style.padding = '24px';
+        }
+    })();
 </script>
 <?php
 }

@@ -297,6 +297,29 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
             font-weight: 500;
         }
 
+        /* Profile-section pattern matching enrolment-4a */
+        .profile-section-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .profile-section-title {
+            font-size: 11px;
+            font-weight: 800;
+            color: #fff;
+            background: #1e3a8a;
+            padding: 9px 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .section-inner { padding: 16px; }
+
         /* Timeline Rail */
         .timeline-rail {
             position: relative;
@@ -570,7 +593,9 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
         <div class="drawer-content">
             <!-- PERSONAL DETAILS TAB -->
             <div class="drawer-panel active" id="tab-personal">
-                <h3 style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:8px;">Personal Information</h3>
+                <div class="profile-section-card">
+                  <div class="profile-section-title"><i class="fas fa-id-card"></i> Personal Information</div>
+                  <div class="section-inner">
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Full Name</div>
@@ -651,9 +676,13 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
                             </select>
                         </div>
                     </div>
-                </div>
-                
-                <h3 style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:8px;margin-top:24px;">Addresses</h3>
+                </div><!-- /detail-grid -->
+                </div><!-- /section-inner -->
+                </div><!-- /profile-section-card -->
+
+                <div class="profile-section-card" style="margin-top:0">
+                  <div class="profile-section-title"><i class="fas fa-map-marker-alt"></i> Addresses</div>
+                  <div class="section-inner">
                 <div style="display:grid;grid-template-columns:1fr;gap:20px;">
                     <div class="detail-item">
                         <div class="detail-label">Present Address</div>
@@ -663,18 +692,22 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
                         <div class="detail-label">Permanent Address</div>
                         <div class="detail-val" id="detail-permanent_address">-</div>
                     </div>
-                </div>
-                
+                </div><!-- /addresses grid -->
+                </div><!-- /section-inner -->
+                </div><!-- /profile-section-card -->
+
                 <!-- Save Button for Edit Mode -->
                 <div class="edit-mode" style="display:none;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:16px;text-align:right;">
                     <button class="btn btn-outline" onclick="exitEditMode(false)">Cancel</button>
                     <button class="btn btn-success" onclick="saveWorkerEdits()"><i class="fas fa-save"></i> Save Changes</button>
-                </div>
-            </div>
+                </div><!-- /edit-mode save -->
+            </div><!-- /tab-personal -->
 
             <!-- EMPLOYMENT INFO TAB -->
             <div class="drawer-panel" id="tab-employment" style="display:none">
-                <h3 style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:8px;">Employment Mapping</h3>
+                <div class="profile-section-card">
+                  <div class="profile-section-title"><i class="fas fa-briefcase"></i> Employment Mapping</div>
+                  <div class="section-inner">
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Contractor Name</div>
@@ -708,30 +741,40 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
                         <div class="detail-label">Nature of Work</div>
                         <div class="detail-val" id="detail-nature_of_work">-</div>
                     </div>
-                </div>
-            </div>
+                </div><!-- /detail-grid -->
+                </div><!-- /section-inner -->
+                </div><!-- /profile-section-card -->
+            </div><!-- /tab-employment -->
 
             <!-- QUALIFICATIONS TAB -->
             <div class="drawer-panel" id="tab-qualifications" style="display:none">
-                <h3 style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:8px;">Educational Qualifications</h3>
+                <div class="profile-section-card">
+                  <div class="profile-section-title"><i class="fas fa-graduation-cap"></i> Educational Qualifications</div>
+                  <div class="section-inner">
                 <div class="detail-grid" id="qualificationsDetailGrid">
                     <!-- Loaded dynamically via JS -->
-                </div>
+                </div><!-- /qualifications grid -->
+                </div><!-- /section-inner -->
+                </div><!-- /profile-section-card -->
 
                 <!-- Dynamic trade validation matrix indicator -->
-                <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:16px;border-radius:8px;margin-top:20px;">
-                    <h4 style="font-size:13px;font-weight:700;color:#0f172a;margin-bottom:10px;"><i class="fas fa-shield-alt"></i> Qualification Matrix Checker</h4>
+                <div class="profile-section-card">
+                  <div class="profile-section-title"><i class="fas fa-shield-alt"></i> Qualification Matrix Checker</div>
+                  <div class="section-inner">
                     <div style="font-size:13px;color:#475569;display:flex;align-items:center;gap:8px;">
                         <span>Current qualification matching status: </span>
                         <span id="qualificationValidationStatus" class="badge-chip badge-active">PASS</span>
                     </div>
                     <p id="qualificationValidationReason" style="font-size:12px;color:#64748b;margin-top:6px;line-height:1.4;">The worker's trade matches the education level specified in the qualification rules matrix.</p>
-                </div>
-            </div>
+                  </div><!-- /section-inner -->
+                </div><!-- /profile-section-card -->
+            </div><!-- /tab-qualifications -->
 
             <!-- DOCUMENTS TAB -->
             <div class="drawer-panel" id="tab-documents" style="display:none">
-                <h3 style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:8px;">Uploaded Documents</h3>
+                <div class="profile-section-card">
+                  <div class="profile-section-title"><i class="fas fa-file-alt"></i> Uploaded Documents</div>
+                  <div class="section-inner" style="padding:0">
                 <table class="data-table">
                     <thead>
                         <tr>
@@ -746,19 +789,27 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
                         <!-- Loaded dynamically -->
                     </tbody>
                 </table>
-            </div>
+                  </div><!-- /section-inner -->
+                </div><!-- /profile-section-card -->
+            </div><!-- /tab-documents -->
 
             <!-- AUDIT HISTORY TAB -->
             <div class="drawer-panel" id="tab-history" style="display:none">
-                <h3 style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:8px;">Audit History Rail</h3>
+                <div class="profile-section-card">
+                  <div class="profile-section-title"><i class="fas fa-history"></i> Audit History Rail</div>
+                  <div class="section-inner">
                 <div class="timeline-rail" id="drawerHistoryRail">
                     <!-- Loaded dynamically -->
-                </div>
-            </div>
+                </div><!-- /timeline-rail -->
+                </div><!-- /section-inner -->
+                </div><!-- /profile-section-card -->
+            </div><!-- /tab-history -->
 
             <!-- BIOMETRIC & PASS TAB -->
             <div class="drawer-panel" id="tab-biometric" style="display:none">
-                <h3 style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:8px;">Biometric Sync Status</h3>
+                <div class="profile-section-card">
+                  <div class="profile-section-title"><i class="fas fa-fingerprint"></i> Biometric Sync Status</div>
+                  <div class="section-inner">
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Biometric Enrollment</div>
@@ -772,9 +823,13 @@ $notif_count = db_count($conn, "SELECT COUNT(*) c FROM notifications WHERE is_re
                         <div class="detail-label">Safety Training Status</div>
                         <div class="detail-val" id="detail-safety_status">-</div>
                     </div>
-                </div>
+                </div><!-- /biometric detail-grid -->
+                </div><!-- /section-inner -->
+                </div><!-- /profile-section-card -->
 
-                <h3 style="font-size:15px;font-weight:700;color:#0f172a;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:8px;margin-top:24px;">Pass Details</h3>
+                <div class="profile-section-card">
+                  <div class="profile-section-title"><i class="fas fa-id-badge"></i> Pass Details</div>
+                  <div class="section-inner">
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Pass Number</div>

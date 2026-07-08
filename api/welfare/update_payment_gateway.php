@@ -27,6 +27,23 @@ try {
     clms_set_payment_setting($conn, 'training_payment_gst_percent', $_POST['training_payment_gst_percent'] ?? '18', $userId);
     clms_set_payment_setting($conn, 'training_payment_link_valid_hours', $_POST['training_payment_link_valid_hours'] ?? '72', $userId);
 
+    // CSL Gateway specific settings
+    if (isset($_POST['payment_gateway_key_id'])) {
+        clms_set_payment_setting($conn, 'payment_gateway_key_id', trim($_POST['payment_gateway_key_id']), $userId);
+    }
+    if (isset($_POST['payment_gateway_key_secret'])) {
+        clms_set_payment_setting($conn, 'payment_gateway_key_secret', trim($_POST['payment_gateway_key_secret']), $userId);
+    }
+    // CSL Whitelisted Source IP - must match the IP CSL has whitelisted for your server
+    if (isset($_POST['csl_source_ip'])) {
+        $cslIp = trim($_POST['csl_source_ip']);
+        if ($cslIp !== '' && !filter_var($cslIp, FILTER_VALIDATE_IP)) {
+            paymentSettingsJson(['success' => false, 'message' => 'Invalid CSL Source IP address format.'], 400);
+        }
+        clms_set_payment_setting($conn, 'csl_source_ip', $cslIp, $userId);
+    }
+
+
     if (!empty($_FILES['payment_qr']) && ($_FILES['payment_qr']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
         $ext = strtolower(pathinfo($_FILES['payment_qr']['name'] ?? '', PATHINFO_EXTENSION));
         if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true)) {

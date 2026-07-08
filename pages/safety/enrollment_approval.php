@@ -457,99 +457,147 @@ function renderContent() {
 
 <!-- Workman Details Modal -->
 <style>
-.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.6);backdrop-filter:blur(4px);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.65);backdrop-filter:blur(4px);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
 .modal-overlay.show{display:flex!important}
-.modal-box{background:#fff;border-radius:12px;max-width:1000px;width:96%;box-shadow:0 25px 50px -12px rgba(0,0,0,.25);overflow:hidden;display:flex;flex-direction:column;max-height:90vh;animation:modalFadeIn .25s ease-out}
+.modal-box{background:#f8fafc;border-radius:16px;max-width:1060px;width:97%;box-shadow:0 25px 50px -12px rgba(0,0,0,.3);overflow:hidden;display:flex;flex-direction:column;max-height:92vh;animation:modalFadeIn .25s ease-out}
 @keyframes modalFadeIn{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}
-.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid #e2e8f0;background:#fff}
 .modal-title{margin:0;font-size:16px;font-weight:700;color:#0f172a}
 .modal-close{background:none;border:none;font-size:24px;cursor:pointer;color:#94a3b8;line-height:1;transition:color .15s}
 .modal-close:hover{color:#475569}
-.modal-body{padding:24px;overflow-y:auto;flex-grow:1}
-.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-.preview-section{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:18px;margin-bottom:20px}
-.preview-section-title{font-size:13px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;padding-bottom:6px;margin-bottom:12px;text-transform:uppercase;display:flex;align-items:center;gap:8px}
-.preview-table{width:100%;border-collapse:collapse}
-.preview-table th{width:40%;text-align:left;font-size:12px;color:#64748b;padding:6px 0;font-weight:600;vertical-align:top}
-.preview-table td{font-size:12px;color:#0f172a;padding:6px 0;vertical-align:top}
-.preview-docs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:10px}
-.preview-doc-card{padding:10px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;display:flex;flex-direction:column;gap:6px}
-.preview-doc-label{font-size:11px;font-weight:600;color:#475569}
+.modal-body{padding:20px 24px;overflow-y:auto;flex-grow:1}
+/* Profile Header Banner */
+.wm-profile-banner{display:flex;gap:20px;align-items:center;background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%);color:#fff;padding:20px 24px;border-radius:12px;margin-bottom:20px;box-shadow:0 8px 15px -3px rgba(0,0,0,0.15)}
+.wm-photo{width:80px;height:96px;object-fit:cover;border-radius:10px;border:3px solid rgba(255,255,255,0.8);flex-shrink:0}
+.wm-photo-placeholder{width:80px;height:96px;border-radius:10px;border:3px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:32px;color:rgba(255,255,255,0.7);flex-shrink:0}
+.wm-banner-name{font-size:20px;font-weight:800;margin:0 0 4px;color:#fff}
+.wm-banner-sub{font-size:12px;color:rgba(255,255,255,.85);margin:0 0 8px}
+.wm-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;text-transform:uppercase;letter-spacing:.5px;display:inline-block;background:rgba(255,255,255,.2);color:#fff;margin-right:6px}
+/* Section cards */
+.wm-section{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.wm-section-title{font-size:10px;font-weight:800;color:#fff;background:#1e3a8a;padding:8px 14px;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:8px}
+.wm-section-body{padding:14px 16px}
+.wm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px}
+.wm-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 14px}
+.wm-row{display:flex;flex-direction:column;gap:2px}
+.wm-label{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.3px}
+.wm-val{font-size:12px;font-weight:600;color:#1e293b;word-break:break-word}
+/* Doc cards */
+.wm-docs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.wm-doc-card{padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;display:flex;flex-direction:column;gap:6px}
+.wm-doc-label{font-size:11px;font-weight:600;color:#334155}
+/* 2-col layout */
+.wm-body-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 </style>
 
 <div id="workmanModal" class="modal-overlay" onclick="handleOverlayClick(event)">
   <div class="modal-box">
     <div class="modal-header">
-      <h3 class="modal-title"><i class="fas fa-id-card" style="color:#6366f1;margin-right:6px"></i> Workman Enrollment Profile Details</h3>
+      <h3 class="modal-title"><i class="fas fa-id-card" style="color:#1e3a8a;margin-right:6px"></i> Workman Enrollment Profile</h3>
       <button class="modal-close" onclick="closeWorkmanModal()">&times;</button>
     </div>
     <div class="modal-body">
-      <div class="preview-grid">
-        <div>
-          <div class="preview-section">
-            <div class="preview-section-title"><i class="fas fa-user-circle"></i> Personal Information</div>
-            <table class="preview-table">
-              <tr><th>Full Name</th><td id="wm-name">-</td></tr>
-              <tr><th>Father's Name</th><td id="wm-father">-</td></tr>
-              <tr><th>Gender / DOB</th><td id="wm-gender-dob">-</td></tr>
-              <tr><th>Marital Status</th><td id="wm-marital">-</td></tr>
-              <tr><th>Nationality</th><td id="wm-nationality">-</td></tr>
-              <tr><th>Blood Group</th><td id="wm-blood">-</td></tr>
-              <tr><th>Religion</th><td id="wm-religion">-</td></tr>
-              <tr><th>PWD Status</th><td id="wm-pwd">-</td></tr>
-              <tr><th>Passport No</th><td id="wm-passport">-</td></tr>
-              <tr><th>Driving Licence No</th><td id="wm-dl">-</td></tr>
-              <tr><th>Email ID</th><td id="wm-email">-</td></tr>
-            </table>
-          </div>
-          <div class="preview-section">
-            <div class="preview-section-title"><i class="fas fa-map-marker-alt"></i> Contact &amp; Address</div>
-            <table class="preview-table">
-              <tr><th>Mobile Number</th><td id="wm-mobile">-</td></tr>
-              <tr><th>WhatsApp Number</th><td id="wm-whatsapp">-</td></tr>
-              <tr><th>Emergency Contact</th><td id="wm-emergency">-</td></tr>
-              <tr><th>Present Address</th><td id="wm-present-addr">-</td></tr>
-              <tr><th>Permanent Address</th><td id="wm-permanent-addr">-</td></tr>
-              <tr><th>Location / Region</th><td id="wm-location">-</td></tr>
-            </table>
-          </div>
-        </div>
-        <div>
-          <div class="preview-section">
-            <div class="preview-section-title"><i class="fas fa-briefcase"></i> Employment &amp; Work Details</div>
-            <table class="preview-table">
-              <tr><th>Contractor</th><td id="wm-contractor">-</td></tr>
-              <tr><th>Work Order No</th><td id="wm-wo-no">-</td></tr>
-              <tr><th>Project Name (WBS)</th><td id="wm-project">-</td></tr>
-              <tr><th>Department</th><td id="wm-dept">-</td></tr>
-              <tr><th>Trade</th><td id="wm-trade">-</td></tr>
-              <tr><th>Skill Category</th><td id="wm-skill-cat">-</td></tr>
-              <tr><th>Nature of Work</th><td id="wm-nature-work">-</td></tr>
-              <tr><th>Experience</th><td id="wm-experience">-</td></tr>
-              <tr><th>Safety Preferred Lang</th><td id="wm-safety-lang">-</td></tr>
-              <tr><th>Executing Officer</th><td id="wm-exec-officer">-</td></tr>
-            </table>
-          </div>
-          <div class="preview-section">
-            <div class="preview-section-title"><i class="fas fa-university"></i> Statutory &amp; Banking Details</div>
-            <table class="preview-table">
-              <tr><th>Aadhaar Number</th><td id="wm-aadhaar">-</td></tr>
-              <tr><th>EPF Registered</th><td id="wm-epf">-</td></tr>
-              <tr><th>PF No / UAN</th><td id="wm-pf-uan">-</td></tr>
-              <tr><th>ESI Registered</th><td id="wm-esi">-</td></tr>
-              <tr><th>ESIC Number</th><td id="wm-esic">-</td></tr>
-              <tr><th>Bank Account No</th><td id="wm-bank-acc">-</td></tr>
-              <tr><th>Bank IFSC Code</th><td id="wm-bank-ifsc">-</td></tr>
-              <tr><th>Certified Wage Rate</th><td id="wm-wage-rate">-</td></tr>
-              <tr><th>Payment Option</th><td id="wm-pay-option">-</td></tr>
-            </table>
+
+      <!-- Header Banner -->
+      <div class="wm-profile-banner">
+        <div class="wm-photo-placeholder" id="wm-photo-wrap"><i class="fas fa-user"></i></div>
+        <div style="flex-grow:1">
+          <h4 class="wm-banner-name" id="wm-name">-</h4>
+          <p class="wm-banner-sub" id="wm-banner-sub">-</p>
+          <div>
+            <span class="wm-badge" id="wm-pass-badge">Workman</span>
+            <span class="wm-badge" id="wm-status-badge">-</span>
           </div>
         </div>
       </div>
-      <div class="preview-section" style="margin-bottom:0">
-        <div class="preview-section-title"><i class="fas fa-file-alt"></i> Uploaded Documents (Annexure 4A / 6A)</div>
-        <div class="preview-docs-grid" id="wm-docs-container"></div>
+
+      <!-- 2-col Body -->
+      <div class="wm-body-grid">
+        <!-- LEFT -->
+        <div>
+          <!-- Basic Info -->
+          <div class="wm-section">
+            <div class="wm-section-title"><i class="fas fa-id-card"></i> Basic Info</div>
+            <div class="wm-section-body">
+              <div class="wm-grid">
+                <div class="wm-row"><span class="wm-label">Father's Name</span><span class="wm-val" id="wm-father">-</span></div>
+                <div class="wm-row"><span class="wm-label">Gender / DOB</span><span class="wm-val" id="wm-gender-dob">-</span></div>
+                <div class="wm-row"><span class="wm-label">Marital Status</span><span class="wm-val" id="wm-marital">-</span></div>
+                <div class="wm-row"><span class="wm-label">Nationality</span><span class="wm-val" id="wm-nationality">-</span></div>
+                <div class="wm-row"><span class="wm-label">Blood Group</span><span class="wm-val" id="wm-blood">-</span></div>
+                <div class="wm-row"><span class="wm-label">Religion</span><span class="wm-val" id="wm-religion">-</span></div>
+                <div class="wm-row"><span class="wm-label">PWD Status</span><span class="wm-val" id="wm-pwd">-</span></div>
+                <div class="wm-row"><span class="wm-label">Passport No</span><span class="wm-val" id="wm-passport">-</span></div>
+                <div class="wm-row"><span class="wm-label">Driving Licence</span><span class="wm-val" id="wm-dl">-</span></div>
+                <div class="wm-row"><span class="wm-label">Email ID</span><span class="wm-val" id="wm-email">-</span></div>
+              </div>
+            </div>
+          </div>
+          <!-- Address / Contact -->
+          <div class="wm-section">
+            <div class="wm-section-title"><i class="fas fa-map-marker-alt"></i> Address / Contact</div>
+            <div class="wm-section-body">
+              <div class="wm-grid" style="margin-bottom:10px">
+                <div class="wm-row"><span class="wm-label">Mobile Number</span><span class="wm-val" id="wm-mobile">-</span></div>
+                <div class="wm-row"><span class="wm-label">WhatsApp</span><span class="wm-val" id="wm-whatsapp">-</span></div>
+                <div class="wm-row"><span class="wm-label">Emergency Contact</span><span class="wm-val" id="wm-emergency">-</span></div>
+                <div class="wm-row"><span class="wm-label">Location</span><span class="wm-val" id="wm-location">-</span></div>
+              </div>
+              <div style="display:grid;gap:8px">
+                <div class="wm-row"><span class="wm-label">Present Address</span><span class="wm-val" id="wm-present-addr">-</span></div>
+                <div class="wm-row"><span class="wm-label">Permanent Address</span><span class="wm-val" id="wm-permanent-addr">-</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- RIGHT -->
+        <div>
+          <!-- Employment -->
+          <div class="wm-section">
+            <div class="wm-section-title"><i class="fas fa-briefcase"></i> Work / Employment</div>
+            <div class="wm-section-body">
+              <div class="wm-grid">
+                <div class="wm-row"><span class="wm-label">Contractor</span><span class="wm-val" id="wm-contractor">-</span></div>
+                <div class="wm-row"><span class="wm-label">Work Order No</span><span class="wm-val" id="wm-wo-no">-</span></div>
+                <div class="wm-row"><span class="wm-label">Project (WBS)</span><span class="wm-val" id="wm-project">-</span></div>
+                <div class="wm-row"><span class="wm-label">Department</span><span class="wm-val" id="wm-dept">-</span></div>
+                <div class="wm-row"><span class="wm-label">Trade</span><span class="wm-val" id="wm-trade">-</span></div>
+                <div class="wm-row"><span class="wm-label">Skill Category</span><span class="wm-val" id="wm-skill-cat">-</span></div>
+                <div class="wm-row"><span class="wm-label">Nature of Work</span><span class="wm-val" id="wm-nature-work">-</span></div>
+                <div class="wm-row"><span class="wm-label">Experience</span><span class="wm-val" id="wm-experience">-</span></div>
+                <div class="wm-row"><span class="wm-label">Safety Language</span><span class="wm-val" id="wm-safety-lang">-</span></div>
+                <div class="wm-row"><span class="wm-label">Executing Officer</span><span class="wm-val" id="wm-exec-officer">-</span></div>
+              </div>
+            </div>
+          </div>
+          <!-- Statutory -->
+          <div class="wm-section">
+            <div class="wm-section-title"><i class="fas fa-university"></i> Statutory &amp; Banking</div>
+            <div class="wm-section-body">
+              <div class="wm-grid">
+                <div class="wm-row"><span class="wm-label">Aadhaar Number</span><span class="wm-val" id="wm-aadhaar">-</span></div>
+                <div class="wm-row"><span class="wm-label">EPF Registered</span><span class="wm-val" id="wm-epf">-</span></div>
+                <div class="wm-row"><span class="wm-label">PF No / UAN</span><span class="wm-val" id="wm-pf-uan">-</span></div>
+                <div class="wm-row"><span class="wm-label">ESI Registered</span><span class="wm-val" id="wm-esi">-</span></div>
+                <div class="wm-row"><span class="wm-label">ESIC Number</span><span class="wm-val" id="wm-esic">-</span></div>
+                <div class="wm-row"><span class="wm-label">Bank Account No</span><span class="wm-val" id="wm-bank-acc">-</span></div>
+                <div class="wm-row"><span class="wm-label">Bank IFSC Code</span><span class="wm-val" id="wm-bank-ifsc">-</span></div>
+                <div class="wm-row"><span class="wm-label">Certified Wage Rate</span><span class="wm-val" id="wm-wage-rate">-</span></div>
+                <div class="wm-row"><span class="wm-label">Payment Option</span><span class="wm-val" id="wm-pay-option">-</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+
+      <!-- Documents -->
+      <div class="wm-section" style="margin-bottom:0">
+        <div class="wm-section-title"><i class="fas fa-folder-open"></i> Documents Vault (Annexure 4A / 6A)</div>
+        <div class="wm-section-body">
+          <div class="wm-docs-grid" id="wm-docs-container"></div>
+        </div>
+      </div>
+
     </div>
     <div style="padding:14px 24px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeWorkmanModal()">Close</button>
@@ -569,7 +617,21 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function showWorkmanDetails(data) {
+  // Populate banner header
   document.getElementById('wm-name').textContent       = data.name || 'N/A';
+  const bannerSub = document.getElementById('wm-banner-sub');
+  if (bannerSub) bannerSub.textContent = (data.gender || 'N/A') + ' | DOB: ' + (data.dob || 'N/A') + ' | Aadhaar: ' + (data.aadhaar || 'N/A');
+  const passB = document.getElementById('wm-pass-badge');
+  if (passB) passB.textContent = data.pass_type || 'Workman';
+  const statusB = document.getElementById('wm-status-badge');
+  if (statusB) statusB.textContent = data.work_order_no || data.contractor_name || '';
+
+  // Photo
+  const photoWrap = document.getElementById('wm-photo-wrap');
+  if (photoWrap && data.photo) {
+    photoWrap.innerHTML = `<img src="../../uploads/workers/${encodeURIComponent(data.photo)}" class="wm-photo" onerror="this.parentNode.innerHTML='<i class=\\'fas fa-user\\'></i>'">`;
+  }
+
   document.getElementById('wm-father').textContent     = data.father_name || 'N/A';
   document.getElementById('wm-gender-dob').textContent = (data.gender || 'N/A') + ' / ' + (data.dob || 'N/A');
   document.getElementById('wm-marital').textContent    = data.marital_status || 'N/A';
@@ -585,7 +647,7 @@ function showWorkmanDetails(data) {
   document.getElementById('wm-emergency').textContent  = data.emergency_contact || 'N/A';
   document.getElementById('wm-present-addr').innerHTML = (data.present_address || 'N/A').replace(/\n/g, '<br>');
   document.getElementById('wm-permanent-addr').innerHTML = (data.permanent_address || 'N/A').replace(/\n/g, '<br>');
-  document.getElementById('wm-location').textContent   = (data.district || '') + ', ' + (data.state || '') + ' - ' + (data.pincode || '');
+  document.getElementById('wm-location').textContent   = [data.district, data.state, data.pincode].filter(Boolean).join(', ');
   document.getElementById('wm-contractor').textContent = data.contractor_name || 'N/A';
   document.getElementById('wm-wo-no').textContent      = data.work_order_no || 'N/A';
   document.getElementById('wm-project').textContent    = data.project_name || 'N/A';
@@ -628,11 +690,11 @@ function showWorkmanDetails(data) {
     if (file) {
       docCount++;
       const card = document.createElement('div');
-      card.className = 'preview-doc-card';
-      card.innerHTML = `<span class="preview-doc-label">${doc.label}</span>
+      card.className = 'wm-doc-card';
+      card.innerHTML = `<span class="wm-doc-label">${doc.label}</span>
         <a href="../../uploads/workers/${encodeURIComponent(file)}" target="_blank"
            class="btn btn-sm btn-outline" style="text-align:center;width:100%;margin-top:auto;font-size:11px;padding:4px 6px;">
-          <i class="fas fa-external-link-alt"></i> View File</a>`;
+          <i class="fas fa-external-link-alt"></i> View</a>`;
       docContainer.appendChild(card);
     }
   });

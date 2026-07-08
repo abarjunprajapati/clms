@@ -1,13 +1,1 @@
-<?php
-echo "1\n";
-session_start();
-$_SESSION['user_id'] = 1;
-$_SESSION['role'] = 'contractor';
-$_SESSION['logged_in'] = true;
-$_SERVER['REQUEST_URI'] = '/pages/contractor/noc_management.php';
-$_SERVER['PHP_SELF'] = '/pages/contractor/noc_management.php';
-$_SERVER['SCRIPT_NAME'] = '/pages/contractor/noc_management.php';
-
-echo "2\n";
-require 'pages/contractor/noc_management.php';
-echo "3\n";
+﻿<?php require 'c:/xampp/htdocs/CLMS1/include/config.php'; require 'c:/xampp/htdocs/CLMS1/include/wage_settings.php'; $map = clms_get_active_certified_wage_map($conn); print_r(array_keys($map)); print_r($map); ?>

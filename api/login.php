@@ -223,7 +223,7 @@ function logLoginAttempt($conn, $user_id, $identifier, $ip, $status, $reason = '
 }
 
 function getRoleDashboard($role) {
-    switch ($role) {
+    switch (strtolower(trim($role))) {
       case 'super_admin': return "pages/admin/dashboard.php";
       case 'welfare_admin': return "pages/welfare/admin_dashboard.php";
       case 'welfare_user': return "pages/welfare/dashboard.php";

@@ -6,7 +6,7 @@ require_once __DIR__ . '/include/session.php';
 if (!empty($_SESSION['user_id']) && !empty($_SESSION['role']) && !empty($_SESSION['logged_in'])) {
     require_once __DIR__ . '/include/config.php';
     require_once __DIR__ . '/include/onboarding_status.php';
-    $role = $_SESSION['role'];
+    $role = strtolower(trim($_SESSION['role']));
     $redirect = "pages/contractor/dashboard.php";
     switch ($role) {
       case 'super_admin': $redirect = "pages/admin/dashboard.php"; break;
@@ -37,6 +37,7 @@ if (file_exists($popup_file)) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="csrf-token" content="<?= get_csrf_token() ?>">
   <title>CLMS</title>
+  <link rel="icon" type="image/png" href="uploads/logo/logo.png">
   
   <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
@@ -120,12 +121,11 @@ if (file_exists($popup_file)) {
       <div style="width: 60px; height: 4px; background: linear-gradient(90deg, #60a5fa, transparent); margin-bottom: 25px; border-radius: 2px;"></div>
 
       <h1 style="font-size: 3.2rem; font-weight: 800; line-height: 1.1; margin-bottom: 1rem; color: #ffffff; text-shadow: 0 4px 20px rgba(0,0,0,0.15); letter-spacing: -0.02em;">
-        Contract Labour<br>
-        <span style="color: #ffffff; font-weight: 300;">Management System</span>
+        Contract Labour Management System
       </h1>
       
-      <h2 style="font-size: 1.4rem; font-weight: 600; color: #e2e8f0; margin-bottom: 2rem; letter-spacing: 0.5px;">
-        Cochin Shipyard Ltd. (CLMS-CSL)
+      <h2 style="font-size: 2.2rem; font-weight: 700; color: #ffffff; margin-bottom: 2rem; letter-spacing: 0.5px; text-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        Cochin Shipyard Limited (CLMS-CSL)
       </h2>
 
       <p style="font-size: 1.1rem; color: #bfdbfe; font-weight: 400; line-height: 1.7; margin-bottom: 3.5rem; max-width: 90%;">

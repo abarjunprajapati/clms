@@ -909,8 +909,8 @@ worker4a_ensure_schema($conn);
         $uploaded_files[$ukey] = '';
     }
 
-    // Validate mandatory dynamic documents if this is not a draft and type is workmen
-    if ($action !== 'draft' && $enrolmentTypeForGate === 'workmen') {
+    // Validate mandatory dynamic documents if this is not a draft
+    if ($action !== 'draft') {
         $existingDocs = [];
         if ($editing_worker_id > 0) {
             $docRes = $conn->query("SELECT document_type FROM documents WHERE workman_id = $editing_worker_id");

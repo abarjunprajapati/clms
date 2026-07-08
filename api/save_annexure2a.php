@@ -241,6 +241,21 @@ function annexure2a_ensure_submit_schema($conn) {
     annexure2a_ensure_column($conn, 'contractor_so_selection', 'contractor_id', 'INT NULL');
     annexure2a_ensure_column($conn, 'contractor_so_selection', 'sale_order_no', 'VARCHAR(100) NULL');
     clms_ensure_labour_license_thresholds($conn);
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS contractor_edit_requests (
+        id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        contractor_id INT NOT NULL,
+        original_data_json LONGTEXT NOT NULL,
+        requested_data_json LONGTEXT NOT NULL,
+        status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+        remarks TEXT NULL,
+        submitted_by INT NULL,
+        submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        action_by INT NULL,
+        action_at TIMESTAMP NULL DEFAULT NULL,
+        KEY idx_contractor (contractor_id),
+        KEY idx_status (status),
+        CONSTRAINT fk_contractor_edit_requests_contractor FOREIGN KEY (contractor_id) REFERENCES contractors (id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
 
 function annexure2a_send_submission_email($vendorCode, $vendorName, $applicationNo, $status) {
@@ -435,7 +450,8 @@ if (empty($license_file_path) && $existing && !empty($existing['license_file']))
     $license_file_path = $existing['license_file'];
 }
 
-if ($limited_existing_edit && $existing) {
+$request_action = $_POST['action'] ?? 'submit';
+if ($limited_existing_edit && $existing && $request_action !== 'request_update') {
     $vendor_name = $existing['vendor_name'] ?? $vendor_name;
     $mobile_legacy = $existing['mobile'] ?? $mobile_legacy;
     $email = $existing['email'] ?? $email;
@@ -585,6 +601,98 @@ if ($is_final_submit) {
 }
 
 annexure2a_validation_complete:
+
+if ($request_action === 'request_update') {
+    // Check if contractor already has a pending profile update request
+    $pending_edit = db_single($conn, "SELECT id FROM contractor_edit_requests WHERE contractor_id = ? AND status = 'pending' LIMIT 1", 'i', [$contractor_id]);
+    if ($pending_edit) {
+        annexure2a_json_response(['success' => false, 'message' => 'You already have a pending profile update request.'], 400);
+    }
+
+    // 1. Create a requested data array from the POST variables
+    $requested_data = [
+        'mobile' => $mobile,
+        'vendor_mob2' => $vendor_mob2,
+        'email' => $email,
+        'address' => $address,
+        'work_awarding_department' => $work_awarding_department,
+        'epf_registered' => $epf_registered,
+        'epf_code' => $epf_code,
+        'esi_registered' => $esi_registered,
+        'esi_code' => $esi_code,
+        'epf_esi_exemption_reason' => $epf_esi_exemption_reason,
+        'wage_category' => $wage_category,
+        'wage_declaration' => $wage_declaration,
+        'ecp_covered' => $ecp_covered,
+        'ecp_details_json' => $ecp_details_json,
+        'license_details_json' => $license_details_json,
+        'ecp_number' => $ecp_number,
+        'ecp_valid_from' => $ecp_valid_from,
+        'ecp_valid_to' => $ecp_valid_to,
+        'workers_ecp' => $workers_ecp,
+        'workers_proposed_to_be_engaged' => $workers_proposed_to_be_engaged,
+        'worker_category' => $worker_categories_str,
+        'license_no' => $license_no,
+        'license_issued' => $license_issued,
+        'issued_date' => $issued_date,
+        'expiry_date' => $expiry_date,
+        'license_file' => $license_file_path,
+        'labour_license_appl_no' => $labour_license_appl_no,
+        'labour_identification_no' => $labour_identification_no,
+        'contact_person' => $contact_person,
+        'remarks' => $remarks,
+        'selected_pos' => $_POST['selected_pos'] ?? '[]',
+        'selected_pwos' => $_POST['selected_pwos'] ?? '[]',
+        'selected_sales' => $_POST['selected_sales'] ?? '[]',
+    ];
+
+    // 2. Query original data from existing contractor/annexure
+    $original_data = [
+        'mobile' => $existing['mobile'] ?? '',
+        'vendor_mob2' => $existing['vendor_mob2'] ?? '',
+        'email' => $existing['email'] ?? '',
+        'address' => $existing['address'] ?? '',
+        'work_awarding_department' => $existing['work_awarding_department'] ?? '',
+        'epf_registered' => $existing['epf_registered'] ?? 'NO',
+        'epf_code' => $existing['epf_code'] ?? '',
+        'esi_registered' => $existing['esi_registered'] ?? 'NO',
+        'esi_code' => $existing['esi_code'] ?? '',
+        'epf_esi_exemption_reason' => $existing['epf_esi_exemption_reason'] ?? '',
+        'wage_category' => $existing['wage_category'] ?? '',
+        'wage_declaration' => $existing['wage_declaration'] ?? '',
+        'ecp_covered' => $existing['ecp_covered'] ?? 'NO',
+        'ecp_details_json' => $existing['ecp_details_json'] ?? null,
+        'license_details_json' => $existing['license_details_json'] ?? null,
+        'ecp_number' => $existing['ecp_number'] ?? '',
+        'ecp_valid_from' => $existing['ecp_valid_from'] ?? null,
+        'ecp_valid_to' => $existing['ecp_valid_to'] ?? null,
+        'workers_ecp' => $existing['workers_ecp'] ?? 0,
+        'workers_proposed_to_be_engaged' => $existing['workers_proposed_to_be_engaged'] ?? 0,
+        'worker_category' => $existing['worker_category'] ?? '',
+        'license_no' => $existing['license_no'] ?? '',
+        'license_issued' => $existing['license_issued'] ?? '',
+        'issued_date' => $existing['issued_date'] ?? null,
+        'expiry_date' => $existing['expiry_date'] ?? null,
+        'license_file' => $existing['license_file'] ?? '',
+        'labour_license_appl_no' => $existing['labour_license_appl_no'] ?? '',
+        'labour_identification_no' => $existing['labour_identification_no'] ?? '',
+        'contact_person' => $existing['contact_person'] ?? '',
+        'remarks' => $existing['remarks'] ?? '',
+        'selected_pos' => json_encode(array_column(db_fetch_all($conn, "SELECT po_number FROM contractor_po_selection WHERE contractor_id = ?", 'i', [$contractor_id]), 'po_number')),
+        'selected_pwos' => json_encode(array_column(db_fetch_all($conn, "SELECT pwo_number FROM contractor_pwo_selection WHERE contractor_id = ?", 'i', [$contractor_id]), 'pwo_number')),
+        'selected_sales' => json_encode(array_column(db_fetch_all($conn, "SELECT sale_order_no FROM contractor_so_selection WHERE contractor_id = ?", 'i', [$contractor_id]), 'sale_order_no')),
+    ];
+
+    $original_json = json_encode($original_data);
+    $requested_json = json_encode($requested_data);
+
+    db_execute($conn, "INSERT INTO contractor_edit_requests (contractor_id, original_data_json, requested_data_json, status, submitted_by) VALUES (?,?,?,'pending',?)", 'issi', [$contractor_id, $original_json, $requested_json, $user_id]);
+
+    // Update annexure2a workflow status to 'change_requested'
+    db_execute($conn, "UPDATE annexure2a SET workflow_status = 'change_requested', updated_at = NOW() WHERE contractor_id = ?", 'i', [$contractor_id]);
+
+    annexure2a_json_response(['success' => true, 'message' => 'Profile details change request submitted for Welfare approval.', 'status' => 'approved', 'workflow_status' => 'change_requested']);
+}
 
 if ($limited_existing_edit) {
     $status = ($request_action === 'draft') ? ($current_status ?: 'approved') : 'pending';

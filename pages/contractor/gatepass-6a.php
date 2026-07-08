@@ -914,14 +914,17 @@ function enforceTemporaryPassLimits() {
 document.addEventListener("DOMContentLoaded", function() {
     const initDT = function() {
         if (typeof $ !== 'undefined' && $.fn.DataTable) {
-            $('#recentRequestsTable').DataTable({
-                "pageLength": 10,
-                "lengthChange": false,
-                "searching": false,
-                "ordering": true,
-                "info": false,
-                "paging": false // They are already max 10
-            });
+            // Only initialize DataTable if there are data rows (not just the single empty colspan row)
+            if ($('#recentRequestsTable tbody td').length > 1 && !$('#recentRequestsTable tbody td[colspan]').length) {
+                $('#recentRequestsTable').DataTable({
+                    "pageLength": 10,
+                    "lengthChange": false,
+                    "searching": false,
+                    "ordering": true,
+                    "info": false,
+                    "paging": false // They are already max 10
+                });
+            }
         } else {
             setTimeout(initDT, 50);
         }

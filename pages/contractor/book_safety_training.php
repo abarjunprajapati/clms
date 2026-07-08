@@ -326,7 +326,10 @@ function renderContent() {
             GROUP BY workman_id
         ) attempts ON attempts.workman_id = w.id
         WHERE w.contractor_id = ?
-          AND LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
+          AND (
+              LOWER(COALESCE(w.safety_enrollment_status, 'pending')) = 'approved'
+              OR LOWER(COALESCE(w.execution_training_status, '')) IN ('pending_booking', 'approved', 'pending_eo', 'pending_safety')
+          )
           AND LOWER(COALESCE(w.status, 'pending')) NOT IN ('deleted','removed','blocked')
           AND (
               tr.id IS NULL
@@ -339,7 +342,8 @@ function renderContent() {
               AND (w.training_valid_till IS NULL OR w.training_valid_till >= CURDATE())
           )
           AND NOT (
-              LOWER(COALESCE(tr.status, '')) IN ('pending_payment','pending','pending_eo','pending_safety','welfare_pending','scheduled','contractor_confirmed','passed')
+              LOWER(COALESCE(w.execution_training_status, '')) NOT IN ('pending_booking')
+              AND LOWER(COALESCE(tr.status, '')) IN ('pending_payment','pending','pending_eo','pending_safety','welfare_pending','scheduled','contractor_confirmed','passed')
               AND LOWER(COALESCE(w.training_status, 'pending')) NOT IN ('training_failed','fail','failed','absent','training_expired','expired')
               AND (w.training_valid_till IS NULL OR w.training_valid_till >= CURDATE())
           )
@@ -449,7 +453,20 @@ function renderContent() {
     </div>
 
     <?php if ($message): ?>
-      <div class="alert alert-<?= $messageType === 'error' ? 'danger' : 'success' ?>"><?= htmlspecialchars($message) ?></div>
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: '<?= $messageType === 'error' ? 'error' : 'success' ?>',
+                    title: '<?= $messageType === 'error' ? 'Booking Failed' : 'Booking Successful' ?>',
+                    text: <?= json_encode($message) ?>,
+                    confirmButtonColor: '#2563eb'
+                });
+            } else {
+                alert(<?= json_encode($message) ?>);
+            }
+        });
+      </script>
     <?php endif; ?>
     <?php if ($paymentPendingWorkers > 0): ?>
       <div class="payment-required-note">
@@ -644,7 +661,8 @@ function renderContent() {
 
       function matchingBatches() {
         const language = norm(languageSelect.value);
-        return batches.filter(batch => !language || norm(batch.language_name) === language);
+        if (!language) return [];
+        return batches.filter(batch => norm(batch.language_name) === language && remainingSeats(batch) > 0);
       }
 
       function populateDates() {
@@ -826,18 +844,18 @@ function renderContent() {
       });
 
       const preselectLanguage = <?= json_encode(strtolower($preselectLanguage)) ?>;
+      let langMatched = false;
       if (preselectLanguage && languageSelect) {
-        let matched = false;
         for (let i = 0; i < languageSelect.options.length; i++) {
-          if (languageSelect.options[i].value === preselectLanguage) {
+          if (languageSelect.options[i].value.toLowerCase() === preselectLanguage) {
             languageSelect.selectedIndex = i;
-            matched = true;
+            langMatched = true;
             break;
           }
         }
-        if (!matched && languageSelect.options.length > 1) {
-          languageSelect.selectedIndex = 1;
-        }
+      }
+      if (!langMatched && languageSelect && languageSelect.options.length > 1) {
+        languageSelect.selectedIndex = 1;
       }
       populateDates();
     </script>

@@ -366,7 +366,6 @@ $demoDetails = clms_demo_payment_details($conn, $request);
     <section class="payment-card">
       <div class="payment-head">
         <h1>Pending Safety Fee Payment</h1>
-        <span style="font-size:12px;color:#64748b;font-weight:800;">PWO workers only</span>
       </div>
       <div class="payment-body">
         <div class="pending-summary">

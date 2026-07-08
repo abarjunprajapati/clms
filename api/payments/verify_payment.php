@@ -2,7 +2,6 @@
 session_start();
 require_once __DIR__ . '/../../include/config.php';
 require_once __DIR__ . '/../../include/payment_flow.php';
-require_once __DIR__ . '/../../include/payment_csl.php';
 require_once __DIR__ . '/../../include/AuditLogger.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -37,8 +36,10 @@ try {
         paymentVerifyJson(['success' => false, 'message' => 'Order ID mismatch.'], 400);
     }
 
-    // Use our new CSL module to verify the signature
-    if (!clms_verify_razorpay_signature($conn, $orderId, $paymentId, $signature)) {
+    $secret = trim((string)clms_payment_setting($conn, 'payment_gateway_key_secret', ''));
+    $generatedSignature = hash_hmac('sha256', $orderId . "|" . $paymentId, $secret);
+
+    if (!hash_equals($generatedSignature, $signature)) {
         AuditLogger::log($conn, 'PAYMENT_VERIFY_FAILED', 'payment', '', [
             'payment_ref' => $request['payment_ref'],
             'order_id' => $orderId,
@@ -50,7 +51,7 @@ try {
     // Process payment atomically
     mysqli_begin_transaction($conn);
     try {
-        // Re-check status inside transaction using lock to prevent race conditions
+        // Re-check status inside transaction using lock
         $lockedRequest = db_single($conn, "SELECT id, status, payment_ref FROM training_payment_requests WHERE id = ? FOR UPDATE", 'i', [(int)$request['id']]);
         if (!$lockedRequest || in_array(strtolower((string)$lockedRequest['status']), ['paid', 'verified'])) {
             mysqli_commit($conn);
@@ -73,15 +74,10 @@ try {
         // 3. Update Workers and Training Requests
         foreach ($workers as $w) {
             $workerId = (int)$w['id'];
-            
-            // Mark safety fee as paid and move status forward
+            // Mark safety fee as paid
             db_execute(
                 $conn,
-                "UPDATE workmen 
-                 SET execution_training_status = 'pending_training', 
-                     safety_fee_payment_option = 'paid', 
-                     updated_at = NOW() 
-                 WHERE id = ?",
+                "UPDATE workmen SET execution_training_status = 'pending_training', safety_fee_payment_option = 'paid', updated_at = NOW() WHERE id = ?",
                 'i',
                 [$workerId]
             );
@@ -90,11 +86,7 @@ try {
             if (!empty($w['training_request_id'])) {
                 db_execute(
                     $conn,
-                    "UPDATE training_requests 
-                     SET payment_status = 'paid', 
-                         payment_ref = ?, 
-                         updated_at = NOW() 
-                     WHERE id = ?",
+                    "UPDATE training_requests SET payment_status = 'paid', payment_ref = ?, updated_at = NOW() WHERE id = ?",
                     'si',
                     [$request['payment_ref'], (int)$w['training_request_id']]
                 );

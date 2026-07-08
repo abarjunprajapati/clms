@@ -58,11 +58,42 @@ function renderContent() {
     }
     $display_status = ($status === 'pending' && $annexure2a_status === 'resubmitted') ? 'resubmitted' : $status;
     $is_resubmit_mode = (($_GET['resubmit'] ?? '') === '1');
+
+    $has_pending_edit_req = false;
+    $pending_req_data = [];
+    if (!empty($c['id'])) {
+        $pending_req = db_single($conn, "SELECT id, requested_data_json FROM contractor_edit_requests WHERE contractor_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", 'i', [(int)$c['id']]);
+        if ($pending_req) {
+            $has_pending_edit_req = true;
+            $pending_req_data = json_decode($pending_req['requested_data_json'], true) ?: [];
+        }
+    }
+
+    if ($has_pending_edit_req && !empty($pending_req_data)) {
+        $c = array_merge($c, $pending_req_data);
+        if (isset($pending_req_data['selected_pos'])) {
+            $selected_pos = json_decode($pending_req_data['selected_pos'], true) ?: [];
+        }
+        if (isset($pending_req_data['selected_pwos'])) {
+            $selected_pwos = json_decode($pending_req_data['selected_pwos'], true) ?: [];
+        }
+        if (isset($pending_req_data['selected_sales'])) {
+            $selected_sos = json_decode($pending_req_data['selected_sales'], true) ?: [];
+        }
+        if (isset($pending_req_data['ecp_details_json'])) {
+            $c['ecp_details_json'] = $pending_req_data['ecp_details_json'];
+        }
+        if (isset($pending_req_data['license_details_json'])) {
+            $c['license_details_json'] = $pending_req_data['license_details_json'];
+        }
+    }
+    $is_edit_approved = (($_GET['edit_approved'] ?? '') === '1' && $status === 'approved' && !$has_pending_edit_req);
+
     // After submission, only EC Policy and Labour License rows remain editable.
-    $is_readonly = in_array($status, ['pending', 'submitted', 'resubmitted', 'under_review', 'hold'], true);
-    $is_approved_limited_edit = $status === 'approved';
+    $is_readonly = in_array($status, ['pending', 'submitted', 'resubmitted', 'under_review', 'hold'], true) || $has_pending_edit_req;
+    $is_approved_limited_edit = ($status === 'approved' && !$is_edit_approved && !$has_pending_edit_req);
     $is_limited_update_mode = $is_readonly || $is_approved_limited_edit;
-    $is_approved_view_only = false;
+    $is_approved_view_only = $has_pending_edit_req;
     
     // Parse worker categories
     $worker_cats = !empty($c['worker_category']) ? explode(',', $c['worker_category']) : [];
@@ -971,20 +1002,30 @@ function renderContent() {
         </div>
     <?php endif; ?>
 
-    <?php if ($is_readonly): ?>
+    <?php if ($has_pending_edit_req): ?>
+        <div class="alert alert-warning border-0 shadow-sm mb-4" style="background:#fef3c7; color:#92400e;">
+            <i class="fas fa-clock me-2"></i>
+            You already have a pending profile update request under Welfare review. Form is currently locked.
+        </div>
+    <?php elseif ($is_edit_approved): ?>
+        <div class="alert alert-info border-0 shadow-sm mb-4" style="background:#e0f2fe; color:#075985;">
+            <i class="fas fa-edit me-2"></i>
+            You are requesting a profile details update. Any changes made will be submitted to the Welfare department for approval.
+        </div>
+    <?php elseif ($is_readonly): ?>
         <div class="alert alert-info border-0 shadow-sm mb-4" style="background:#e0f2fe; color:#075985;">
             <i class="fas fa-lock me-2"></i>
             This registration is submitted. Only Employee Compensation Policy and Labour License Details are editable for resubmission.
         </div>
-    <?php elseif ($is_approved_view_only): ?>
-        <div class="alert alert-success border-0 shadow-sm mb-4" style="background:#dcfce7; color:#166534;">
-            <i class="fas fa-check-circle me-2"></i>
-            This approved registration is read-only. Use Resubmit EC / Labour License from dashboard to update those sections.
-        </div>
-    <?php elseif ($is_approved_limited_edit): ?>
-        <div class="alert alert-warning border-0 shadow-sm mb-4" style="background:#fef3c7; color:#92400e;">
-            <i class="fas fa-edit me-2"></i>
-            Resubmit mode: only Employee Compensation Policy and Labour License Details are editable.
+    <?php elseif ($status === 'approved' && $is_approved_limited_edit): ?>
+        <div class="alert alert-success border-0 shadow-sm mb-4" style="background:#dcfce7; color:#166534; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div>
+                <i class="fas fa-check-circle me-2"></i>
+                This approved registration is read-only for basic details. Only EC Policy & Labour License can be updated.
+            </div>
+            <div>
+                <a href="?edit_approved=1" class="btn btn-sm btn-outline-success" style="font-size:12px; font-weight:700;"><i class="fas fa-user-edit me-1"></i> Request Profile Details Update</a>
+            </div>
         </div>
     <?php endif; ?>
 
@@ -1156,6 +1197,7 @@ function renderContent() {
                     <div class="registration-section-header">2. Whether Registered under EPF</div>
                     <div class="registration-grid">
                         <div>
+                            <label class="form-label d-none d-md-block" style="visibility:hidden; margin-bottom: 8px;">&nbsp;</label>
                             <div class="gov-radio-group">
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="epf_registered" id="epf_yes" value="YES" <?= $epf_selected_yes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
@@ -1173,16 +1215,17 @@ function renderContent() {
                             <input type="hidden" name="epf_account_no" id="epf_account_no" value="<?= htmlspecialchars($c['epf_account_no'] ?? '') ?>">
                         </div>
                         <div class="span-2" id="epfReasonCard">
-                            <label class="form-label required">3. EPF Non-Registration Reason</label>
+                            <label class="form-label required">EPF Non-Registration Reason</label>
                             <textarea class="form-control" name="epf_non_registration_reason" id="epf_non_registration_reason" rows="3" placeholder="Enter reason for not registered under EPF" <?= $readonly_attr ?>><?= htmlspecialchars($epf_reason) ?></textarea>
                         </div>
                     </div>
                 </div>
 
                 <div class="registration-card">
-                    <div class="registration-section-header">4. Whether Registered under ESI</div>
+                    <div class="registration-section-header">3. Whether Registered under ESI</div>
                     <div class="registration-grid">
                         <div>
+                            <label class="form-label d-none d-md-block" style="visibility:hidden; margin-bottom: 8px;">&nbsp;</label>
                             <div class="gov-radio-group">
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="esi_registered" id="esi_yes" value="YES" <?= $esi_selected_yes ? 'checked' : '' ?> required <?= $disabled_attr ?>>
@@ -1209,7 +1252,7 @@ function renderContent() {
                 </div>
 
                 <div class="registration-card">
-                    <div class="registration-section-header">5. Wage Declaration by Contractor</div>
+                    <div class="registration-section-header">4. Wage Declaration by Contractor</div>
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="wage_declaration" id="wage_declaration" value="I declare to pay minimum wage as per government norms" <?= !empty($c['wage_declaration']) ? 'checked' : '' ?> required <?= $disabled_attr ?>>
                         <label class="form-check-label fw-semibold" for="wage_declaration">With this I declare to pay minimum wage as per government norms.</label>
@@ -1218,7 +1261,7 @@ function renderContent() {
                 </div>
 
                 <div class="registration-card registration-card-wide">
-                    <div class="registration-section-header">6. Employee Compensation Policy</div>
+                    <div class="registration-section-header">5. Employee Compensation Policy</div>
                     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                         <div class="gov-radio-group">
                             <div class="form-check">
@@ -1257,12 +1300,12 @@ function renderContent() {
                 </div>
 
                 <div class="registration-card" id="reasonCard">
-                    <div class="registration-section-header">7. EC Policy Non-Coverage Reason</div>
+                    <div class="registration-section-header">EC Policy Non-Coverage Reason</div>
                     <textarea class="form-control" name="ecp_exemption_reason" id="ecp_exemption_reason" placeholder="Enter reason for not covered under EC Policy" <?= $limited_edit_readonly_attr ?>><?= htmlspecialchars($ecp_reason) ?></textarea>
                 </div>
 
                 <div class="registration-card">
-                    <div class="registration-section-header">8. Approximate Workforce Details</div>
+                    <div class="registration-section-header">6. Approximate Workforce Details</div>
                     <div class="registration-grid">
                         <div>
                             <label class="form-label required">No. of Workers Proposed to be Engaged</label>
@@ -1282,7 +1325,7 @@ function renderContent() {
 
                 <div class="registration-card" id="section7Card">
                     <div class="registration-section-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
-                        <span>9. Labour License Details</span>
+                        <span>7. Labour License Details</span>
                         <span id="licenceMandatoryBadge" class="badge bg-warning text-dark" style="display:none;">Mandatory (Workers &gt;= <?= $licence_threshold ?>)</span>
                     </div>
                     <div class="d-flex justify-content-end mb-3"><button type="button" class="btn btn-sm btn-reg-draft" onclick="addLicenseRow()" <?= $limited_edit_disabled_attr ?>>Add Row</button></div>
@@ -1315,30 +1358,38 @@ function renderContent() {
                 <div class="registration-card">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <div class="registration-section-header">10. Kerala Labour Welfare Fund Registration No</div>
+                            <div class="registration-section-header">8. Kerala Labour Welfare Fund Registration No</div>
                             <input type="text" class="form-control" name="labour_license_appl_no" value="<?= htmlspecialchars($c['labour_license_appl_no'] ?? '') ?>" <?= $readonly_attr ?>>
                         </div>
                         <div class="col-md-6">
-                            <div class="registration-section-header">11. Labour Identification Number</div>
+                            <div class="registration-section-header">9. Labour Identification Number</div>
                             <input type="text" class="form-control" name="labour_identification_no" id="labour_identification_no" pattern="^[0-9]+$" value="<?= htmlspecialchars($c['labour_identification_no'] ?? '') ?>" placeholder="Numeric digits only" <?= $readonly_attr ?>>
                             <div class="invalid-feedback">LIN number must be numeric only.</div>
                         </div>
                     </div>
                 </div>
-                <div class="registration-card"><div class="registration-section-header">12. Name of Contact Person</div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($c['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>><div class="invalid-feedback">Contact person must be letters only.</div></div>
+                <div class="registration-card"><div class="registration-section-header">10. Name of Contact Person</div><input type="text" class="form-control" name="contact_person" id="contact_person" pattern="^[a-zA-Z\s]+$" value="<?= htmlspecialchars($c['contact_person'] ?? '') ?>" required placeholder="Alphabets only" <?= $readonly_attr ?>><div class="invalid-feedback">Contact person must be letters only.</div></div>
                 <div class="registration-card">
-                    <div class="registration-section-header">13. Mobile Number </div>
+                    <div class="registration-section-header">11. Mobile Number </div>
                     <div class="registration-grid">
                         <div><label class="form-label required">Mobile Number 1</label><input type="text" class="form-control" name="mobile" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['mobile'] ?? '') ?>" required oninvalid="this.setCustomValidity('Enter correct mobile number.')" oninput="this.setCustomValidity('')" <?= $readonly_attr ?>></div>
                         <div><label class="form-label">Mobile Number 2</label><input type="text" class="form-control" name="vendor_mob2" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['vendor_mob2'] ?? '') ?>" oninvalid="this.setCustomValidity('Enter correct mobile number.')" oninput="this.setCustomValidity('')" <?= $readonly_attr ?>></div>
                     </div>
                 </div>
-                <div class="registration-card"><div class="registration-section-header">14. Remarks</div><textarea class="form-control" name="remarks" placeholder="Enter remarks" <?= $readonly_attr ?>><?= htmlspecialchars($c['remarks'] ?? '') ?></textarea></div>
+                <div class="registration-card"><div class="registration-section-header">12. Remarks</div><textarea class="form-control" name="remarks" placeholder="Enter remarks" <?= $readonly_attr ?>><?= htmlspecialchars($c['remarks'] ?? '') ?></textarea></div>
 
                 <div class="registration-actions">
                     <button type="button" class="btn btn-reg-prev px-4" onclick="showTab('basicDetails')">Previous</button>
                     <button type="button" class="btn btn-reg-draft px-4" onclick="saveDraft()" <?= $draft_disabled_attr ?>>Save Draft</button>
-                    <button type="submit" class="btn btn-reg-submit px-4" id="submitBtn" <?= $submit_disabled_attr ?>><?= $is_limited_update_mode ? 'Resubmit for Welfare Approval' : 'Submit Registration' ?></button>
+                    <?php
+                    $submit_btn_label = 'Submit Registration';
+                    if ($is_edit_approved) {
+                        $submit_btn_label = 'Submit Profile Update Request';
+                    } elseif ($is_limited_update_mode) {
+                        $submit_btn_label = 'Resubmit for Welfare Approval';
+                    }
+                    ?>
+                    <button type="submit" class="btn btn-reg-submit px-4" id="submitBtn" <?= $submit_disabled_attr ?>><?= $submit_btn_label ?></button>
                 </div>
 
                 <?php if (false): ?>
@@ -1602,6 +1653,7 @@ function renderContent() {
 <script>
     const ANNEXURE_IS_READONLY = <?= $is_readonly ? 'true' : 'false' ?>;
     const ANNEXURE2A_LIMITED_EDIT = <?= $is_limited_update_mode ? 'true' : 'false' ?>;
+    const IS_EDIT_APPROVED = <?= $is_edit_approved ? 'true' : 'false' ?>;
     const SAVED_POS = <?= json_encode($selected_pos) ?>;
     const SAVED_PWOS = <?= json_encode($selected_pwos) ?>;
     const SAVED_SOS = <?= json_encode($selected_sos) ?>;
@@ -2079,7 +2131,11 @@ function renderContent() {
         }
         
         const formData = new FormData(form);
-        formData.append('action', ANNEXURE2A_LIMITED_EDIT ? 'resubmit' : 'submit');
+        if (typeof IS_EDIT_APPROVED !== 'undefined' && IS_EDIT_APPROVED) {
+            formData.append('action', 'request_update');
+        } else {
+            formData.append('action', ANNEXURE2A_LIMITED_EDIT ? 'resubmit' : 'submit');
+        }
 
         try {
             const resp = await fetch('../../api/save_annexure2a.php', { method: 'POST', body: formData });
