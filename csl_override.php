@@ -99,6 +99,23 @@ function _csl_call_api($conn, $request) {
     if ($err) return ['ok'=>false,'msg'=>"cURL: $err"];
 
     if ($code >= 200 && $code < 300) {
+        // CSL returns HTML with inline JS setup for Razorpay. Parse it!
+        if (strpos($resp, 'checkout.js') !== false || strpos($resp, 'startPayment') !== false) {
+            $oid = '';
+            $rkey = '';
+            if (preg_match("/order_id:\s*'([^']+)'/", $resp, $m)) {
+                $oid = $m[1];
+            }
+            if (preg_match("/key:\s*'([^']+)'/", $resp, $m)) {
+                $rkey = $m[1];
+            }
+            
+            if ($oid) {
+                db_execute($conn, "UPDATE training_payment_requests SET gateway_order_id=?,status='gateway_created',updated_at=NOW() WHERE id=?", 'si', [$oid, $request['id']]);
+                return ['ok' => true, 'order_id' => $oid, 'key_id' => $rkey];
+            }
+        }
+
         $dec = json_decode($resp, true);
         $get = function($a,$k){ if(!is_array($a))return null; foreach($a as $key=>$v){if(trim($key)===$k)return trim($v);}return null; };
         $st  = $get($dec, 'status');
@@ -141,9 +158,12 @@ try {
 
         $contractor = clms_get_contractor_user_for_payment($conn, (int)$request['contractor_id']);
         AuditLogger::log($conn,'CSL_ORDER_CREATED','payment','',['ref'=>$request['payment_ref'],'order'=>$r['order_id']],'CSL order created.');
+        
+        $finalKey = !empty($r['key_id']) ? $r['key_id'] : $keyId;
+
         _csl_json([
             'success'=>true,'message'=>'CSL order created.','provider'=>'razorpay',
-            'key_id'=>$keyId,'gateway_order_id'=>$r['order_id'],
+            'key_id'=>$finalKey,'gateway_order_id'=>$r['order_id'],
             'amount'=>$request['total_amount'],'currency'=>'INR','token'=>$token,
             'contractor_name'=>$contractor['contractor_name']??'Contractor',
             'contractor_email'=>$contractor['email']??'',

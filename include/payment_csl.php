@@ -134,6 +134,30 @@ function clms_csl_create_payment_order($conn, $paymentRequest) {
     }
     
     if ($httpCode >= 200 && $httpCode < 300) {
+        // CSL returns HTML with inline JS setup for Razorpay. Parse it!
+        if (strpos($response, 'checkout.js') !== false || strpos($response, 'startPayment') !== false) {
+            $oid = '';
+            $rkey = '';
+            if (preg_match("/order_id:\s*'([^']+)'/", $response, $m)) {
+                $oid = $m[1];
+            }
+            if (preg_match("/key:\s*'([^']+)'/", $response, $m)) {
+                $rkey = $m[1];
+            }
+            
+            if ($oid) {
+                db_execute($conn, "UPDATE training_payment_requests SET gateway_order_id = ?, status = 'gateway_created', updated_at = NOW() WHERE id = ?", 'si', [$oid, $paymentRequest['id']]);
+                
+                // Return success along with the custom key_id if provided
+                return [
+                    "status" => true,
+                    "order_id" => $oid,
+                    "key_id" => $rkey,
+                    "provider" => "RAZORPAY"
+                ];
+            }
+        }
+
         $decoded = json_decode($response, true);
         
         // Helper to get case-insensitive key with trim to handle spaces in JSON keys
