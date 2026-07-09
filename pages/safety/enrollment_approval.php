@@ -169,6 +169,22 @@ function renderContent() {
 
     }
 
+    if (!empty($safetyApprovalRequests)) {
+        $ids = array_column($safetyApprovalRequests, 'workman_id');
+        $workerDocs = [];
+        if (!empty($ids)) {
+            $idsCsv = implode(',', array_map('intval', $ids));
+            $docRes = mysqli_query($conn, "SELECT workman_id, document_type, file_path FROM documents WHERE workman_id IN ($idsCsv)");
+            while ($d = mysqli_fetch_assoc($docRes)) {
+                $workerDocs[$d['workman_id']][] = ['type' => $d['document_type'], 'file_path' => $d['file_path']];
+            }
+        }
+        foreach ($safetyApprovalRequests as &$r) {
+            $r['documents'] = $workerDocs[$r['workman_id']] ?? [];
+        }
+        unset($r);
+    }
+
 
     // ── Group by Language → Batch ─────────────────────────────────────────────
     // Effective batch number: prefer pre-assigned batch (from training_class_batches JOIN),
@@ -407,6 +423,11 @@ function renderContent() {
             <code><?= htmlspecialchars($approval['executing_officer_code'] ?? '-') ?></code>
             <div class="text-muted"><?= htmlspecialchars($approval['executing_officer_name'] ?? '') ?></div>
             <span class="badge badge-success" style="margin-top:4px">EO Approved</span>
+            <?php if(!empty($approval['execution_training_remarks'])): ?>
+              <div style="font-size:11px; margin-top:6px; color:#64748b; font-style:italic; white-space:normal; line-height:1.2;">
+                <i class="fas fa-comment-dots" style="color:#94a3b8; font-size:9px;"></i> <?= htmlspecialchars($approval['execution_training_remarks']) ?>
+              </div>
+            <?php endif; ?>
           </td>
           <td>
             <span class="badge badge-warning">Safety Pending</span>
@@ -455,153 +476,82 @@ function renderContent() {
   <button class="btn-row btn-row-view" onclick="clearAllSelections()" style="border:1px solid rgba(255,255,255,.2);color:#fff;background:transparent;font-size:11px">Clear</button>
 </div>
 
-<!-- Workman Details Modal -->
+<!-- Workman Details Modal (Popup Style) -->
 <style>
-.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.65);backdrop-filter:blur(4px);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
-.modal-overlay.show{display:flex!important}
-.modal-box{background:#f8fafc;border-radius:16px;max-width:1060px;width:97%;box-shadow:0 25px 50px -12px rgba(0,0,0,.3);overflow:hidden;display:flex;flex-direction:column;max-height:92vh;animation:modalFadeIn .25s ease-out}
-@keyframes modalFadeIn{from{transform:scale(.95);opacity:0}to{transform:scale(1);opacity:1}}
-.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid #e2e8f0;background:#fff}
-.modal-title{margin:0;font-size:16px;font-weight:700;color:#0f172a}
-.modal-close{background:none;border:none;font-size:24px;cursor:pointer;color:#94a3b8;line-height:1;transition:color .15s}
-.modal-close:hover{color:#475569}
-.modal-body{padding:20px 24px;overflow-y:auto;flex-grow:1}
-/* Profile Header Banner */
-.wm-profile-banner{display:flex;gap:20px;align-items:center;background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%);color:#fff;padding:20px 24px;border-radius:12px;margin-bottom:20px;box-shadow:0 8px 15px -3px rgba(0,0,0,0.15)}
-.wm-photo{width:80px;height:96px;object-fit:cover;border-radius:10px;border:3px solid rgba(255,255,255,0.8);flex-shrink:0}
-.wm-photo-placeholder{width:80px;height:96px;border-radius:10px;border:3px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:32px;color:rgba(255,255,255,0.7);flex-shrink:0}
-.wm-banner-name{font-size:20px;font-weight:800;margin:0 0 4px;color:#fff}
-.wm-banner-sub{font-size:12px;color:rgba(255,255,255,.85);margin:0 0 8px}
-.wm-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;text-transform:uppercase;letter-spacing:.5px;display:inline-block;background:rgba(255,255,255,.2);color:#fff;margin-right:6px}
-/* Section cards */
-.wm-section{background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.wm-section-title{font-size:10px;font-weight:800;color:#fff;background:#1e3a8a;padding:8px 14px;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:8px}
-.wm-section-body{padding:14px 16px}
-.wm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px}
-.wm-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 14px}
-.wm-row{display:flex;flex-direction:column;gap:2px}
-.wm-label{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.3px}
-.wm-val{font-size:12px;font-weight:600;color:#1e293b;word-break:break-word}
-/* Doc cards */
-.wm-docs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
-.wm-doc-card{padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;display:flex;flex-direction:column;gap:6px}
-.wm-doc-label{font-size:11px;font-weight:600;color:#334155}
-/* 2-col layout */
-.wm-body-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-overlay.show {
+  display: flex !important;
+  opacity: 1; pointer-events: all;
+}
+.modal-overlay.hidden {
+  opacity: 0; pointer-events: none;
+}
+.modal-box {
+  background: #fff;
+  border-radius: 12px;
+  max-width: 1000px;
+  width: 96%;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  animation: modalFadeIn 0.25s ease-out;
+}
+@keyframes modalFadeIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #94a3b8;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.modal-close:hover {
+  color: #475569;
+}
+.modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex-grow: 1;
+}
 </style>
 
-<div id="workmanModal" class="modal-overlay" onclick="handleOverlayClick(event)">
-  <div class="modal-box">
+<div id="workmanModal" class="modal-overlay hidden" onclick="handleOverlayClick(event)">
+  <div class="modal-box" style="max-width:850px; width:92%;">
     <div class="modal-header">
-      <h3 class="modal-title"><i class="fas fa-id-card" style="color:#1e3a8a;margin-right:6px"></i> Workman Enrollment Profile</h3>
+      <h3 class="modal-title">Worker Profile</h3>
       <button class="modal-close" onclick="closeWorkmanModal()">&times;</button>
     </div>
-    <div class="modal-body">
-
-      <!-- Header Banner -->
-      <div class="wm-profile-banner">
-        <div class="wm-photo-placeholder" id="wm-photo-wrap"><i class="fas fa-user"></i></div>
-        <div style="flex-grow:1">
-          <h4 class="wm-banner-name" id="wm-name">-</h4>
-          <p class="wm-banner-sub" id="wm-banner-sub">-</p>
-          <div>
-            <span class="wm-badge" id="wm-pass-badge">Workman</span>
-            <span class="wm-badge" id="wm-status-badge">-</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 2-col Body -->
-      <div class="wm-body-grid">
-        <!-- LEFT -->
-        <div>
-          <!-- Basic Info -->
-          <div class="wm-section">
-            <div class="wm-section-title"><i class="fas fa-id-card"></i> Basic Info</div>
-            <div class="wm-section-body">
-              <div class="wm-grid">
-                <div class="wm-row"><span class="wm-label">Father's Name</span><span class="wm-val" id="wm-father">-</span></div>
-                <div class="wm-row"><span class="wm-label">Gender / DOB</span><span class="wm-val" id="wm-gender-dob">-</span></div>
-                <div class="wm-row"><span class="wm-label">Marital Status</span><span class="wm-val" id="wm-marital">-</span></div>
-                <div class="wm-row"><span class="wm-label">Nationality</span><span class="wm-val" id="wm-nationality">-</span></div>
-                <div class="wm-row"><span class="wm-label">Blood Group</span><span class="wm-val" id="wm-blood">-</span></div>
-                <div class="wm-row"><span class="wm-label">Religion</span><span class="wm-val" id="wm-religion">-</span></div>
-                <div class="wm-row"><span class="wm-label">PWD Status</span><span class="wm-val" id="wm-pwd">-</span></div>
-                <div class="wm-row"><span class="wm-label">Passport No</span><span class="wm-val" id="wm-passport">-</span></div>
-                <div class="wm-row"><span class="wm-label">Driving Licence</span><span class="wm-val" id="wm-dl">-</span></div>
-                <div class="wm-row"><span class="wm-label">Email ID</span><span class="wm-val" id="wm-email">-</span></div>
-              </div>
-            </div>
-          </div>
-          <!-- Address / Contact -->
-          <div class="wm-section">
-            <div class="wm-section-title"><i class="fas fa-map-marker-alt"></i> Address / Contact</div>
-            <div class="wm-section-body">
-              <div class="wm-grid" style="margin-bottom:10px">
-                <div class="wm-row"><span class="wm-label">Mobile Number</span><span class="wm-val" id="wm-mobile">-</span></div>
-                <div class="wm-row"><span class="wm-label">WhatsApp</span><span class="wm-val" id="wm-whatsapp">-</span></div>
-                <div class="wm-row"><span class="wm-label">Emergency Contact</span><span class="wm-val" id="wm-emergency">-</span></div>
-                <div class="wm-row"><span class="wm-label">Location</span><span class="wm-val" id="wm-location">-</span></div>
-              </div>
-              <div style="display:grid;gap:8px">
-                <div class="wm-row"><span class="wm-label">Present Address</span><span class="wm-val" id="wm-present-addr">-</span></div>
-                <div class="wm-row"><span class="wm-label">Permanent Address</span><span class="wm-val" id="wm-permanent-addr">-</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- RIGHT -->
-        <div>
-          <!-- Employment -->
-          <div class="wm-section">
-            <div class="wm-section-title"><i class="fas fa-briefcase"></i> Work / Employment</div>
-            <div class="wm-section-body">
-              <div class="wm-grid">
-                <div class="wm-row"><span class="wm-label">Contractor</span><span class="wm-val" id="wm-contractor">-</span></div>
-                <div class="wm-row"><span class="wm-label">Work Order No</span><span class="wm-val" id="wm-wo-no">-</span></div>
-                <div class="wm-row"><span class="wm-label">Project (WBS)</span><span class="wm-val" id="wm-project">-</span></div>
-                <div class="wm-row"><span class="wm-label">Department</span><span class="wm-val" id="wm-dept">-</span></div>
-                <div class="wm-row"><span class="wm-label">Trade</span><span class="wm-val" id="wm-trade">-</span></div>
-                <div class="wm-row"><span class="wm-label">Skill Category</span><span class="wm-val" id="wm-skill-cat">-</span></div>
-                <div class="wm-row"><span class="wm-label">Nature of Work</span><span class="wm-val" id="wm-nature-work">-</span></div>
-                <div class="wm-row"><span class="wm-label">Experience</span><span class="wm-val" id="wm-experience">-</span></div>
-                <div class="wm-row"><span class="wm-label">Safety Language</span><span class="wm-val" id="wm-safety-lang">-</span></div>
-                <div class="wm-row"><span class="wm-label">Executing Officer</span><span class="wm-val" id="wm-exec-officer">-</span></div>
-              </div>
-            </div>
-          </div>
-          <!-- Statutory -->
-          <div class="wm-section">
-            <div class="wm-section-title"><i class="fas fa-university"></i> Statutory &amp; Banking</div>
-            <div class="wm-section-body">
-              <div class="wm-grid">
-                <div class="wm-row"><span class="wm-label">Aadhaar Number</span><span class="wm-val" id="wm-aadhaar">-</span></div>
-                <div class="wm-row"><span class="wm-label">EPF Registered</span><span class="wm-val" id="wm-epf">-</span></div>
-                <div class="wm-row"><span class="wm-label">PF No / UAN</span><span class="wm-val" id="wm-pf-uan">-</span></div>
-                <div class="wm-row"><span class="wm-label">ESI Registered</span><span class="wm-val" id="wm-esi">-</span></div>
-                <div class="wm-row"><span class="wm-label">ESIC Number</span><span class="wm-val" id="wm-esic">-</span></div>
-                <div class="wm-row"><span class="wm-label">Bank Account No</span><span class="wm-val" id="wm-bank-acc">-</span></div>
-                <div class="wm-row"><span class="wm-label">Bank IFSC Code</span><span class="wm-val" id="wm-bank-ifsc">-</span></div>
-                <div class="wm-row"><span class="wm-label">Certified Wage Rate</span><span class="wm-val" id="wm-wage-rate">-</span></div>
-                <div class="wm-row"><span class="wm-label">Payment Option</span><span class="wm-val" id="wm-pay-option">-</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Documents -->
-      <div class="wm-section" style="margin-bottom:0">
-        <div class="wm-section-title"><i class="fas fa-folder-open"></i> Documents Vault (Annexure 4A / 6A)</div>
-        <div class="wm-section-body">
-          <div class="wm-docs-grid" id="wm-docs-container"></div>
-        </div>
-      </div>
-
-    </div>
-    <div style="padding:14px 24px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;justify-content:flex-end">
-      <button class="btn btn-outline" onclick="closeWorkmanModal()">Close</button>
-    </div>
+    <div id="viewContent" class="modal-body" style="padding:20px;"></div>
   </div>
 </div>
 
@@ -616,96 +566,299 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-function showWorkmanDetails(data) {
-  // Populate banner header
-  document.getElementById('wm-name').textContent       = data.name || 'N/A';
-  const bannerSub = document.getElementById('wm-banner-sub');
-  if (bannerSub) bannerSub.textContent = (data.gender || 'N/A') + ' | DOB: ' + (data.dob || 'N/A') + ' | Aadhaar: ' + (data.aadhaar || 'N/A');
-  const passB = document.getElementById('wm-pass-badge');
-  if (passB) passB.textContent = data.pass_type || 'Workman';
-  const statusB = document.getElementById('wm-status-badge');
-  if (statusB) statusB.textContent = data.work_order_no || data.contractor_name || '';
+function showWorkmanDetails(w) {
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const d = new Date(dateString);
+    if (isNaN(d)) return dateString;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  };
 
-  // Photo
-  const photoWrap = document.getElementById('wm-photo-wrap');
-  if (photoWrap && data.photo) {
-    photoWrap.innerHTML = `<img src="../../uploads/workers/${encodeURIComponent(data.photo)}" class="wm-photo" onerror="this.parentNode.innerHTML='<i class=\\'fas fa-user\\'></i>'">`;
-  }
-
-  document.getElementById('wm-father').textContent     = data.father_name || 'N/A';
-  document.getElementById('wm-gender-dob').textContent = (data.gender || 'N/A') + ' / ' + (data.dob || 'N/A');
-  document.getElementById('wm-marital').textContent    = data.marital_status || 'N/A';
-  document.getElementById('wm-nationality').textContent= data.nationality || 'N/A';
-  document.getElementById('wm-blood').textContent      = data.blood_group || 'N/A';
-  document.getElementById('wm-religion').textContent   = data.region || 'N/A';
-  document.getElementById('wm-pwd').textContent        = data.pwd_status || 'N/A';
-  document.getElementById('wm-passport').textContent   = data.passport_no || 'N/A';
-  document.getElementById('wm-dl').textContent         = data.driving_licence_no || 'N/A';
-  document.getElementById('wm-email').textContent      = data.email || data.contact_email || 'N/A';
-  document.getElementById('wm-mobile').textContent     = data.mobile || 'N/A';
-  document.getElementById('wm-whatsapp').textContent   = data.whatsapp_no || 'N/A';
-  document.getElementById('wm-emergency').textContent  = data.emergency_contact || 'N/A';
-  document.getElementById('wm-present-addr').innerHTML = (data.present_address || 'N/A').replace(/\n/g, '<br>');
-  document.getElementById('wm-permanent-addr').innerHTML = (data.permanent_address || 'N/A').replace(/\n/g, '<br>');
-  document.getElementById('wm-location').textContent   = [data.district, data.state, data.pincode].filter(Boolean).join(', ');
-  document.getElementById('wm-contractor').textContent = data.contractor_name || 'N/A';
-  document.getElementById('wm-wo-no').textContent      = data.work_order_no || 'N/A';
-  document.getElementById('wm-project').textContent    = data.project_name || 'N/A';
-  document.getElementById('wm-dept').textContent       = data.department || 'N/A';
-  document.getElementById('wm-trade').textContent      = data.trade || 'N/A';
-  document.getElementById('wm-skill-cat').textContent  = data.skill_category || 'N/A';
-  document.getElementById('wm-nature-work').textContent= data.nature_of_work || 'N/A';
-  document.getElementById('wm-experience').textContent = (data.experience || '0') + ' Years';
-  document.getElementById('wm-safety-lang').textContent= (data.training_booking_language || data.safety_language || 'N/A');
-  document.getElementById('wm-exec-officer').textContent= (data.executing_officer_name || 'N/A') + ' (E-Code: ' + (data.executing_officer_code || 'N/A') + ')';
-  document.getElementById('wm-aadhaar').textContent    = data.aadhaar || 'N/A';
-  document.getElementById('wm-epf').textContent        = data.epf_registered_worker || 'N/A';
-  document.getElementById('wm-pf-uan').textContent     = (data.pf_no || 'N/A') + ' / ' + (data.uan_number || 'N/A');
-  document.getElementById('wm-esi').textContent        = data.esi_registered_worker || 'N/A';
-  document.getElementById('wm-esic').textContent       = data.esic_number || data.esi_no || 'N/A';
-  document.getElementById('wm-bank-acc').textContent   = data.bank_account || 'N/A';
-  document.getElementById('wm-bank-ifsc').textContent  = data.ifsc || 'N/A';
-  document.getElementById('wm-wage-rate').textContent  = 'INR ' + (data.certified_wage_rate || '0.00');
-  document.getElementById('wm-pay-option').textContent = (data.safety_fee_payment_option || 'N/A').replace(/_/g, ' ').toUpperCase();
-
-  const docContainer = document.getElementById('wm-docs-container');
-  docContainer.innerHTML = '';
-  const docsList = [
-    { key: 'aadhaar_doc', label: 'Aadhaar (4A)' },
-    { key: 'medical_doc', label: 'Medical (4A)' },
-    { key: 'police_doc', label: 'Police Verification (4A)' },
-    { key: 'insurance_doc', label: 'Insurance (4A)' },
-    { key: 'education_doc', label: 'Education (4A)' },
-    { key: 'educational_doc', label: 'Education (Alt)' },
-    { key: 'photo', label: 'Worker Photo' },
-    { key: 'signature_doc', label: 'Worker Signature' },
-    { key: 'bank_doc', label: 'Bank Proof' },
-    { key: 'gatepass_doc', label: 'Gate Pass Doc' },
-    { key: 'skill_cert_doc', label: 'Skill Certificate' },
-    { key: 'training_approval_doc', label: 'Training Approval Doc' }
-  ];
-  let docCount = 0;
-  docsList.forEach(doc => {
-    const file = data[doc.key];
-    if (file) {
-      docCount++;
-      const card = document.createElement('div');
-      card.className = 'wm-doc-card';
-      card.innerHTML = `<span class="wm-doc-label">${doc.label}</span>
-        <a href="../../uploads/workers/${encodeURIComponent(file)}" target="_blank"
-           class="btn btn-sm btn-outline" style="text-align:center;width:100%;margin-top:auto;font-size:11px;padding:4px 6px;">
-          <i class="fas fa-external-link-alt"></i> View</a>`;
-      docContainer.appendChild(card);
+  const getDocUrl = (path) => {
+    if (!path) return '';
+    if (path.match(/^https?:\/\//i)) {
+        return path;
     }
-  });
-  if (docCount === 0) {
-    docContainer.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:15px;color:#64748b;font-size:12px;">No uploaded documents found.</div>';
+    const filename = path.split('/').pop();
+    return `../../uploads/workers/${encodeURIComponent(filename)}`;
+  };
+
+  const renderDocLink = (label, path) => {
+    if (!path) return '';
+    const url = getDocUrl(path);
+    return `
+      <div class="doc-item" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; font-size:12px; margin-bottom:6px; font-weight:600;">
+        <i class="fas fa-file-pdf text-danger" style="font-size:15px; color:#ef4444;"></i>
+        <span class="doc-label" style="flex-grow:1; margin-left:10px; font-weight:600; color:#334155;">${label}</span>
+        <a href="${url}" target="_blank" class="btn btn-xs btn-outline-primary" style="padding:2px 8px; font-size:11px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:4px; border:1px solid #3b82f6; border-radius:6px; color:#3b82f6; background:transparent;"><i class="fas fa-external-link-alt"></i> View</a>
+      </div>
+    `;
+  };
+
+  const photoSrc = w.photo ? getDocUrl(w.photo) : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23cbd5e1"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+
+  let statusLabel = 'Active';
+  let statusStyle = 'background:#10b981; color:#fff;';
+  if (w.is_blocked == 1) {
+    statusLabel = `Blocked by ${w.blocked_source || 'Welfare'}`;
+    statusStyle = 'background:#ef4444; color:#fff;';
   }
-  document.getElementById('workmanModal').classList.add('show');
+
+  let vaultHtml = '';
+  const renderedCoreFiles = new Set();
+  const getBasename = (p) => p ? p.split(/[\\/]/).pop().toLowerCase() : '';
+  
+  const renderAndTrack = (label, path) => {
+    if (!path) return '';
+    renderedCoreFiles.add(getBasename(path));
+    return renderDocLink(label, path);
+  };
+
+  vaultHtml += renderAndTrack('Workman Photo', w.photo);
+  vaultHtml += renderAndTrack('Signature', w.signature);
+  vaultHtml += renderAndTrack('Aadhaar Card', w.aadhaar_doc);
+  vaultHtml += renderAndTrack('Training Approval', w.training_approval_doc);
+  vaultHtml += renderAndTrack('Education Cert', w.education_doc);
+  vaultHtml += renderAndTrack('Bank Passbook', w.bank_doc);
+  vaultHtml += renderAndTrack('Skill Certificate', w.skill_cert_doc);
+  vaultHtml += renderAndTrack('Police Verification', w.police_doc);
+  vaultHtml += renderAndTrack('Medical Report', w.medical_doc);
+  vaultHtml += renderAndTrack('Insurance Copy', w.insurance_doc);
+
+  if (vaultHtml.trim() === '') {
+    vaultHtml = '<div style="font-size:11px; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #e2e8f0; border-radius:8px;">No core documents uploaded.</div>';
+  }
+
+  let dynamicDocsHtml = '';
+  if (w.documents && w.documents.length > 0) {
+    let count = 0;
+    w.documents.forEach(doc => {
+      if (!renderedCoreFiles.has(getBasename(doc.file_path))) {
+        const docLink = renderDocLink(doc.type, doc.file_path);
+        if (docLink) {
+          dynamicDocsHtml += docLink;
+          count++;
+        }
+      }
+    });
+    if (count === 0) {
+      dynamicDocsHtml = '<div style="font-size:11px; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #e2e8f0; border-radius:8px;">No additional dynamic documents.</div>';
+    }
+  } else {
+    dynamicDocsHtml = '<div style="font-size:11px; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #e2e8f0; border-radius:8px;">No additional dynamic documents.</div>';
+  }
+
+  let payStatusStr = (w.training_payment_status || '').toUpperCase();
+  if (!payStatusStr) payStatusStr = 'NOT PAID';
+  let payBadgeColor = payStatusStr === 'PAID' ? '#166534' : (payStatusStr === 'NOT PAID' ? '#475569' : '#92400e');
+
+  document.getElementById('viewContent').innerHTML = `
+    <style>
+      .profile-container { font-family: 'Outfit', 'Inter', sans-serif; color: #1e293b; text-align: left; }
+      .profile-header-card { display: flex; gap: 24px; background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; padding: 24px; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); align-items: center; }
+      .profile-photo { width: 100px; height: 120px; object-fit: cover; border-radius: 12px; border: 3px solid rgba(255,255,255,0.8); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+      .profile-header-info { display: flex; flex-direction: column; gap: 4px; flex-grow: 1; }
+      .profile-name { font-size: 22px; font-weight: 800; margin: 0; color: #fff; line-height: 1.2; }
+      .profile-sub { font-size: 13px; color: rgba(255,255,255,0.85); margin-bottom: 6px; }
+      .badge-container { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+      .profile-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; }
+      .badge-role { background: rgba(255,255,255,0.2); color: white; }
+      
+      .profile-body-grid { display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 20px; }
+      .profile-section-card { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+      .profile-section-title { font-size: 13px; font-weight: 800; color: #1e3a8a; border-bottom: 2px solid #eff6ff; padding-bottom: 6px; margin-top: 0; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+      
+      .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; font-size: 13px; }
+      .detail-row { display: flex; flex-direction: column; gap: 2px; }
+      .detail-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.3px; }
+      .detail-val { font-weight: 600; color: #1e293b; word-break: break-all; }
+    </style>
+
+    <div class="profile-container">
+      <!-- Banner header -->
+      <div class="profile-header-card">
+        <img src="${photoSrc}" class="profile-photo" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;%23cbd5e1&quot;><path d=&quot;M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z&quot;/></svg>'">
+        <div class="profile-header-info">
+          <h4 class="profile-name">${w.name}</h4>
+          <div class="profile-sub">${w.gender} | DOB: ${formatDate(w.dob)} | Reg Date: ${formatDate(w.registration_date)}</div>
+          <div class="badge-container">
+            <span class="profile-badge badge-role"><i class="fas fa-user-shield"></i> ${w.worker_type ? w.worker_type.replace(' Pass', '') : 'Workman'}</span>
+            <span class="profile-badge" style="${statusStyle}"><i class="fas fa-info-circle"></i> ${statusLabel}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Body content split -->
+      <div class="profile-body-grid">
+        <!-- Left: Details -->
+        <div>
+          <!-- 1. Personal Info -->
+          <div class="profile-section-card">
+            <h5 class="profile-section-title"><i class="fas fa-id-card"></i> Personal Information</h5>
+            <div class="details-grid">
+              <div class="detail-row">
+                <span class="detail-label">Temp ID</span>
+                <span class="detail-val text-primary" style="font-weight:700; color:#3b82f6;">${w.temp_id}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Aadhaar Number</span>
+                <span class="detail-val">${w.aadhaar}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Father's Name</span>
+                <span class="detail-val">${w.father_name || 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Marital Status</span>
+                <span class="detail-val">${w.marital_status || 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Nationality</span>
+                <span class="detail-val">${w.nationality || 'Indian'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Blood Group</span>
+                <span class="detail-val">${w.blood_group || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Address & Contact -->
+          <div class="profile-section-card">
+            <h5 class="profile-section-title"><i class="fas fa-map-marker-alt"></i> Contact & Address</h5>
+            <div class="details-grid" style="grid-template-columns: 1fr;">
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                <div class="detail-row">
+                  <span class="detail-label">Mobile Number</span>
+                  <span class="detail-val">${w.mobile}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">WhatsApp Number</span>
+                  <span class="detail-val">${w.whatsapp_no || 'N/A'}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Email Address</span>
+                  <span class="detail-val">${w.email || 'N/A'}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Emergency Contact</span>
+                  <span class="detail-val">${w.emergency_contact || 'N/A'}</span>
+                </div>
+              </div>
+              <div class="detail-row" style="margin-top: 4px;">
+                <span class="detail-label">Present Address</span>
+                <span class="detail-val" style="font-weight: 500;">${w.present_address} ${w.district ? ', ' + w.district : ''} ${w.state ? ', ' + w.state : ''} ${w.pincode ? ' - ' + w.pincode : ''}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Permanent Address</span>
+                <span class="detail-val" style="font-weight: 500;">${w.permanent_address || 'Same as Present'}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Work Order & Employment -->
+          <div class="profile-section-card">
+            <h5 class="profile-section-title"><i class="fas fa-briefcase"></i> Work Order & Employment</h5>
+            <div class="details-grid">
+              <div class="detail-row">
+                <span class="detail-label">Work Order No</span>
+                <span class="detail-val" style="color:#1e3a8a;">${w.work_order_no || 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Project Name</span>
+                <span class="detail-val">${w.project_name || 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Department</span>
+                <span class="detail-val">${w.department}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Trade / Nature of Work</span>
+                <span class="detail-val">${w.nature_of_work || w.trade || 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Skill Category</span>
+                <span class="detail-val">${w.skill_category}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Experience</span>
+                <span class="detail-val">${w.experience ? w.experience + ' Years' : 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">PF Number / UAN</span>
+                <span class="detail-val">${w.pf_no || 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">ESIC Number</span>
+                <span class="detail-val">${w.esi_no || w.esic_number || 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Certified Wage Rate</span>
+                <span class="detail-val">${w.certified_wage_rate || 'N/A'}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Expected Join Date</span>
+                <span class="detail-val" style="color:#10b981;">${formatDate(w.expected_joining_date)}</span>
+              </div>
+              <div class="detail-row" style="grid-column: 1 / -1; background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 5px;">
+                <span class="detail-label"><i class="fas fa-comment-dots text-primary"></i> EO Remarks</span>
+                <span class="detail-val" style="font-size:12px; font-style:italic;">${w.execution_training_remarks || w.request_remarks || 'No remarks provided.'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Flow Approvals + Documents -->
+        <div>
+          <!-- 4. Workflow Timeline -->
+          <div class="profile-section-card">
+            <h5 class="profile-section-title"><i class="fas fa-list-check"></i> Workflow Status</h5>
+            
+            <div style="font-weight:700; font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase;">Safety Training Status</div>
+            <div style="padding:10px 12px; background:#f1f5f9; border-radius:12px; border:1px solid #cbd5e1; font-size:12px;">
+              <div><strong>Payment Option:</strong> ${(w.safety_fee_payment_option || 'N/A').replace(/_/g, ' ').toUpperCase()}</div>
+              <div style="margin-bottom:6px;"><strong>Payment Status:</strong> <strong style="color:${payBadgeColor};">${payStatusStr}</strong></div>
+              <div><strong>Batch:</strong> ${w.pre_batch_number || w.assigned_batch_number || w.latest_training_batch || 'Not Scheduled'}</div>
+              <div><strong>Language:</strong> ${w.batch_language || w.training_booking_language || w.safety_language || 'N/A'}</div>
+              <div><strong>Date:</strong> ${formatDate(w.pre_batch_date || w.latest_training_date)}</div>
+              <div><strong>Training Result:</strong> <strong style="text-transform:uppercase; color:${w.safety_status === 'passed' ? '#166534' : (w.safety_status === 'failed' ? '#991b1b' : '#92400e')}">${w.safety_status || 'PENDING'}</strong></div>
+            </div>
+          </div>
+
+          <!-- 5. Documents Vault -->
+          <div class="profile-section-card">
+            <h5 class="profile-section-title"><i class="fas fa-folder-open"></i> Documents Vault</h5>
+            <div class="doc-vault">
+              ${vaultHtml}
+              
+              <div style="font-weight: 700; font-size: 11px; color: #475569; margin: 10px 0 4px 0; border-top: 1px solid #e2e8f0; padding-top: 8px; text-transform: uppercase;">Dynamic Documents</div>
+              ${dynamicDocsHtml}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  const modal = document.getElementById('workmanModal');
+  modal.classList.remove('hidden');
+  modal.classList.add('show');
 }
 
-function closeWorkmanModal() { document.getElementById('workmanModal').classList.remove('show'); }
-function handleOverlayClick(e) { if (e.target.id === 'workmanModal') closeWorkmanModal(); }
+function closeWorkmanModal() {
+  const modal = document.getElementById('workmanModal');
+  modal.classList.remove('show');
+  setTimeout(() => modal.classList.add('hidden'), 250);
+}
+
+function handleOverlayClick(e) {
+  if (e.target.id === 'workmanModal') {
+    closeWorkmanModal();
+  }
+}
 
 // ── Checkbox logic ───────────────────────────────────────────────────────────
 function toggleBatchAll(selectAllCb) {
@@ -744,29 +897,36 @@ function clearAllSelections() {
 // ── Single worker approval ──────────────────────────────────────────────────
 async function reviewSafetyEnrollment(workmanId, decision) {
   const rejecting = decision === 'rejected';
-  const prompt = await Swal.fire({
+  
+  const alertOptions = {
     icon: rejecting ? 'warning' : 'question',
     title: rejecting ? 'Reject enrollment?' : 'Confirm schedule of safety class.',
     text: rejecting
       ? 'The enrollment will return to the contractor for correction and resubmission.'
       : 'The worker will be released for Safety training scheduling.',
-    input: 'textarea',
-    inputLabel: rejecting ? 'Correction / rejection remarks' : 'Approval remarks (optional)',
-    inputPlaceholder: rejecting ? 'Clearly mention what the contractor must correct.' : 'Enter remarks if required',
     showCancelButton: true,
     confirmButtonText: rejecting ? 'Reject & Return' : 'Approve Enrollment',
-    confirmButtonColor: rejecting ? '#dc2626' : '#16a34a',
-    inputValidator: value => rejecting && !String(value || '').trim() ? 'Rejection remarks are required.' : undefined
-  });
+    confirmButtonColor: rejecting ? '#dc2626' : '#16a34a'
+  };
+
+  if (rejecting) {
+    alertOptions.input = 'textarea';
+    alertOptions.inputLabel = 'Correction / rejection remarks';
+    alertOptions.inputPlaceholder = 'Clearly mention what the contractor must correct.';
+    alertOptions.inputValidator = value => !String(value || '').trim() ? 'Rejection remarks are required.' : undefined;
+  }
+
+  const prompt = await Swal.fire(alertOptions);
   if (!prompt.isConfirmed) return;
-  await doEnrollmentAPI([workmanId], decision, String(prompt.value || '').trim());
+  await doEnrollmentAPI([workmanId], decision, rejecting ? String(prompt.value || '').trim() : '');
 }
 
 // ── Approve/Reject entire batch group ───────────────────────────────────────
 async function reviewBatchGroup(workmanIds, decision, batchLabel) {
   const rejecting  = decision === 'rejected';
   const count      = workmanIds.length;
-  const prompt = await Swal.fire({
+  
+  const alertOptions = {
     icon: rejecting ? 'warning' : 'question',
     title: rejecting
       ? `Reject all ${count} enrollment(s) in "${batchLabel}"?`
@@ -774,17 +934,22 @@ async function reviewBatchGroup(workmanIds, decision, batchLabel) {
     html: rejecting
       ? `All selected workers in <strong>${batchLabel}</strong> will be returned to their contractors for correction.`
       : `All <strong>${count} workers</strong> in batch <strong>${batchLabel}</strong> will be released for Safety training scheduling.`,
-    input: 'textarea',
-    inputLabel: rejecting ? 'Correction / rejection remarks (applies to all)' : 'Approval remarks (optional)',
-    inputPlaceholder: rejecting ? 'Clearly mention what the contractor must correct.' : 'Enter remarks if required',
     showCancelButton: true,
     confirmButtonText: rejecting ? `Reject ${count} Worker(s)` : `Approve ${count} Worker(s)`,
     confirmButtonColor: rejecting ? '#dc2626' : '#16a34a',
-    cancelButtonText: 'Cancel',
-    inputValidator: value => rejecting && !String(value || '').trim() ? 'Rejection remarks are required.' : undefined
-  });
+    cancelButtonText: 'Cancel'
+  };
+
+  if (rejecting) {
+    alertOptions.input = 'textarea';
+    alertOptions.inputLabel = 'Correction / rejection remarks (applies to all)';
+    alertOptions.inputPlaceholder = 'Clearly mention what the contractor must correct.';
+    alertOptions.inputValidator = value => !String(value || '').trim() ? 'Rejection remarks are required.' : undefined;
+  }
+
+  const prompt = await Swal.fire(alertOptions);
   if (!prompt.isConfirmed) return;
-  await doEnrollmentAPI(workmanIds, decision, String(prompt.value || '').trim());
+  await doEnrollmentAPI(workmanIds, decision, rejecting ? String(prompt.value || '').trim() : '');
 }
 
 // ── Multi-select floating panel ──────────────────────────────────────────────
@@ -796,22 +961,28 @@ async function reviewSafetyEnrollmentBatch(decision) {
     return;
   }
   const rejecting = decision === 'rejected';
-  const prompt = await Swal.fire({
+  
+  const alertOptions = {
     icon: rejecting ? 'warning' : 'question',
     title: rejecting ? `Reject ${workmanIds.length} enrollment(s)?` : `Confirm schedule of safety class.`,
     text: rejecting
       ? 'Selected enrollments will return to the contractor for correction and resubmission.'
       : 'Selected workers will be released for Safety training scheduling.',
-    input: 'textarea',
-    inputLabel: rejecting ? 'Correction / rejection remarks' : 'Approval remarks (optional)',
-    inputPlaceholder: rejecting ? 'Clearly mention what the contractor must correct.' : 'Enter remarks if required',
     showCancelButton: true,
     confirmButtonText: rejecting ? 'Reject & Return Selected' : 'Approve Selected',
-    confirmButtonColor: rejecting ? '#dc2626' : '#16a34a',
-    inputValidator: value => rejecting && !String(value || '').trim() ? 'Rejection remarks are required.' : undefined
-  });
+    confirmButtonColor: rejecting ? '#dc2626' : '#16a34a'
+  };
+
+  if (rejecting) {
+    alertOptions.input = 'textarea';
+    alertOptions.inputLabel = 'Correction / rejection remarks';
+    alertOptions.inputPlaceholder = 'Clearly mention what the contractor must correct.';
+    alertOptions.inputValidator = value => !String(value || '').trim() ? 'Rejection remarks are required.' : undefined;
+  }
+
+  const prompt = await Swal.fire(alertOptions);
   if (!prompt.isConfirmed) return;
-  await doEnrollmentAPI(workmanIds, decision, String(prompt.value || '').trim());
+  await doEnrollmentAPI(workmanIds, decision, rejecting ? String(prompt.value || '').trim() : '');
 }
 
 // ── Shared API call ───────────────────────────────────────────────────────────

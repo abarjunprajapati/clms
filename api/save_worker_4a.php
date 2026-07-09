@@ -767,6 +767,15 @@ function worker4a_detect_work_order_source($conn, $contractor_id, $work_order_no
     if ($posted_source === 'PWO' || strpos($upperWorkOrder, 'PWO') === 0 || strpos($upperWorkOrder, '-PWO') !== false) {
         return 'PWO';
     }
+    
+    // Check if the user manually added this to contractor_projects as PWO
+    if (worker4a_table_exists($conn, 'contractor_projects')) {
+        $cp = db_single($conn, "SELECT source FROM contractor_projects WHERE work_order_no = ? LIMIT 1", 's', [$work_order_no]);
+        if ($cp && strtoupper(trim((string)$cp['source'])) === 'PWO') {
+            return 'PWO';
+        }
+    }
+
     // Point 8: Detect PO source if work order string starts with 'PO'
     if (strpos($upperWorkOrder, 'PO') === 0 || strpos($upperWorkOrder, 'PO -') === 0) {
         $posted_source = 'PO';
@@ -1114,7 +1123,7 @@ worker4a_ensure_schema($conn);
         'insurance_doc' => $uploaded_files['insurance_doc'],
         'aadhaar_doc' => $uploaded_files['aadhaar_doc'],
         'signature_doc' => $uploaded_files['signature'],
-        'status' => ($action === 'draft' || $safetyFeePaymentOption === 'pay_later') ? 'draft' : 'pending',
+        'status' => ($action === 'draft') ? 'draft' : 'pending',
         'training_status' => 'pending',
         'worker_type' => $worker_type,
         'safety_training_status' => 'PENDING_TRAINING',
@@ -1220,8 +1229,9 @@ worker4a_ensure_schema($conn);
     }
     if ($action !== 'draft') {
         $hasAttachment = !empty($uploaded_files['training_approval_doc']);
-        $nonPwoBookedNow = !$isPwoWorkOrder && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
-        $pwoBookedAfterPayment = $isPwoWorkOrder && ($pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' || $hasAttachment);
+        $hasSelectedBatch = !empty($data['training_booking_batch_id']) && (int)$data['training_booking_batch_id'] > 0;
+        $nonPwoBookedNow = !$isPwoWorkOrder && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' && $hasSelectedBatch || $hasAttachment);
+        $pwoBookedAfterPayment = $isPwoWorkOrder && ($pwoPaymentAlreadyPaid || $safetyFeePaymentOption === 'pay_later') && (($data['training_booking_choice'] ?? 'not_now') === 'book_now' && $hasSelectedBatch || $hasAttachment);
         $workman_row['execution_training_status'] = $isPwoWorkOrder
             ? ($pwoBookedAfterPayment ? 'pending_eo' : 'pending_payment')
             : ($nonPwoBookedNow ? 'pending_eo' : 'pending_booking');

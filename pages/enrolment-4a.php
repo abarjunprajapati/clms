@@ -1247,7 +1247,7 @@ function renderContent() {
                     <div class="fw-bold"><?= htmlspecialchars($w['name']) ?></div>
                     <small class="text-muted"><?= $w['gender'] ?> | <?= $w['dob'] ?></small>
                     <?php if (!empty($w['expected_joining_date'])): ?>
-                      <div style="font-size: 11px; margin-top: 2px;"><span class="text-muted">Expected Join:</span> <strong><?= date('d-m-Y', strtotime($w['expected_joining_date'])) ?></strong></div>
+                      <div style="font-size: 11px; margin-top: 2px;"><span class="text-muted">Expected Join:</span> <strong><?= date('d-M-Y', strtotime($w['expected_joining_date'])) ?></strong></div>
                     <?php endif; ?>
                   </div>
                 </div>
@@ -1286,7 +1286,7 @@ function renderContent() {
                     <strong class="<?= $eoBadge ?>"><?= $eoLabel ?></strong>
                     <span style="font-size:11px;">(<?= htmlspecialchars($w['executing_officer_code']) ?>)</span>
                     <?php if ($eoStatus === 'rejected' && !empty($w['execution_training_remarks'])): ?>
-                      <!-- <div style="font-size:11px;color:#b91c1c;margin-top:2px;">Reason: <?= htmlspecialchars($w['execution_training_remarks']) ?></div> -->
+                      <div style="font-size:11px;color:#b91c1c;margin-top:2px;">Reason: <?= htmlspecialchars($w['execution_training_remarks']) ?></div>
                     <?php endif; ?>
                   <?php else: ?>
                     <span class="text-muted">N/A</span>
@@ -1340,7 +1340,7 @@ function renderContent() {
                   ?>
                   <strong class="<?= $safetyEnrollmentBadge ?>"><?= htmlspecialchars($safetyEnrollmentLabel) ?></strong>
                   <?php if ($safetyEnrollmentStatus === 'rejected' && !empty($w['safety_enrollment_remarks'])): ?>
-                    <!-- <div style="font-size:11px;color:#b91c1c;margin-top:2px;"><?= htmlspecialchars($w['safety_enrollment_remarks']) ?></div> -->
+                    <div style="font-size:11px;color:#b91c1c;margin-top:2px;"><?= htmlspecialchars($w['safety_enrollment_remarks']) ?></div>
                   <?php elseif ($safetyEnrollmentStatus === 'approved'): ?>
                     <span class="text-muted" style="font-size:11px;">(<?= htmlspecialchars($w['safety_status'] ?? 'pending') ?>)</span>
                   <?php endif; ?>
@@ -2065,7 +2065,7 @@ function renderContent() {
         wrapper.style.background = 'white';
         wrapper.innerHTML = `
             <h2 style="text-align:center; color:#1e3a8a;">Worker Enrollment List</h2>
-            <p style="text-align:center; font-size:12px; color:#64748b;">Generated on: <?= date('d-m-Y H:i') ?></p>
+            <p style="text-align:center; font-size:12px; color:#64748b;">Generated on: <?= date('d-M-Y H:i') ?></p>
         `;
         wrapper.appendChild(clone);
         
@@ -3901,7 +3901,7 @@ function renderContent() {
             const existingFile = input?.dataset?.existing || input?.dataset?.current || input?.dataset?.file || input?.getAttribute('data-existing-file') || '';
             const fileName = selectedFile?.name || existingFile || '';
             if (!fileName) return null;
-            const canView = true; // All uploaded documents can be viewed
+            const canView = ['photo', 'aadhaar_doc'].includes(name);
             return {
               label,
               value: fileName,

@@ -523,7 +523,16 @@ function clms_pending_safety_fee_workers($conn, $contractorId) {
                   AND pr.status IN ('pending','link_sent','gateway_created','submitted')
                 ORDER BY pr.id DESC
                 LIMIT 1
-            ) AS open_payment_ref
+            ) AS open_payment_ref,
+            (
+                SELECT pr.status
+                FROM training_payment_request_workers pw
+                JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                WHERE pw.workman_id = w.id
+                  AND pr.status IN ('pending','link_sent','gateway_created','submitted')
+                ORDER BY pr.id DESC
+                LIMIT 1
+            ) AS open_payment_status
          FROM workmen w
          WHERE w.contractor_id = ?
            AND COALESCE(w.status, '') <> 'draft'
@@ -534,10 +543,9 @@ function clms_pending_safety_fee_workers($conn, $contractorId) {
                 WHERE paid_pw.workman_id = w.id
                   AND paid_pr.status IN ('paid','verified')
            )
-           AND (
-                COALESCE(w.execution_training_status, '') IN ('pending_payment','link_sent')
-                OR $paymentOptionExpr IN ('pay_now','pay_later')
-           )
+           AND COALESCE(w.status, '') NOT IN ('rejected', 'block', 'blocked')
+           AND COALESCE(w.execution_training_status, '') <> 'rejected'
+           AND (COALESCE(w.work_order_source, '') = 'PWO' OR w.work_order_no LIKE 'PWO%')
          ORDER BY w.id DESC",
         'di',
         [$fee, (int)$contractorId]
@@ -769,7 +777,7 @@ function clms_get_training_payment_request($conn, $idOrToken) {
 function clms_training_payment_workers($conn, $paymentRequestId) {
     return db_fetch_all(
         $conn,
-        "SELECT w.id, w.name, w.temp_id, w.aadhaar, w.worker_type, pw.training_request_id
+        "SELECT w.id, w.name, w.temp_id, w.aadhaar, w.worker_type, pw.training_request_id, pw.safety_fee
          FROM training_payment_request_workers pw
          JOIN workmen w ON w.id = pw.workman_id
          WHERE pw.payment_request_id = ?

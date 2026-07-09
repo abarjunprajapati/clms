@@ -62,6 +62,8 @@ function renderContent() {
         'i',
         [$cid]
     );
+    
+    $edit_requests = db_fetch_all($conn, "SELECT * FROM contractor_edit_requests WHERE contractor_id = ? ORDER BY submitted_at DESC", 'i', [$cid]);
 
     $registration_history = [];
     $fallbackDateByStatus = [];
@@ -83,6 +85,24 @@ function renderContent() {
         if ($rowDate === '') {
             $rowDate = $fallbackDateByStatus[$rowStatus] ?? ($contractor['last_action_at'] ?? ($contractor['updated_at'] ?? $fallbackAnyDate));
         }
+
+        $isEditRequestRemark = false;
+        foreach ($edit_requests as $er) {
+            if (!empty($row['reason']) && trim((string)$row['reason']) === trim((string)$er['remarks']) && strtolower((string)$er['status']) === $rowStatus) {
+                if (!empty($er['action_at']) && !empty($rowDate)) {
+                    $timeDiff = abs(strtotime($rowDate) - strtotime($er['action_at']));
+                    if ($timeDiff <= 10) {
+                        $isEditRequestRemark = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if ($isEditRequestRemark) {
+            continue;
+        }
+
         $registration_history[] = [
             'date' => $rowDate,
             'status' => $row['status'] ?? '',
@@ -101,7 +121,7 @@ function renderContent() {
         }
     }
 
-    $edit_requests = db_fetch_all($conn, "SELECT * FROM contractor_edit_requests WHERE contractor_id = ? ORDER BY submitted_at DESC", 'i', [$cid]);
+    // (Edit requests already fetched above)
 
     $statusBadge = function($status) {
         $status = strtolower((string)$status);

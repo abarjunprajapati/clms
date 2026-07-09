@@ -11,8 +11,8 @@ function payment_sync_missing_worker_requests($conn, $contractorId, $userId = 0)
         "SELECT w.id
          FROM workmen w
          WHERE w.contractor_id = ?
-           AND COALESCE(w.status, '') <> 'draft'
-           AND COALESCE(w.execution_training_status, '') = 'pending_payment'
+           AND COALESCE(w.status, '') NOT IN ('draft', 'rejected', 'block', 'blocked')
+           AND COALESCE(w.execution_training_status, '') <> 'rejected'
            AND NOT EXISTS (
                SELECT 1
                FROM training_payment_request_workers pw
@@ -417,7 +417,13 @@ $demoDetails = clms_demo_payment_details($conn, $request);
                     <td><?= htmlspecialchars($worker['application_no'] ?? '') ?></td>
                     <td><?= htmlspecialchars($dateText) ?></td>
                     <td>Rs. <?= number_format((float)$worker['safety_fee'], 2) ?></td>
-                    <td><span class="badge-pay badge-pending">Pending</span></td>
+                    <td>
+                      <?php if (!empty($worker['open_payment_status']) && in_array($worker['open_payment_status'], ['pending', 'link_sent', 'gateway_created', 'submitted'], true)): ?>
+                        <span class="badge-pay" style="background:#fef3c7; color:#92400e;">UNPAID</span>
+                      <?php else: ?>
+                        <span class="badge-pay" style="background:#f1f5f9; color:#475569;">NOT GENERATED</span>
+                      <?php endif; ?>
+                    </td>
                   </tr>
                 <?php endforeach; ?>
               </tbody>

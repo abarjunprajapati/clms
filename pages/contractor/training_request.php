@@ -199,7 +199,7 @@ function renderContent() {
 
     // All training requests for this contractor with full details
     $my_requests = $c_id ? db_fetch_all($conn,
-        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade, w.temp_id AS worker_temp_id,
+        "SELECT tr.*, w.name as worker_name, w.trade as worker_trade, w.temp_id AS worker_temp_id, w.work_order_source,
                 $workerTrainingValidExpr AS training_valid_till,
                 COALESCE(w.execution_training_status, 'pending') AS execution_training_status,
                 COALESCE(w.execution_training_reviewed_by, 0) AS execution_training_reviewed_by,
@@ -210,10 +210,10 @@ function renderContent() {
          FROM training_requests tr
          JOIN workmen w ON tr.workman_id = w.id
          LEFT JOIN (
-             SELECT pw1.training_request_id, pw1.workman_id, MAX(pw1.payment_request_id) AS max_pay_id
+             SELECT pw1.workman_id, MAX(pw1.payment_request_id) AS max_pay_id
              FROM training_payment_request_workers pw1
-             GROUP BY pw1.training_request_id, pw1.workman_id
-         ) pw ON (pw.training_request_id = tr.id OR (COALESCE(pw.training_request_id, 0) = 0 AND pw.workman_id = tr.workman_id))
+             GROUP BY pw1.workman_id
+         ) pw ON pw.workman_id = tr.workman_id
          LEFT JOIN training_payment_requests pr ON pr.id = pw.max_pay_id
          $resultJoin
          WHERE tr.contractor_id = ?
@@ -363,6 +363,7 @@ function renderContent() {
           <table class="data-table">
             <thead>
               <tr>
+                <th>S.No.</th>
                 <th>Worker</th>
                 <th>Training Type</th>
                 <th>Payment</th>
@@ -373,7 +374,10 @@ function renderContent() {
               </tr>
             </thead>
             <tbody>
-            <?php foreach ($my_requests as $r): ?>
+            <?php 
+              $sno = 1;
+              foreach ($my_requests as $r): 
+            ?>
             <?php
               $st = $r['status'] ?? 'pending';
               $executionApproved = strtolower((string)($r['execution_training_status'] ?? 'pending')) === 'approved' && (int)($r['execution_training_reviewed_by'] ?? 0) > 0;
@@ -410,6 +414,7 @@ function renderContent() {
               ];
             ?>
             <tr style="<?= $st === 'scheduled' ? 'background:rgba(99,102,241,0.06);' : '' ?>">
+              <td><?= $sno++ ?></td>
               <td>
                 <div style="font-weight:600;"><?= htmlspecialchars($r['worker_name'] ?? '—') ?></div>
                 <div style="font-size:11px;color:var(--text-muted);"><?= htmlspecialchars($r['worker_trade'] ?? '') ?><?= !empty($r['worker_temp_id']) ? ' | ' . htmlspecialchars($r['worker_temp_id']) : '' ?></div>
@@ -417,11 +422,16 @@ function renderContent() {
               </td>
               <td><?= htmlspecialchars($r['training_type'] ?? '—') ?></td>
               <td>
-                <?php if ($r['payment_status'] === 'paid'): ?>
+                <?php 
+                  $wos = strtoupper(trim((string)($r['work_order_source'] ?? '')));
+                  if ($wos !== 'PWO'): 
+                ?>
+                  <span class="badge badge-gray" style="white-space:nowrap; background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:999px; font-weight:700;">N/A</span>
+                <?php elseif ($r['payment_status'] === 'paid'): ?>
                   <span class="badge badge-success"><i class="fas fa-check-circle"></i> Paid</span>
                   <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Ref: <?= htmlspecialchars($r['payment_ref']) ?></div>
-                <?php elseif ($r['payment_status'] === 'link_sent'): ?>
-                  <span class="badge badge-warning"><i class="fas fa-clock"></i> Unpaid</span>
+                <?php elseif (in_array($r['payment_status'], ['pending', 'link_sent', 'gateway_created', 'submitted'], true)): ?>
+                  <span class="badge badge-warning" style="background:#fef3c7; color:#92400e; padding:4px 8px; border-radius:999px; font-weight:700;"><i class="fas fa-clock"></i> UNPAID</span>
                   <div style="margin-top:4px;">
                     <a class="btn btn-sm btn-primary" style="padding: 2px 6px; font-size: 10px; line-height: 1.2;" href="payment.php?token=<?= urlencode($r['payment_token']) ?>">
                       Pay Fee
@@ -429,9 +439,9 @@ function renderContent() {
                   </div>
                 <?php else: ?>
                   <?php if (($r['source'] ?? '') === 'contractor_re_enroll'): ?>
-                    <span class="badge badge-gray" style="white-space:nowrap;">N/A (Retraining)</span>
+                    <span class="badge badge-gray" style="white-space:nowrap; background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:999px; font-weight:700;">N/A (Retraining)</span>
                   <?php else: ?>
-                    <span class="badge badge-gray" style="white-space:nowrap;">Not Generated</span>
+                    <span class="badge badge-gray" style="white-space:nowrap; background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:999px; font-weight:700;">NOT GENERATED</span>
                   <?php endif; ?>
                 <?php endif; ?>
               </td>
@@ -591,6 +601,7 @@ function renderContent() {
         <table class="data-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>Worker</th>
               <th>Executing Officer</th>
               <th>Attachment</th>
@@ -599,11 +610,14 @@ function renderContent() {
             </tr>
           </thead>
           <tbody>
-            <?php foreach ($eo_pending_workers as $w):
+            <?php 
+              $eoSno = 1;
+              foreach ($eo_pending_workers as $w):
               $eoStatus = strtolower((string)($w['execution_training_status'] ?? 'pending_eo'));
               $hasDoc = trim((string)($w['training_approval_doc'] ?? '')) !== '';
             ?>
             <tr>
+              <td><?= $eoSno++ ?></td>
               <td>
                 <strong><?= htmlspecialchars($w['name'] ?? '') ?></strong><br>
                 <small><?= htmlspecialchars($w['trade'] ?? '') ?> <?= !empty($w['temp_id']) ? ' | ' . htmlspecialchars($w['temp_id']) : '' ?></small>

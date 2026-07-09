@@ -101,9 +101,9 @@ function renderContent() {
     $disabled_attr = ($is_readonly || $is_approved_limited_edit || $is_approved_view_only) ? 'disabled' : '';
     $limited_edit_readonly_attr = $is_approved_view_only ? 'readonly' : '';
     $limited_edit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
-    $saved_limited_row_readonly_attr = $limited_edit_readonly_attr;
-    $saved_limited_file_disabled_attr = $limited_edit_disabled_attr;
-    $saved_limited_action_disabled_attr = $limited_edit_disabled_attr;
+    $saved_limited_row_readonly_attr = $is_approved_limited_edit ? 'readonly' : $limited_edit_readonly_attr;
+    $saved_limited_file_disabled_attr = $is_approved_limited_edit ? 'disabled' : $limited_edit_disabled_attr;
+    $saved_limited_action_disabled_attr = $is_approved_limited_edit ? 'disabled' : $limited_edit_disabled_attr;
     $ecp_choice_disabled_attr = $limited_edit_disabled_attr;
     $submit_disabled_attr = $is_approved_view_only ? 'disabled' : '';
     $draft_disabled_attr = ($is_readonly || $is_approved_view_only) ? 'disabled' : '';
@@ -172,6 +172,12 @@ function renderContent() {
     ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
+        /* FIX DOUBLE SCROLLBARS */
+        html, body {
+            overflow: hidden !important; /* Hide outer scrollbar, let .main-content scroll */
+            height: 100vh !important;
+        }
+        
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
         
         :root {
@@ -1372,8 +1378,8 @@ function renderContent() {
                 <div class="registration-card">
                     <div class="registration-section-header">11. Mobile Number </div>
                     <div class="registration-grid">
-                        <div><label class="form-label required">Mobile Number 1</label><input type="text" class="form-control" name="mobile" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['mobile'] ?? '') ?>" required oninvalid="this.setCustomValidity('Enter correct mobile number.')" oninput="this.setCustomValidity('')" <?= $readonly_attr ?>></div>
-                        <div><label class="form-label">Mobile Number 2</label><input type="text" class="form-control" name="vendor_mob2" pattern="^[0-9]{10}$" value="<?= htmlspecialchars($c['vendor_mob2'] ?? '') ?>" oninvalid="this.setCustomValidity('Enter correct mobile number.')" oninput="this.setCustomValidity('')" <?= $readonly_attr ?>></div>
+                        <div><label class="form-label required">Mobile Number 1</label><input type="text" class="form-control" name="mobile" pattern="^[0-9]{10}$" maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,''); this.setCustomValidity('');" value="<?= htmlspecialchars($c['mobile'] ?? '') ?>" required oninvalid="this.setCustomValidity('Enter exactly 10 digits.')" <?= $readonly_attr ?>></div>
+                        <div><label class="form-label">Mobile Number 2</label><input type="text" class="form-control" name="vendor_mob2" pattern="^[0-9]{10}$" maxlength="10" oninput="this.value=this.value.replace(/[^0-9]/g,''); this.setCustomValidity('');" value="<?= htmlspecialchars($c['vendor_mob2'] ?? '') ?>" oninvalid="this.setCustomValidity('Enter exactly 10 digits.')" <?= $readonly_attr ?>></div>
                     </div>
                 </div>
                 <div class="registration-card"><div class="registration-section-header">12. Remarks</div><textarea class="form-control" name="remarks" placeholder="Enter remarks" <?= $readonly_attr ?>><?= htmlspecialchars($c['remarks'] ?? '') ?></textarea></div>
@@ -1382,11 +1388,11 @@ function renderContent() {
                     <button type="button" class="btn btn-reg-prev px-4" onclick="showTab('basicDetails')">Previous</button>
                     <button type="button" class="btn btn-reg-draft px-4" onclick="saveDraft()" <?= $draft_disabled_attr ?>>Save Draft</button>
                     <?php
-                    $submit_btn_label = 'Submit Registration';
+                    $submit_btn_label = 'SUBMIT REGISTRATION';
                     if ($is_edit_approved) {
-                        $submit_btn_label = 'Submit Profile Update Request';
+                        $submit_btn_label = 'SUBMIT PROFILE UPDATE';
                     } elseif ($is_limited_update_mode) {
-                        $submit_btn_label = 'Resubmit for Welfare Approval';
+                        $submit_btn_label = 'RESUBMIT REGISTRATION';
                     }
                     ?>
                     <button type="submit" class="btn btn-reg-submit px-4" id="submitBtn" <?= $submit_disabled_attr ?>><?= $submit_btn_label ?></button>
@@ -1621,32 +1627,7 @@ function renderContent() {
 
 <!-- Bootstrap 5 Bundle with Popper -->
 <script>
-(function normalizeAnnexure2AScroll() {
-    document.documentElement.style.height = '100vh';
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.height = '100vh';
-    document.body.style.overflow = 'hidden';
-    const wrapper = document.querySelector('.layout-wrapper');
-    const main = document.querySelector('.main-content');
-    const page = document.querySelector('.annexure2a-page');
-    if (wrapper) {
-        wrapper.style.height = 'calc(100vh - 72px)';
-        wrapper.style.minHeight = '0';
-        wrapper.style.overflow = 'hidden';
-    }
-    if (main) {
-        main.style.height = 'calc(100vh - 72px)';
-        main.style.overflowY = 'auto';
-        main.style.overflowX = 'hidden';
-        main.style.padding = '24px';
-    }
-    if (page) {
-        page.style.height = 'auto';
-        page.style.maxHeight = 'none';
-        page.style.overflowY = 'visible';
-        page.style.overflowX = 'hidden';
-    }
-})();
+// Scroll normalization removed to fix double scrollbars.
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -1685,6 +1666,14 @@ function renderContent() {
     let initialEditableState = '';
 
     function showAnnexure2AFeedback(message, type = 'info', title = '') {
+        if (typeof Swal !== 'undefined') {
+            return Swal.fire({
+                title: title || (type === 'error' ? 'Error' : 'Notification'),
+                text: message,
+                icon: type === 'error' ? 'error' : (type === 'warning' ? 'warning' : 'success'),
+                confirmButtonColor: '#2b6cb0'
+            });
+        }
         if (typeof window.notifyUser === 'function') {
             return window.notifyUser(message, type, title);
         }
@@ -1794,12 +1783,14 @@ function renderContent() {
         });
         document.querySelectorAll('input[type="hidden"][name="ecp_covered"]').forEach(input => input.remove());
 
-        document.querySelectorAll('#ecpTableBody input, #ecp_exemption_reason').forEach(input => {
-            input.disabled = false;
-            input.readOnly = false;
-        });
+        const reasonInput = document.getElementById('ecp_exemption_reason');
+        if (reasonInput) {
+            reasonInput.disabled = false;
+            reasonInput.readOnly = false;
+        }
 
-        document.querySelectorAll('#ecpTableBody .delete-btn, #addEcpBtn').forEach(btn => {
+        // Only Add ECP button should remain enabled for rows
+        document.querySelectorAll('#addEcpBtn').forEach(btn => {
             btn.disabled = false;
             btn.style.display = '';
         });
@@ -1852,7 +1843,7 @@ function renderContent() {
                 deleteBtn.style.display = 'none';
                 return;
             }
-            if(rows.length > 1) {
+            if(index > 0) {
                 deleteBtn.style.display = 'inline-block';
             } else {
                 deleteBtn.style.display = 'none';
@@ -1871,7 +1862,7 @@ function renderContent() {
             input.disabled = false;
             input.style.display = '';
             input.classList.remove('is-invalid');
-            input.required = getRadioValue('ecp_covered') === 'YES' && input.type !== 'hidden';
+            input.required = input.type !== 'hidden';
         });
         row.querySelectorAll('.delete-btn').forEach(btn => {
             btn.disabled = false;
@@ -1913,9 +1904,7 @@ function renderContent() {
             input.disabled = false;
             input.style.display = '';
             input.classList.remove('is-invalid');
-            if(input.type === 'file') {
-                input.required = false;
-            }
+            input.required = true;
         });
         row.querySelectorAll('.delete-btn').forEach(btn => {
             btn.disabled = false;
@@ -2108,7 +2097,7 @@ function renderContent() {
         const isWorkerCatValid = ANNEXURE2A_LIMITED_EDIT || validateWorkerCategories();
         const isEPFESIValid = validateEPFESI();
 
-        if ((!ANNEXURE2A_LIMITED_EDIT && !form.checkValidity()) || !isDateValid || !isWorkerCatValid || !isEPFESIValid) {
+        if (!form.checkValidity() || !isDateValid || !isWorkerCatValid || !isEPFESIValid) {
             e.stopPropagation();
             form.classList.add('was-validated');
             const invalidField = form.querySelector('input:invalid, select:invalid, textarea:invalid');
@@ -2117,8 +2106,9 @@ function renderContent() {
             } else {
                 showTab('basicDetails');
             }
-            setTimeout(() => invalidField?.focus({ preventScroll: false }), 250);
-            showAnnexure2AFeedback('Please complete the highlighted mandatory fields before submitting.', 'warning', 'Validation required');
+            showAnnexure2AFeedback('Please complete the highlighted mandatory fields before submitting.', 'warning', 'Validation required').then(() => {
+                setTimeout(() => invalidField?.focus({ preventScroll: false }), 100);
+            });
             return;
         }
 
@@ -2212,8 +2202,14 @@ function renderContent() {
 
         if (badge) badge.style.display = mandatory ? 'inline-flex' : 'none';
         if (card) card.style.borderColor = mandatory ? '#f59e0b' : '';
-        licInputs.forEach(i => i.required = mandatory);
-        fileInputs.forEach(i => i.required = mandatory && !i.closest('td')?.querySelector('input[name="existing_license_file[]"]')?.value);
+        licInputs.forEach((i) => {
+            const rowIdx = Array.from(i.closest('tbody').children).indexOf(i.closest('tr'));
+            i.required = (mandatory || rowIdx > 0);
+        });
+        fileInputs.forEach((i) => {
+            const rowIdx = Array.from(i.closest('tbody').children).indexOf(i.closest('tr'));
+            i.required = (mandatory || rowIdx > 0) && !i.closest('td')?.querySelector('input[name="existing_license_file[]"]')?.value;
+        });
     }
 
     window.addEventListener('load', () => {
@@ -2256,6 +2252,21 @@ function renderContent() {
     // Worker category checklist change handler
     document.querySelectorAll('.worker-cat-check').forEach(cb => {
         cb.addEventListener('change', validateWorkerCategories);
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('input[required], select[required], textarea[required]').forEach(el => {
+            const label = el.closest('div')?.querySelector('.form-label');
+            if (label && !label.classList.contains('required')) {
+                label.classList.add('required');
+            }
+        });
+        document.querySelectorAll('.registration-section-header').forEach(header => {
+            const nextEl = header.nextElementSibling;
+            if(nextEl && nextEl.querySelector('[required]') && !header.innerHTML.includes('*')) {
+                header.innerHTML += ' <span class="text-danger">*</span>';
+            }
+        });
     });
 </script>
 

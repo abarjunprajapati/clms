@@ -125,7 +125,9 @@ try {
 
     // Process pending edit request if it exists for this contractor
     $edit_request = db_single($conn, "SELECT * FROM contractor_edit_requests WHERE contractor_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", 'i', [$id]);
+    $is_edit_request = false;
     if ($edit_request) {
+        $is_edit_request = true;
         if ($status === 'approved') {
             $data = json_decode($edit_request['requested_data_json'], true);
             if (is_array($data)) {
@@ -314,12 +316,14 @@ try {
     )");
     contractor_status_ensure_column($conn, 'contractor_status_history', 'created_at', 'DATETIME NULL DEFAULT CURRENT_TIMESTAMP');
 
-    db_execute(
-        $conn,
-        "INSERT INTO contractor_status_history (contractor_id, status, reason, pdf_path, action_by) VALUES (?,?,?,?,?)",
-        'isssi',
-        [$id, $status, $reason, $approval_pdf, $updated_by]
-    );
+    if (!$is_edit_request) {
+        db_execute(
+            $conn,
+            "INSERT INTO contractor_status_history (contractor_id, status, reason, pdf_path, action_by) VALUES (?,?,?,?,?)",
+            'isssi',
+            [$id, $status, $reason, $approval_pdf, $updated_by]
+        );
+    }
 
     $action_desc = "Contractor ID $id status updated to $status. Reason: $reason";
     db_execute(

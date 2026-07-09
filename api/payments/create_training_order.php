@@ -55,23 +55,26 @@ try {
 
         $orderId = $cslOrderResult['order_id'];
         
+        // Get contractor details for response
+        $contractor = clms_get_contractor_user_for_payment($conn, (int)$request['contractor_id']);
+
         // Audit log
         AuditLogger::log($conn, 'CSL_ORDER_CREATED', 'payment', '', [
             'payment_ref' => $request['payment_ref'],
-            'order_id' => $orderId,
-            'amount' => $request['total_amount']
+            'order_id'   => $orderId,
+            'amount'     => $request['total_amount']
         ], "Cochin Shipyard payment order created successfully.");
 
         paymentOrderJson([
-            'success' => true,
-            'message' => 'CSL order created.',
-            'provider' => 'razorpay', // Load Razorpay checkout in the frontend
-            'key_id' => $keyId,
+            'success'          => true,
+            'message'          => 'CSL order created.',
+            'provider'         => 'razorpay',
+            'key_id'           => $keyId,
             'gateway_order_id' => $orderId,
-            'amount' => $request['total_amount'],
-            'currency' => 'INR',
-            'token' => $token,
-            'contractor_name' => $contractor['contractor_name'] ?? ($contractor['vendor_name'] ?? 'Contractor'),
+            'amount'           => $request['total_amount'],
+            'currency'         => 'INR',
+            'token'            => $token,
+            'contractor_name'  => $contractor['contractor_name'] ?? ($contractor['vendor_name'] ?? 'Contractor'),
             'contractor_email' => $contractor['email'] ?? '',
             'contractor_phone' => $contractor['mobile'] ?? ($contractor['phone'] ?? '')
         ]);

@@ -13,6 +13,11 @@
 </head>
 <body>
 
+<?php
+$scope = $_GET['scope'] ?? 'external';
+$isInternal = $scope === 'internal';
+?>
+
 <div class="auth-split-wrapper">
   <!-- LEFT BRAND PANEL (Desktop-only) -->
   <div class="auth-left-pane">
@@ -46,7 +51,7 @@
           </linearGradient>
         </defs>
       </svg>
-      <h1>Contractor Portal</h1>
+      <h1><?= $isInternal ? 'Internal Portal' : 'Contractor Portal' ?></h1>
       <p>Restore secure credentials access dynamically utilizing SMS-tied and email authentication systems.</p>
       
       <div class="left-security-tagline">
@@ -67,7 +72,7 @@
             <i class="fas fa-key fa-2x" style="color: var(--primary-color);"></i>
           </div>
           <h2 class="auth-card-title" style="font-size: 1.45rem;">Forgot Password</h2>
-          <p class="auth-card-subtitle">Verify Contractor Identity for Reset Code</p>
+          <p class="auth-card-subtitle"><?= $isInternal ? 'Verify Staff Identity for Reset Code' : 'Verify Contractor Identity for Reset Code' ?></p>
         </div>
 
         <!-- Centralized Error Banner -->
@@ -76,12 +81,12 @@
         <!-- Form -->
         <form id="forgot-form" onsubmit="executeForgotPassword(event)" novalidate>
           
-          <!-- Contractor ID Input -->
+          <!-- User ID Input -->
           <div class="form-group">
             <div class="input-wrapper">
-              <input type="text" id="contractor-id" class="form-control" placeholder="Contractor ID" required autofocus autocomplete="username">
+              <input type="text" id="contractor-id" class="form-control" placeholder="<?= $isInternal ? 'STAFF USER ID' : 'Contractor ID' ?>" required autofocus autocomplete="username" style="text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
               <i class="fas fa-user-shield input-icon"></i>
-              <label class="form-label" for="contractor-id">Contractor ID</label>
+              <label class="form-label" for="contractor-id"><?= $isInternal ? 'STAFF USER ID' : 'Contractor ID' ?></label>
             </div>
           </div>
 
@@ -93,7 +98,7 @@
 
           <!-- Divider & Back link -->
           <div style="text-align: center; margin-top: 25px; padding-top: 20px; border-top: 1px solid var(--border-color);">
-            <a href="index.php" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; transition: var(--transition-smooth);" onmouseover="this.style.color='var(--primary-color)'" onmouseout="this.style.color='var(--text-muted)'">
+            <a href="<?= $isInternal ? 'internal-login.php' : 'index.php' ?>" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; transition: var(--transition-smooth);" onmouseover="this.style.color='var(--primary-color)'" onmouseout="this.style.color='var(--text-muted)'">
               <i class="fas fa-arrow-left"></i> Return to Login Page
             </a>
           </div>
@@ -119,10 +124,10 @@ async function executeForgotPassword(e) {
     ValidationHandler.clearFormError(form);
     ValidationHandler.clearFieldState(input);
 
-    const contractorId = input.value.trim();
+    const contractorId = input.value.trim().toUpperCase();
     if (!contractorId) {
-        ValidationHandler.setFieldState(input, 'error', 'Contractor ID is required');
-        ValidationHandler.showFormError(form, 'Please enter your registered Contractor ID.');
+        ValidationHandler.setFieldState(input, 'error', '<?= $isInternal ? 'Staff User ID' : 'Contractor ID' ?> is required');
+        ValidationHandler.showFormError(form, 'Please enter your registered <?= $isInternal ? 'Staff User ID' : 'Contractor ID' ?>.');
         return;
     }
 
@@ -151,7 +156,7 @@ async function executeForgotPassword(e) {
             }
             
             setTimeout(() => {
-                window.location.href = `reset_password.php?contractor_id=${contractorId}`;
+                window.location.href = `reset_password.php?contractor_id=${contractorId}&scope=<?= $isInternal ? 'internal' : 'external' ?>`;
             }, 2500);
 
         } else {
@@ -166,7 +171,7 @@ async function executeForgotPassword(e) {
                         <i class="fas fa-triangle-exclamation"></i>
                         <div>
                            <strong>Identity Not Found</strong><br>
-                           The specified Contractor ID is not registered in our master records.
+                           The specified <?= $isInternal ? 'Staff User ID' : 'Contractor ID' ?> is not registered in our master records.
                         </div>
                     `;
                     form.insertBefore(warningCard, form.firstChild);

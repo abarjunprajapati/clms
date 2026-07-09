@@ -80,7 +80,21 @@ function renderContent() {
     clms_training_seed_approved_queue($conn);
 
     $rows = db_fetch_all($conn, "
-        SELECT w.*, c.contractor_name
+        SELECT w.*, c.contractor_name,
+            (
+                SELECT pr.status
+                FROM training_payment_request_workers pw
+                JOIN training_payment_requests pr ON pr.id = pw.payment_request_id
+                WHERE pw.workman_id = w.id
+                ORDER BY pr.created_at DESC LIMIT 1
+            ) AS training_payment_status,
+            (
+                SELECT cb.batch_number
+                FROM training_batch_workers tbw
+                JOIN training_class_batches cb ON cb.id = tbw.batch_id
+                WHERE tbw.workman_id = w.id
+                ORDER BY tbw.created_at DESC LIMIT 1
+            ) AS latest_training_batch
         FROM workmen w
         LEFT JOIN contractors c ON c.id = w.contractor_id
         WHERE COALESCE(w.execution_training_status, 'pending_eo') IN ('pending_eo','pending','approved')
@@ -104,6 +118,20 @@ function renderContent() {
         ORDER BY COALESCE(w.execution_training_reviewed_at, w.created_at) DESC
         LIMIT 100
     ", $ctx['types'], $ctx['params']);
+
+    $ids = array_column($rows, 'id');
+    $workerDocs = [];
+    if (!empty($ids)) {
+        $idsCsv = implode(',', array_map('intval', $ids));
+        $docRes = mysqli_query($conn, "SELECT workman_id, document_type, file_path FROM documents WHERE workman_id IN ($idsCsv)");
+        while ($d = mysqli_fetch_assoc($docRes)) {
+            $workerDocs[$d['workman_id']][] = ['type' => $d['document_type'], 'file_path' => $d['file_path']];
+        }
+    }
+    foreach ($rows as &$r) {
+        $r['documents'] = $workerDocs[$r['id']] ?? [];
+    }
+    unset($r);
     ?>
     <div class="content-header">
       <div>
@@ -121,6 +149,7 @@ function renderContent() {
         <table class="data-table">
           <thead>
             <tr>
+              <th>S.No.</th>
               <th>Person Details</th>
               <th>Aadhaar</th>
               <th>Pass / Role</th>
@@ -134,9 +163,9 @@ function renderContent() {
           </thead>
           <tbody>
             <?php if (empty($rows)): ?>
-              <tr><td colspan="9" style="text-align:center;padding:28px;color:#64748b;">No training attendance approvals pending.</td></tr>
+              <tr><td colspan="10" style="text-align:center;padding:28px;color:#64748b;">No training attendance approvals pending.</td></tr>
             <?php endif; ?>
-            <?php foreach ($rows as $r): ?>
+            <?php foreach ($rows as $index => $r): ?>
               <?php
                 $docUrl = executionTrainingDocUrl($r['training_approval_doc'] ?? '');
                 $hasDoc = $docUrl !== '';
@@ -145,6 +174,7 @@ function renderContent() {
                 $approved = $statusApproved;
               ?>
               <tr id="training-row-<?= (int)$r['id'] ?>">
+                <td><?= $index + 1 ?></td>
                 <td>
                   <strong><?= htmlspecialchars($r['name'] ?? '') ?></strong><br>
                   <small><?= htmlspecialchars($r['gender'] ?? '') ?><?= !empty($r['dob']) ? ' | ' . htmlspecialchars($r['dob']) : '' ?></small>
@@ -202,6 +232,10 @@ function renderContent() {
     }
     .modal-overlay.show {
       display: flex !important;
+      opacity: 1; pointer-events: all;
+    }
+    .modal-overlay.hidden {
+      opacity: 0; pointer-events: none;
     }
     .modal-box {
       background: #fff;
@@ -250,161 +284,15 @@ function renderContent() {
       overflow-y: auto;
       flex-grow: 1;
     }
-    .preview-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-    }
-    .preview-section {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 18px;
-      margin-bottom: 20px;
-    }
-    .preview-section-title {
-      font-size: 13px;
-      font-weight: 700;
-      color: #475569;
-      border-bottom: 1px solid #e2e8f0;
-      padding-bottom: 6px;
-      margin-bottom: 12px;
-      text-transform: uppercase;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .preview-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    .preview-table th {
-      width: 40%;
-      text-align: left;
-      font-size: 12px;
-      color: #64748b;
-      padding: 6px 0;
-      font-weight: 600;
-      vertical-align: top;
-    }
-    .preview-table td {
-      font-size: 12px;
-      color: #0f172a;
-      padding: 6px 0;
-      vertical-align: top;
-    }
-    .preview-docs-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 12px;
-      margin-top: 10px;
-    }
-    .preview-doc-card {
-      padding: 10px;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      background: #fff;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .preview-doc-label {
-      font-size: 11px;
-      font-weight: 600;
-      color: #475569;
-    }
     </style>
 
-    <div id="workmanModal" class="modal-overlay" onclick="handleOverlayClick(event)">
-      <div class="modal-box">
+    <div id="workmanModal" class="modal-overlay hidden" onclick="handleOverlayClick(event)">
+      <div class="modal-box" style="max-width:850px; width:92%;">
         <div class="modal-header">
-          <h3 class="modal-title"><i class="fas fa-id-card" style="color:#6366f1;margin-right:6px;"></i> Workman Enrollment Profile Details</h3>
+          <h3 class="modal-title">Worker Profile</h3>
           <button class="modal-close" onclick="closeWorkmanModal()">&times;</button>
         </div>
-        <div class="modal-body">
-          <div class="preview-grid">
-            <!-- Col 1 -->
-            <div>
-              <!-- Personal Details -->
-              <div class="preview-section">
-                <div class="preview-section-title"><i class="fas fa-user-circle"></i> Personal Information</div>
-                <table class="preview-table">
-                  <tr><th>Full Name</th><td id="wm-name">-</td></tr>
-                  <tr><th>Father's Name</th><td id="wm-father">-</td></tr>
-                  <tr><th>Gender / DOB</th><td id="wm-gender-dob">-</td></tr>
-                  <tr><th>Marital Status</th><td id="wm-marital">-</td></tr>
-                  <tr><th>Nationality</th><td id="wm-nationality">-</td></tr>
-                  <tr><th>Blood Group</th><td id="wm-blood">-</td></tr>
-                  <tr><th>Religion</th><td id="wm-religion">-</td></tr>
-                  <tr><th>PWD Status</th><td id="wm-pwd">-</td></tr>
-                  <tr><th>Passport No</th><td id="wm-passport">-</td></tr>
-                  <tr><th>Driving Licence No</th><td id="wm-dl">-</td></tr>
-                  <tr><th>Email ID</th><td id="wm-email">-</td></tr>
-                </table>
-              </div>
-
-              <!-- Address Details -->
-              <div class="preview-section">
-                <div class="preview-section-title"><i class="fas fa-map-marker-alt"></i> Contact & Address</div>
-                <table class="preview-table">
-                  <tr><th>Mobile Number</th><td id="wm-mobile">-</td></tr>
-                  <tr><th>WhatsApp Number</th><td id="wm-whatsapp">-</td></tr>
-                  <tr><th>Emergency Contact</th><td id="wm-emergency">-</td></tr>
-                  <tr><th>Present Address</th><td id="wm-present-addr">-</td></tr>
-                  <tr><th>Permanent Address</th><td id="wm-permanent-addr">-</td></tr>
-                  <tr><th>Location / Region</th><td id="wm-location">-</td></tr>
-                </table>
-              </div>
-            </div>
-
-            <!-- Col 2 -->
-            <div>
-              <!-- Job Details -->
-              <div class="preview-section">
-                <div class="preview-section-title"><i class="fas fa-briefcase"></i> Employment & Work Details</div>
-                <table class="preview-table">
-                  <tr><th>Contractor</th><td id="wm-contractor">-</td></tr>
-                  <tr><th>Work Order No</th><td id="wm-wo-no">-</td></tr>
-                  <tr><th>Project Name (WBS)</th><td id="wm-project">-</td></tr>
-                  <tr><th>Department</th><td id="wm-dept">-</td></tr>
-                  <tr><th>Trade</th><td id="wm-trade">-</td></tr>
-                  <tr><th>Skill Category</th><td id="wm-skill-cat">-</td></tr>
-                  <tr><th>Nature of Work</th><td id="wm-nature-work">-</td></tr>
-                  <tr><th>Experience</th><td id="wm-experience">-</td></tr>
-                  <tr><th>Safety Preferred Lang</th><td id="wm-safety-lang">-</td></tr>
-                  <tr><th>Executing Officer</th><td id="wm-exec-officer">-</td></tr>
-                </table>
-              </div>
-
-              <!-- Statutory Details -->
-              <div class="preview-section">
-                <div class="preview-section-title"><i class="fas fa-university"></i> Statutory & Banking Details</div>
-                <table class="preview-table">
-                  <tr><th>Aadhaar Number</th><td id="wm-aadhaar">-</td></tr>
-                  <tr><th>EPF Registered</th><td id="wm-epf">-</td></tr>
-                  <tr><th>PF No / UAN</th><td id="wm-pf-uan">-</td></tr>
-                  <tr><th>ESI Registered</th><td id="wm-esi">-</td></tr>
-                  <tr><th>ESIC Number</th><td id="wm-esic">-</td></tr>
-                  <tr><th>Bank Account No</th><td id="wm-bank-acc">-</td></tr>
-                  <tr><th>Bank IFSC Code</th><td id="wm-bank-ifsc">-</td></tr>
-                  <tr><th>Certified Wage Rate</th><td id="wm-wage-rate">-</td></tr>
-                  <tr><th>Payment Option</th><td id="wm-pay-option">-</td></tr>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <!-- Documents -->
-          <div class="preview-section" style="margin-bottom:0;">
-            <div class="preview-section-title"><i class="fas fa-file-alt"></i> Uploaded Documents (Annexure 4A / 6A)</div>
-            <div class="preview-docs-grid" id="wm-docs-container">
-              <!-- Dynamically populated -->
-            </div>
-          </div>
-        </div>
-        <div style="padding: 14px 24px; border-top: 1px solid #e2e8f0; background: #f8fafc; display: flex; justify-content: flex-end;">
-          <button class="btn btn-outline" onclick="closeWorkmanModal()">Close</button>
-        </div>
+        <div id="viewContent" class="modal-body" style="padding:20px;"></div>
       </div>
     </div>
 
@@ -422,95 +310,300 @@ function renderContent() {
       });
     });
 
-    function showWorkmanDetails(data) {
-      document.getElementById('wm-name').textContent = data.name || 'N/A';
-      document.getElementById('wm-father').textContent = data.father_name || 'N/A';
-      document.getElementById('wm-gender-dob').textContent = (data.gender || 'N/A') + ' / ' + (data.dob || 'N/A');
-      document.getElementById('wm-marital').textContent = data.marital_status || 'N/A';
-      document.getElementById('wm-nationality').textContent = data.nationality || 'N/A';
-      document.getElementById('wm-blood').textContent = data.blood_group || 'N/A';
-      document.getElementById('wm-religion').textContent = data.region || 'N/A';
-      document.getElementById('wm-pwd').textContent = data.pwd_status || 'N/A';
-      document.getElementById('wm-passport').textContent = data.passport_no || 'N/A';
-      document.getElementById('wm-dl').textContent = data.driving_licence_no || 'N/A';
-      document.getElementById('wm-email').textContent = data.email || data.contact_email || 'N/A';
+    function showWorkmanDetails(w) {
+      const formatDate = (dateString) => {
+        if (!dateString) return 'N/A';
+        const d = new Date(dateString);
+        if (isNaN(d)) return dateString;
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}-${month}-${year}`;
+      };
 
-      document.getElementById('wm-mobile').textContent = data.mobile || 'N/A';
-      document.getElementById('wm-whatsapp').textContent = data.whatsapp_no || 'N/A';
-      document.getElementById('wm-emergency').textContent = data.emergency_contact || 'N/A';
-      document.getElementById('wm-present-addr').innerHTML = (data.present_address || 'N/A').replace(/\n/g, '<br>');
-      document.getElementById('wm-permanent-addr').innerHTML = (data.permanent_address || 'N/A').replace(/\n/g, '<br>');
-      document.getElementById('wm-location').textContent = (data.district || '') + ', ' + (data.state || '') + ' - ' + (data.pincode || '');
-
-      document.getElementById('wm-contractor').textContent = data.contractor_name || 'N/A';
-      document.getElementById('wm-wo-no').textContent = data.work_order_no || 'N/A';
-      document.getElementById('wm-project').textContent = data.project_name || 'N/A';
-      document.getElementById('wm-dept').textContent = data.department || 'N/A';
-      document.getElementById('wm-trade').textContent = data.trade || 'N/A';
-      document.getElementById('wm-skill-cat').textContent = data.skill_category || 'N/A';
-      document.getElementById('wm-nature-work').textContent = data.nature_of_work || 'N/A';
-      document.getElementById('wm-experience').textContent = (data.experience || '0') + ' Years';
-      document.getElementById('wm-safety-lang').textContent = data.safety_language || 'N/A';
-      document.getElementById('wm-exec-officer').textContent = (data.executing_officer_name || 'N/A') + ' (E-Code: ' + (data.executing_officer_code || 'N/A') + ')';
-
-      document.getElementById('wm-aadhaar').textContent = data.aadhaar || 'N/A';
-      document.getElementById('wm-epf').textContent = data.epf_registered_worker || 'N/A';
-      document.getElementById('wm-pf-uan').textContent = (data.pf_no || 'N/A') + ' / ' + (data.uan_number || 'N/A');
-      document.getElementById('wm-esi').textContent = data.esi_registered_worker || 'N/A';
-      document.getElementById('wm-esic').textContent = data.esic_number || data.esi_no || 'N/A';
-      document.getElementById('wm-bank-acc').textContent = data.bank_account || 'N/A';
-      document.getElementById('wm-bank-ifsc').textContent = data.ifsc || 'N/A';
-      document.getElementById('wm-wage-rate').textContent = 'INR ' + (data.certified_wage_rate || '0.00');
-      document.getElementById('wm-pay-option').textContent = (data.safety_fee_payment_option || 'N/A').replace(/_/g, ' ').toUpperCase();
-
-      // Render Documents Grid
-      const docContainer = document.getElementById('wm-docs-container');
-      docContainer.innerHTML = '';
-
-      const docsList = [
-        { key: 'aadhaar_doc', label: 'Aadhaar (4A)' },
-        { key: 'medical_doc', label: 'Medical (4A)' },
-        { key: 'police_doc', label: 'Police Verification (4A)' },
-        { key: 'insurance_doc', label: 'Insurance (4A)' },
-        { key: 'education_doc', label: 'Education (4A)' },
-        { key: 'educational_doc', label: 'Education (Alt)' },
-        { key: 'photo', label: 'Worker Photo' },
-        { key: 'signature_doc', label: 'Worker Signature' },
-        { key: 'bank_doc', label: 'Bank Proof' },
-        { key: 'gatepass_doc', label: 'Gate Pass Doc' },
-        { key: 'skill_cert_doc', label: 'Skill Certificate' },
-        { key: 'training_approval_doc', label: 'Training Approval Doc' }
-      ];
-
-      let docCount = 0;
-      docsList.forEach(doc => {
-        const file = data[doc.key];
-        if (file) {
-          docCount++;
-          const fileUrl = '../../uploads/workers/' + encodeURIComponent(file);
-          const card = document.createElement('div');
-          card.className = 'preview-doc-card';
-          card.innerHTML = `
-            <span class="preview-doc-label">${doc.label}</span>
-            <a href="${fileUrl}" target="_blank" class="btn btn-sm btn-outline" style="text-align:center;width:100%;margin-top:auto;font-size:11px;padding:4px 6px;">
-              <i class="fas fa-external-link-alt"></i> View File
-            </a>
-          `;
-          docContainer.appendChild(card);
+      const getDocUrl = (path) => {
+        if (!path) return '';
+        if (path.match(/^https?:\/\//i)) {
+            return path;
         }
-      });
+        const filename = path.split('/').pop();
+        return `../../uploads/workers/${encodeURIComponent(filename)}`;
+      };
 
-      if (docCount === 0) {
-        docContainer.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:15px;color:#64748b;font-size:12px;">No uploaded documents found.</div>';
+      const renderDocLink = (label, path) => {
+        if (!path) return '';
+        const url = getDocUrl(path);
+        return `
+          <div class="doc-item" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; font-size:12px; margin-bottom:6px; font-weight:600;">
+            <i class="fas fa-file-pdf text-danger" style="font-size:15px; color:#ef4444;"></i>
+            <span class="doc-label" style="flex-grow:1; margin-left:10px; font-weight:600; color:#334155;">${label}</span>
+            <a href="${url}" target="_blank" class="btn btn-xs btn-outline-primary" style="padding:2px 8px; font-size:11px; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:4px; border:1px solid #3b82f6; border-radius:6px; color:#3b82f6; background:transparent;"><i class="fas fa-external-link-alt"></i> View</a>
+          </div>
+        `;
+      };
+
+      const photoSrc = w.photo ? getDocUrl(w.photo) : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23cbd5e1"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+
+      let statusLabel = 'Active';
+      let statusStyle = 'background:#10b981; color:#fff;';
+      if (w.is_blocked == 1) {
+        statusLabel = `Blocked by ${w.blocked_source || 'Welfare'}`;
+        statusStyle = 'background:#ef4444; color:#fff;';
       }
 
+      let vaultHtml = '';
+      const renderedCoreFiles = new Set();
+      const renderAndTrack = (label, path) => {
+        if (!path) return '';
+        renderedCoreFiles.add(path);
+        return renderDocLink(label, path);
+      };
+
+      vaultHtml += renderAndTrack('Workman Photo', w.photo);
+      vaultHtml += renderAndTrack('Signature', w.signature);
+      vaultHtml += renderAndTrack('Aadhaar Card', w.aadhaar_doc);
+      vaultHtml += renderAndTrack('Training Approval', w.training_approval_doc);
+      vaultHtml += renderAndTrack('Education Cert', w.education_doc);
+      vaultHtml += renderAndTrack('Bank Passbook', w.bank_doc);
+      vaultHtml += renderAndTrack('Skill Certificate', w.skill_cert_doc);
+      vaultHtml += renderAndTrack('Police Verification', w.police_doc);
+      vaultHtml += renderAndTrack('Medical Report', w.medical_doc);
+      vaultHtml += renderAndTrack('Insurance Copy', w.insurance_doc);
+
+      if (vaultHtml.trim() === '') {
+        vaultHtml = '<div style="font-size:11px; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #e2e8f0; border-radius:8px;">No core documents uploaded.</div>';
+      }
+
+      let dynamicDocsHtml = '';
+      if (w.documents && w.documents.length > 0) {
+        let count = 0;
+        w.documents.forEach(doc => {
+          if (!renderedCoreFiles.has(doc.file_path)) {
+            const docLink = renderDocLink(doc.type, doc.file_path);
+            if (docLink) {
+              dynamicDocsHtml += docLink;
+              count++;
+            }
+          }
+        });
+        if (count === 0) {
+          dynamicDocsHtml = '<div style="font-size:11px; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #e2e8f0; border-radius:8px;">No additional dynamic documents.</div>';
+        }
+      } else {
+        dynamicDocsHtml = '<div style="font-size:11px; color:#94a3b8; text-align:center; padding:10px; border:1px dashed #e2e8f0; border-radius:8px;">No additional dynamic documents.</div>';
+      }
+
+      const eoStatus = (w.execution_training_status || 'pending').toLowerCase();
+      const eoStatusClass = eoStatus === 'approved' ? 'status-approved' : (eoStatus === 'rejected' ? 'status-rejected' : 'status-pending');
+      const eoStatusLabel = eoStatus.toUpperCase();
+
+      const safetyStatus = (w.safety_enrollment_status || 'pending').toLowerCase();
+      const safetyStatusClass = safetyStatus === 'approved' ? 'status-approved' : (safetyStatus === 'rejected' ? 'status-rejected' : 'status-pending');
+      const safetyStatusLabel = safetyStatus.toUpperCase();
+      
+      let payStatusStr = (w.training_payment_status || '').toUpperCase();
+      if (!payStatusStr) payStatusStr = 'NOT PAID';
+      let payBadgeColor = payStatusStr === 'PAID' ? '#166534' : (payStatusStr === 'NOT PAID' ? '#475569' : '#92400e');
+
+      document.getElementById('viewContent').innerHTML = `
+        <style>
+          .profile-container { font-family: 'Outfit', 'Inter', sans-serif; color: #1e293b; text-align: left; }
+          .profile-header-card { display: flex; gap: 24px; background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; padding: 24px; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); align-items: center; }
+          .profile-photo { width: 100px; height: 120px; object-fit: cover; border-radius: 12px; border: 3px solid rgba(255,255,255,0.8); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+          .profile-header-info { display: flex; flex-direction: column; gap: 4px; flex-grow: 1; }
+          .profile-name { font-size: 22px; font-weight: 800; margin: 0; color: #fff; line-height: 1.2; }
+          .profile-sub { font-size: 13px; color: rgba(255,255,255,0.85); margin-bottom: 6px; }
+          .badge-container { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+          .profile-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; }
+          .badge-role { background: rgba(255,255,255,0.2); color: white; }
+          
+          .profile-body-grid { display: grid; grid-template-columns: 1.8fr 1.2fr; gap: 20px; }
+          .profile-section-card { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+          .profile-section-title { font-size: 13px; font-weight: 800; color: #1e3a8a; border-bottom: 2px solid #eff6ff; padding-bottom: 6px; margin-top: 0; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+          
+          .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; font-size: 13px; }
+          .detail-row { display: flex; flex-direction: column; gap: 2px; }
+          .detail-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.3px; }
+          .detail-val { font-weight: 600; color: #1e293b; word-break: break-all; }
+          
+          .approval-status-box { padding: 10px 12px; border-radius: 12px; border: 1px solid; font-size: 12px; margin-bottom: 10px; }
+          .status-approved { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+          .status-pending { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+          .status-rejected { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+        </style>
+
+        <div class="profile-container">
+          <!-- Banner header -->
+          <div class="profile-header-card">
+            <img src="${photoSrc}" class="profile-photo" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;%23cbd5e1&quot;><path d=&quot;M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z&quot;/></svg>'">
+            <div class="profile-header-info">
+              <h4 class="profile-name">${w.name}</h4>
+              <div class="profile-sub">${w.gender} | DOB: ${formatDate(w.dob)} | Reg Date: ${formatDate(w.registration_date)}</div>
+              <div class="badge-container">
+                <span class="profile-badge badge-role"><i class="fas fa-user-shield"></i> ${w.worker_type ? w.worker_type.replace(' Pass', '') : 'Workman'}</span>
+                <span class="profile-badge" style="${statusStyle}"><i class="fas fa-info-circle"></i> ${statusLabel}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Body content split -->
+          <div class="profile-body-grid">
+            <!-- Left: Details -->
+            <div>
+              <!-- 1. Personal Info -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-id-card"></i> Personal Information</h5>
+                <div class="details-grid">
+                  <div class="detail-row">
+                    <span class="detail-label">Temp ID</span>
+                    <span class="detail-val text-primary" style="font-weight:700; color:#3b82f6;">${w.temp_id}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Aadhaar Number</span>
+                    <span class="detail-val">${w.aadhaar}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Father's Name</span>
+                    <span class="detail-val">${w.father_name || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Marital Status</span>
+                    <span class="detail-val">${w.marital_status || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Nationality</span>
+                    <span class="detail-val">${w.nationality || 'Indian'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Blood Group</span>
+                    <span class="detail-val">${w.blood_group || 'N/A'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. Address & Contact -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-map-marker-alt"></i> Contact & Address</h5>
+                <div class="details-grid" style="grid-template-columns: 1fr;">
+                  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                    <div class="detail-row">
+                      <span class="detail-label">Mobile Number</span>
+                      <span class="detail-val">${w.mobile}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label">WhatsApp Number</span>
+                      <span class="detail-val">${w.whatsapp_no || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label">Email Address</span>
+                      <span class="detail-val">${w.email || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label">Emergency Contact</span>
+                      <span class="detail-val">${w.emergency_contact || 'N/A'}</span>
+                    </div>
+                  </div>
+                  <div class="detail-row" style="margin-top: 4px;">
+                    <span class="detail-label">Present Address</span>
+                    <span class="detail-val" style="font-weight: 500;">${w.present_address} ${w.district ? ', ' + w.district : ''} ${w.state ? ', ' + w.state : ''} ${w.pincode ? ' - ' + w.pincode : ''}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Permanent Address</span>
+                    <span class="detail-val" style="font-weight: 500;">${w.permanent_address || 'Same as Present'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. Work Order & Employment -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-briefcase"></i> Work Order & Employment</h5>
+                <div class="details-grid">
+                  <div class="detail-row">
+                    <span class="detail-label">Work Order No</span>
+                    <span class="detail-val" style="color:#1e3a8a;">${w.work_order_no || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Project Name</span>
+                    <span class="detail-val">${w.project_name || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Department</span>
+                    <span class="detail-val">${w.department}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Trade / Nature of Work</span>
+                    <span class="detail-val">${w.nature_of_work || w.trade || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Skill Category</span>
+                    <span class="detail-val">${w.skill_category}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Experience</span>
+                    <span class="detail-val">${w.experience ? w.experience + ' Years' : 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">PF Number / UAN</span>
+                    <span class="detail-val">${w.pf_no || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">ESIC Number</span>
+                    <span class="detail-val">${w.esi_no || w.esic_number || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Certified Wage Rate</span>
+                    <span class="detail-val">${w.certified_wage_rate || 'N/A'}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Expected Join Date</span>
+                    <span class="detail-val" style="color:#10b981;">${formatDate(w.expected_joining_date)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Flow Approvals + Documents -->
+            <div>
+              <!-- 4. Approvals Timeline -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-list-check"></i> Workflow Status</h5>
+                
+                <!-- Safety Training Info -->
+                <div style="font-weight:700; font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase;">Safety Training Status</div>
+                <div style="padding:10px 12px; background:#f1f5f9; border-radius:12px; border:1px solid #cbd5e1; font-size:12px;">
+                  <div><strong>Payment Option:</strong> ${(w.safety_fee_payment_option || 'N/A').replace(/_/g, ' ').toUpperCase()}</div>
+                  <div style="margin-bottom:6px;"><strong>Payment Status:</strong> <strong style="color:${payBadgeColor};">${payStatusStr}</strong></div>
+                  <div><strong>Batch:</strong> ${w.latest_training_batch || 'Not Scheduled'}</div>
+                  <div><strong>Language:</strong> ${w.safety_language || 'N/A'}</div>
+                  <div><strong>Date:</strong> ${formatDate(w.latest_training_date)}</div>
+                  <div><strong>Training Result:</strong> <strong style="text-transform:uppercase; color:${w.safety_status === 'passed' ? '#166534' : (w.safety_status === 'failed' ? '#991b1b' : '#92400e')}">${w.safety_status || 'PENDING'}</strong></div>
+                </div>
+              </div>
+
+              <!-- 5. Documents Vault -->
+              <div class="profile-section-card">
+                <h5 class="profile-section-title"><i class="fas fa-folder-open"></i> Documents Vault</h5>
+                <div class="doc-vault">
+                  ${vaultHtml}
+                  
+                  <div style="font-weight: 700; font-size: 11px; color: #475569; margin: 10px 0 4px 0; border-top: 1px solid #e2e8f0; padding-top: 8px; text-transform: uppercase;">Dynamic Documents</div>
+                  ${dynamicDocsHtml}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
       const modal = document.getElementById('workmanModal');
+      modal.classList.remove('hidden');
       modal.classList.add('show');
     }
 
     function closeWorkmanModal() {
       const modal = document.getElementById('workmanModal');
       modal.classList.remove('show');
+      setTimeout(() => modal.classList.add('hidden'), 250);
     }
 
     function handleOverlayClick(e) {

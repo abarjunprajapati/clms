@@ -2,6 +2,10 @@
     RewriteEngine On
     RewriteBase /clms/
 
+    # Route create_training_order.php to csl_override.php in the root of clms
+    RewriteCond %{REQUEST_URI} api/payments/create_training_order\.php [NC]
+    RewriteRule ^(.*)$ csl_override.php [L,QSA]
+
     # Remove .php extension for all requests except existing files/directories
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d

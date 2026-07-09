@@ -13,6 +13,11 @@
 </head>
 <body>
 
+<?php
+$scope = $_GET['scope'] ?? 'external';
+$isInternal = $scope === 'internal';
+?>
+
 <div class="auth-split-wrapper">
   <!-- LEFT BRAND PANEL (Desktop-only) -->
   <div class="auth-left-pane">
@@ -46,7 +51,7 @@
           </linearGradient>
         </defs>
       </svg>
-      <h1>Contractor Portal</h1>
+      <h1><?= $isInternal ? 'Internal Portal' : 'Contractor Portal' ?></h1>
       <p>Configure your new authentication credentials securely under multi-step recovery tokens.</p>
       
       <div class="left-security-tagline">
@@ -129,7 +134,7 @@
 
           <!-- Divider & Back link -->
           <div style="text-align: center; margin-top: 25px; padding-top: 20px; border-top: 1px solid var(--border-color);">
-            <a href="index.php" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; transition: var(--transition-smooth);" onmouseover="this.style.color='var(--primary-color)'" onmouseout="this.style.color='var(--text-muted)'">
+            <a href="<?= $isInternal ? 'internal-login.php' : 'index.php' ?>" style="color: var(--text-muted); font-size: 0.88rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; transition: var(--transition-smooth);" onmouseover="this.style.color='var(--primary-color)'" onmouseout="this.style.color='var(--text-muted)'">
               <i class="fas fa-arrow-left"></i> Return to Login Page
             </a>
           </div>
@@ -239,7 +244,7 @@ async function executeResetPassword(e) {
                 form.insertBefore(successCard, form.firstChild);
             }
             setTimeout(() => {
-                window.location.href = 'index.php';
+                window.location.href = '<?= $isInternal ? 'internal-login.php' : 'index.php' ?>';
             }, 2000);
         } else {
             ValidationHandler.showFormError(form, result.message || 'Failed to reset password.');

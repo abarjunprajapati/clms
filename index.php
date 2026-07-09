@@ -203,11 +203,10 @@ if (file_exists($popup_file)) {
                 <i class="fas fa-rotate" id="refresh-icon"></i>
               </button>
             </div>
-          </div>
+            <div class="options-row">
 
-          <!-- Forgot password link -->
-          <div style="text-align: right; margin-bottom: 25px; margin-top: -10px;">
-            <a href="forgot_password.php" style="color: var(--primary-color); font-size: 0.88rem; font-weight: 700; text-decoration: none; transition: var(--transition-smooth);" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Forgot Password?</a>
+              <a href="forgot_password.php<?= $isInternalLogin ? '?scope=internal' : '' ?>" style="color: var(--primary-color); font-size: 0.88rem; font-weight: 700; text-decoration: none; transition: var(--transition-smooth);" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Forgot Password?</a>
+            </div>
           </div>
 
           <!-- Submit Button -->

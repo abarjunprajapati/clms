@@ -24,7 +24,8 @@ function clms_csl_generate_auth_token($secret, $ip, $uuid, $timestamp) {
 function clms_csl_create_payment_order($conn, $paymentRequest) {
     clms_ensure_payment_flow($conn);
     
-    $cslWsUrl = "https://wsdev.cochinshipyard.in/api/cxf/paymentws/services/payment/createOrder"; // TODO: read from setting in prod
+    // Hardcoded CSL DEV URL — do NOT read from DB to avoid misconfiguration
+    $cslWsUrl = 'https://wsdev.cochinshipyard.in/api/cxf/paymentws/services/payment/createOrder';
     $secret = trim((string)clms_payment_setting($conn, 'payment_gateway_key_secret', ''));
     
     if (empty($secret)) {
@@ -34,15 +35,18 @@ function clms_csl_create_payment_order($conn, $paymentRequest) {
     // Prepare ref_Trans_List
     $workers = clms_training_payment_workers($conn, $paymentRequest['id']);
     $refTransList = [];
+    $calculatedTotal = 0;
     foreach ($workers as $w) {
         $aadhaar = preg_replace('/\D/', '', $w['aadhaar'] ?? '');
         if (strlen($aadhaar) !== 12) {
             $aadhaar = str_pad($aadhaar, 12, '0', STR_PAD_LEFT);
         }
+        $amt = (int)($w['safety_fee'] ?? 0);
+        $calculatedTotal += $amt;
         $refTransList[] = [
             "aadharno" => $aadhaar,
             "attemptno" => "1",
-            "amount" => (string)(int)($w['safety_fee'] ?? 0)
+            "amount" => (string)$amt
         ];
     }
     
@@ -85,13 +89,22 @@ function clms_csl_create_payment_order($conn, $paymentRequest) {
         "source_Type" => "WEB",
         "app_ID" => "CLMS_SFTCLS",
         "remit_Req_ID" => $vendor_code,
-        "total_Amount" => (string)(int)$paymentRequest['total_amount'],
+        "total_Amount" => (string)$calculatedTotal,
         "paymode" => "RAZORPAY",
         "ref_Trans_List" => $refTransList
     ];
     
     $jsonPayload = json_encode($payload);
     
+    // DEBUG: log what we are about to send
+    $debugLogPath = __DIR__ . '/csl_debug.log';
+    file_put_contents($debugLogPath,
+        date('[Y-m-d H:i:s]') . " URL: $cslWsUrl\n" .
+        "TOKEN HEADER: token: " . $csl_token . "\n" .
+        "PAYLOAD:\n" . json_encode($payload, JSON_PRETTY_PRINT) . "\n",
+        FILE_APPEND
+    );
+
     $ch = curl_init($cslWsUrl);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -107,6 +120,14 @@ function clms_csl_create_payment_order($conn, $paymentRequest) {
     $err = curl_error($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    
+    // DEBUG: log response
+    file_put_contents($debugLogPath,
+        "HTTP CODE: $httpCode\nRESPONSE:\n" . $response . "\n" .
+        "CURL ERROR: " . ($err ?: 'none') . "\n" .
+        str_repeat('=', 80) . "\n",
+        FILE_APPEND
+    );
     
     if ($err) {
         return ["status" => false, "message" => "cURL Error: " . $err];
