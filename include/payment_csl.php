@@ -25,7 +25,7 @@ function clms_csl_create_payment_order($conn, $paymentRequest) {
     clms_ensure_payment_flow($conn);
     
     // Hardcoded CSL DEV URL — do NOT read from DB to avoid misconfiguration
-    $cslWsUrl = 'https://wsdev.cochinshipyard.in/api/cxf/paymentws/services/payment/createOrder';
+    $cslWsUrl = 'https://ws.cochinshipyard.in/api/cxf/paymentws/services/payment/createOrder';
     $secret = trim((string)clms_payment_setting($conn, 'payment_gateway_key_secret', ''));
     
     if (empty($secret)) {

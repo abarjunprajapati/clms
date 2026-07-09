@@ -19,7 +19,10 @@ define('CSL_OVERRIDE_LOADED', true);
 session_start();
 
 // Include only what we need (NOT the broken payment_csl.php)
-$base = dirname(dirname(dirname(__FILE__))); // project root
+$base = __DIR__; // project root
+if (!file_exists($base . '/include/config.php') && file_exists(dirname($base) . '/include/config.php')) {
+    $base = dirname($base);
+}
 require_once $base . '/include/config.php';
 require_once $base . '/include/payment_flow.php';
 require_once $base . '/include/AuditLogger.php';
@@ -48,7 +51,7 @@ function _csl_token($secret, $ip) {
 }
 
 function _csl_call_api($conn, $request) {
-    $url    = 'https://wsdev.cochinshipyard.in/api/cxf/paymentws/services/payment/createOrder';
+    $url    = 'https://ws.cochinshipyard.in/api/cxf/paymentws/services/payment/createOrder';
     $secret = trim((string)clms_payment_setting($conn, 'payment_gateway_key_secret', ''));
     if (empty($secret)) return ['ok' => false, 'msg' => 'CSL secret key not configured.'];
 
@@ -175,7 +178,7 @@ try {
         curl_setopt_array($ch,[CURLOPT_USERPWD=>"$keyId:$keySecret",CURLOPT_RETURNTRANSFER=>true,
             CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>json_encode(['amount'=>round((float)$request['total_amount']*100),'currency'=>'INR','receipt'=>$request['payment_ref']]),
             CURLOPT_HTTPHEADER=>['Content-Type: application/json'],CURLOPT_SSL_VERIFYPEER=>false,CURLOPT_TIMEOUT=>30]);
-        $resp=$curl_exec($ch);$code=curl_getinfo($ch,CURLINFO_HTTP_CODE);curl_close($ch);
+        $resp=curl_exec($ch);$code=curl_getinfo($ch,CURLINFO_HTTP_CODE);curl_close($ch);
         $rzp=json_decode($resp,true);
         if($code!==200||empty($rzp['id'])) _csl_json(['success'=>false,'message'=>$rzp['error']['description']??'Razorpay failed.'],400);
         db_execute($conn,"UPDATE training_payment_requests SET status='gateway_created',gateway_provider=?,gateway_order_id=?,updated_at=NOW() WHERE id=?",'ssi',[$provider,$rzp['id'],(int)$request['id']]);

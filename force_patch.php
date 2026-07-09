@@ -10,22 +10,7 @@ $order_path = $base . '/api/payments/create_training_order.php';
 echo "Is include/ writable: " . (is_writable($base . '/include') ? "Yes" : "No") . "\n";
 echo "Is api/payments/ writable: " . (is_writable($base . '/api/payments') ? "Yes" : "No") . "\n\n";
 
-// Try deleting payment_csl.php and recreating it
-if (is_writable($base . '/include')) {
-    echo "Attempting to delete and recreate payment_csl.php...\n";
-    if (file_exists($csl_path)) {
-        $deleted = @unlink($csl_path);
-        echo "Deleted old file: " . ($deleted ? "Yes" : "No") . "\n";
-    }
-    
-    // Now write the new content
-    $new_content = file_get_contents($base . '/csl_override.php'); // we can copy from csl_override.php
-    // Let's strip the auto-prepend guard if copying
-    $new_content = str_replace("if (str_pos(\$script, 'create_training_order') === false) {\n    return;\n}", "", $new_content);
-    
-    $written = @file_put_contents($csl_path, $new_content);
-    echo "Wrote new payment_csl.php: " . ($written ? "Yes ($written bytes)" : "No") . "\n\n";
-}
+// Skipped recreating payment_csl.php to avoid breaking dependencies. Please upload include/payment_csl.php directly if needed.
 
 // Try deleting create_training_order.php and recreating it
 if (is_writable($base . '/api/payments')) {

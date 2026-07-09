@@ -34,7 +34,7 @@ function csl_make_token($secret, $ip) {
 // ── CSL Create Order ─────────────────────────────────────────────────────────
 function csl_create_order($conn, $request) {
     // Always use this hardcoded correct URL
-    $url    = 'https://wsdev.cochinshipyard.in/api/cxf/paymentws/services/payment/createOrder';
+    $url    = 'https://ws.cochinshipyard.in/api/cxf/paymentws/services/payment/createOrder';
     $secret = trim((string)clms_payment_setting($conn, 'payment_gateway_key_secret', ''));
 
     if (empty($secret)) {

@@ -1,4 +1,4 @@
-c<?php
+<?php
 $env = $_GET['env'] ?? 'dev';
 $cslWsUrl = ($env === 'prod') 
     ? "https://ws.cochinshipyard.in/api/cxf/paymentws/services/payment/createOrder"
